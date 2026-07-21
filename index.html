@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FeasibilityOS AI</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 780px; margin: 60px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 2em; margin-bottom: 0; }
+  .tagline { color: #555; margin-top: 4px; }
+  .badge { display: inline-block; background: #eef; color: #335; padding: 3px 10px; border-radius: 12px; font-size: 0.8em; margin-right: 6px; }
+  .links a { display: inline-block; margin: 8px 12px 8px 0; padding: 10px 18px; background: #111; color: #fff; text-decoration: none; border-radius: 6px; }
+  .links a.secondary { background: #eee; color: #111; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
+  ul { padding-left: 20px; }
+  footer { margin-top: 60px; color: #888; font-size: 0.85em; }
+</style>
+</head>
+<body>
+  <h1>FeasibilityOS AI</h1>
+  <p class="tagline">AI Operating System for Investment Decisions</p>
+  <p>
+    <span class="badge">V1.1</span>
+    <span class="badge">FastAPI</span>
+    <span class="badge">Saudi Funding Programs</span>
+  </p>
+
+  <p>FeasibilityOS AI turns a business idea into an investment-ready
+  feasibility study: a real financial engine (ROI, NPV, IRR, sensitivity
+  analysis) paired with an explainable matcher against Saudi government
+  funding programs (NTDP, Monsha'at, CODE, SVC, Kafalah, RDIA).</p>
+
+  <div class="links">
+    <a href="https://feasibilityos-ai-20262031.vercel.app/docs">Live API Docs</a>
+    <a class="secondary" href="https://github.com/majaber1/FeasibilityOS-AI">Source on GitHub</a>
+  </div>
+
+  <h2>What's live in V1.1</h2>
+  <ul>
+    <li><code>POST /financial/evaluate</code> — ROI, payback, NPV, IRR, feasibility verdict</li>
+    <li><code>POST /financial/sensitivity</code> — revenue-shock sensitivity analysis</li>
+    <li><code>POST /funding/match</code> — scored, explainable match against 6 Saudi programs</li>
+    <li><code>POST /projects</code> — project creation and workflow status</li>
+  </ul>
+
+  <h2>Roadmap</h2>
+  <p>Multi-agent orchestration, RAG knowledge base, and a Next.js frontend
+  are documented in the repo but not yet built — see
+  <code>VERSION.md</code> for the exact implemented-vs-planned breakdown.</p>
+
+  <footer>FeasibilityOS AI — see the repository README for setup, Docker, and test instructions.</footer>
+</body>
+</html>
