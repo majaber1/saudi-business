@@ -145,6 +145,19 @@
   .verdict.not_feasible{background: var(--red-bg); color: var(--red); border:1px solid var(--red);}
 
   .fund-list{display:flex; flex-direction:column; gap:8px; margin-top:4px;}
+  .sens-strip{display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:4px;}
+  @media (max-width:520px){.sens-strip{grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px;}}
+  .sens-cell{
+    background: var(--bg); border:1px solid var(--line); border-radius:4px; padding:10px 6px;
+    text-align:center; font-family:var(--mono);
+  }
+  .sens-cell.now{border-color: var(--gold);}
+  .sens-cell .delta{font-size:0.68rem; color: var(--text-dim);}
+  .sens-cell .npv{font-size:0.78rem; margin-top:5px; font-weight:600; word-break:break-word;}
+  .sens-cell .dot{width:6px; height:6px; border-radius:50%; margin:6px auto 0;}
+  .sens-cell .dot.feasible{background: var(--green);}
+  .sens-cell .dot.borderline{background: var(--amber);}
+  .sens-cell .dot.not_feasible{background: var(--red);}
   .fund-row{display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:0.82rem;}
   .fund-row .code{width:88px; color: var(--text-dim); flex-shrink:0;}
   .bar-track{flex:1; height:6px; background: var(--surface-2); border-radius:3px; overflow:hidden;}
@@ -428,12 +441,22 @@ async function runCheck(){
         has_technical_team: true
       })
     });
+    const sensReq = fetch(`${API}/financial/sensitivity`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        investment: investment,
+        annual_cash_flows: [cashflow, cashflow, cashflow, cashflow, cashflow],
+        discount_rate: discount
+      })
+    });
 
-    const [evalRes, fundRes] = await Promise.all([evalReq, fundReq]);
-    if(!evalRes.ok || !fundRes.ok) throw new Error('API returned an error');
+    const [evalRes, fundRes, sensRes] = await Promise.all([evalReq, fundReq, sensReq]);
+    if(!evalRes.ok || !fundRes.ok || !sensRes.ok) throw new Error('API returned an error');
 
     const evalData = await evalRes.json();
     const fundData = await fundRes.json();
+    const sensData = await sensRes.json();
 
     const top3 = fundData.slice(0, 3);
     const verdictLabel = {feasible:'Feasible', borderline:'Borderline', not_feasible:'Not feasible'}[evalData.verdict] || evalData.verdict;
@@ -454,6 +477,18 @@ async function runCheck(){
               <span class="code">${f.program}</span>
               <div class="bar-track"><div class="bar-fill" style="width:${f.score_percent}%"></div></div>
               <span class="pct">${f.score_percent}%</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div>
+        <div class="k" style="font-family:var(--mono); font-size:0.72rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Sensitivity to revenue</div>
+        <div class="sens-strip">
+          ${sensData.map(s => `
+            <div class="sens-cell ${s.revenue_change_percent === 0 ? 'now' : ''}">
+              <div class="delta">${s.revenue_change_percent > 0 ? '+' : ''}${s.revenue_change_percent}%</div>
+              <div class="npv">${s.npv !== null ? fmtSAR(s.npv) : '—'}</div>
+              <div class="dot ${s.verdict}"></div>
             </div>
           `).join('')}
         </div>
