@@ -3,51 +3,470 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FeasibilityOS AI</title>
+<title>FeasibilityOS AI — AI Operating System for Investment Decisions</title>
+<meta name="description" content="A real financial engine and an explainable Saudi funding matcher, live. Run a feasibility check in seconds.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 780px; margin: 60px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
-  h1 { font-size: 2em; margin-bottom: 0; }
-  .tagline { color: #555; margin-top: 4px; }
-  .badge { display: inline-block; background: #eef; color: #335; padding: 3px 10px; border-radius: 12px; font-size: 0.8em; margin-right: 6px; }
-  .links a { display: inline-block; margin: 8px 12px 8px 0; padding: 10px 18px; background: #111; color: #fff; text-decoration: none; border-radius: 6px; }
-  .links a.secondary { background: #eee; color: #111; }
-  code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
-  ul { padding-left: 20px; }
-  footer { margin-top: 60px; color: #888; font-size: 0.85em; }
+  :root{
+    --bg: #0a0e17;
+    --surface: #10151f;
+    --surface-2: #171d2b;
+    --line: #232b3c;
+    --text: #ece7da;
+    --text-dim: #8b93a6;
+    --gold: #c9a15a;
+    --gold-dim: #7d6a45;
+    --green: #4c9a6a;
+    --green-bg: #16241c;
+    --amber: #cc9a44;
+    --amber-bg: #241d10;
+    --red: #c4645a;
+    --red-bg: #241414;
+    --mono: 'IBM Plex Mono', monospace;
+    --display: 'Fraunces', serif;
+    --body: 'Inter', sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a{color:inherit;}
+  ::selection{background: var(--gold); color:#0a0e17;}
+
+  .wrap{max-width: 1080px; margin: 0 auto; padding: 0 28px;}
+
+  /* NAV */
+  nav{
+    position: sticky; top:0; z-index:50;
+    background: rgba(10,14,23,0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .wrap{display:flex; align-items:center; justify-content:space-between; height:72px;}
+  .wordmark{font-family: var(--display); font-size: 1.3rem; font-weight:500; letter-spacing:0.01em;}
+  .wordmark .dot{color: var(--gold);}
+  .navlinks{display:flex; gap:28px; font-size:0.9rem; color: var(--text-dim);}
+  .navlinks a{text-decoration:none; transition:color .15s;}
+  .navlinks a:hover{color: var(--text);}
+  .navlinks a.cta{
+    color: var(--bg); background: var(--gold); padding:8px 18px; border-radius:3px; font-weight:600;
+  }
+  .navlinks a.cta:hover{background:#dbb46e;}
+
+  /* HERO */
+  header.hero{padding: 88px 0 40px; border-bottom:1px solid var(--line);}
+  .eyebrow{
+    font-family: var(--mono); font-size:0.78rem; letter-spacing:0.14em; text-transform:uppercase;
+    color: var(--gold); margin-bottom: 22px; display:flex; align-items:center; gap:10px;
+  }
+  .eyebrow::before{content:""; width:22px; height:1px; background: var(--gold-dim);}
+  h1{
+    font-family: var(--display); font-weight:500;
+    font-size: clamp(2.1rem, 5vw, 3.4rem);
+    line-height:1.08; letter-spacing:-0.01em; max-width: 15ch;
+  }
+  h1 em{font-style:italic; color: var(--gold); font-weight:400;}
+  .lede{
+    margin-top:22px; font-size:1.08rem; color: var(--text-dim); max-width:52ch;
+  }
+
+  /* CALCULATOR — signature element */
+  .calc{
+    margin-top:56px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow:hidden;
+  }
+  .calc-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 22px; border-bottom:1px solid var(--line); background: var(--surface-2);
+  }
+  .calc-head .label{font-family: var(--mono); font-size:0.78rem; color: var(--text-dim); letter-spacing:0.06em;}
+  .live-dot{display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:0.75rem; color: var(--green);}
+  .live-dot span.pulse{
+    width:7px; height:7px; border-radius:50%; background: var(--green);
+    box-shadow:0 0 0 0 rgba(76,154,106,0.6); animation: pulse 2s infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(76,154,106,0.5);}
+    70%{box-shadow:0 0 0 6px rgba(76,154,106,0);}
+    100%{box-shadow:0 0 0 0 rgba(76,154,106,0);}
+  }
+
+  .calc-body{padding: 26px; display:grid; grid-template-columns: 1.1fr 1.4fr; gap:32px;}
+  @media (max-width: 760px){ .calc-body{grid-template-columns:1fr;} }
+
+  .field{margin-bottom:18px;}
+  .field label{
+    display:block; font-size:0.8rem; color: var(--text-dim); margin-bottom:7px;
+    font-family: var(--mono); letter-spacing:0.03em;
+  }
+  .field input, .field select{
+    width:100%; background: var(--bg); border:1px solid var(--line); color: var(--text);
+    padding:11px 13px; border-radius:4px; font-family: var(--mono); font-size:0.95rem;
+  }
+  .field input:focus, .field select:focus{outline:2px solid var(--gold); outline-offset:1px; border-color: var(--gold);}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+
+  button.run{
+    width:100%; background: var(--gold); color:#191307; border:none; padding:13px 18px;
+    border-radius:4px; font-weight:600; font-size:0.95rem; cursor:pointer; margin-top:4px;
+    transition: background .15s, transform .1s;
+    font-family: var(--body);
+  }
+  button.run:hover{background:#dbb46e;}
+  button.run:active{transform: scale(0.99);}
+  button.run:disabled{opacity:0.5; cursor:wait;}
+  button.run:focus-visible{outline:2px solid var(--text); outline-offset:2px;}
+
+  .results{display:flex; flex-direction:column; gap:14px;}
+  .metric-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .metric{
+    background: var(--bg); border:1px solid var(--line); border-radius:4px; padding:14px 16px;
+  }
+  .metric .k{font-family:var(--mono); font-size:0.72rem; color: var(--text-dim); text-transform:uppercase; letter-spacing:0.05em;}
+  .metric .v{font-family:var(--mono); font-size:1.4rem; margin-top:4px; font-weight:500;}
+
+  .verdict{
+    display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:4px;
+    font-family:var(--mono); font-size:0.85rem; font-weight:600; text-transform:uppercase; letter-spacing:0.04em;
+    width:fit-content;
+  }
+  .verdict.feasible{background: var(--green-bg); color: var(--green); border:1px solid var(--green);}
+  .verdict.borderline{background: var(--amber-bg); color: var(--amber); border:1px solid var(--amber);}
+  .verdict.not_feasible{background: var(--red-bg); color: var(--red); border:1px solid var(--red);}
+
+  .fund-list{display:flex; flex-direction:column; gap:8px; margin-top:4px;}
+  .fund-row{display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:0.82rem;}
+  .fund-row .code{width:88px; color: var(--text-dim); flex-shrink:0;}
+  .bar-track{flex:1; height:6px; background: var(--surface-2); border-radius:3px; overflow:hidden;}
+  .bar-fill{height:100%; background: var(--gold); border-radius:3px; transition:width .5s ease;}
+  .fund-row .pct{width:42px; text-align:right; color: var(--text-dim);}
+
+  .placeholder{color: var(--text-dim); font-size:0.9rem; font-family:var(--mono); padding: 30px 0;}
+  .error-msg{color: var(--red); font-size:0.85rem; font-family:var(--mono);}
+
+  /* SECTIONS */
+  section{padding: 64px 0; border-bottom:1px solid var(--line);}
+  .section-label{
+    font-family: var(--mono); font-size:0.78rem; color: var(--gold); letter-spacing:0.1em;
+    text-transform:uppercase; margin-bottom:10px;
+  }
+  h2{font-family: var(--display); font-weight:500; font-size:1.9rem; margin-bottom: 8px;}
+  .section-sub{color: var(--text-dim); max-width:56ch; margin-bottom:36px;}
+
+  .grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:22px;}
+  @media (max-width:760px){.grid3{grid-template-columns:1fr;}}
+  .card{
+    background: var(--surface); border:1px solid var(--line); border-radius:6px; padding:22px;
+  }
+  .card .tag{
+    display:inline-block; font-family:var(--mono); font-size:0.7rem; padding:3px 8px; border-radius:3px;
+    background: var(--green-bg); color: var(--green); margin-bottom:14px; letter-spacing:0.04em;
+  }
+  .card .tag.soon{background: var(--surface-2); color: var(--text-dim);}
+  .card h3{font-family: var(--body); font-size:1.05rem; font-weight:600; margin-bottom:8px;}
+  .card p{font-size:0.9rem; color: var(--text-dim);}
+  .card code{font-family:var(--mono); font-size:0.8rem; color:var(--gold); background:var(--surface-2); padding:1px 5px; border-radius:2px;}
+
+  /* ARCHITECTURE STRIP */
+  .flow{
+    display:flex; align-items:center; gap:0; overflow-x:auto; padding: 8px 0 20px;
+    font-family: var(--mono); font-size:0.82rem;
+  }
+  .flow .node{
+    background: var(--surface); border:1px solid var(--line); padding:12px 18px; border-radius:4px;
+    white-space:nowrap; flex-shrink:0;
+  }
+  .flow .node.dim{color: var(--text-dim); border-style:dashed;}
+  .flow .arrow{color: var(--gold-dim); padding:0 12px; flex-shrink:0;}
+
+  /* ROADMAP */
+  .roadmap{display:flex; flex-direction:column;}
+  .rm-row{
+    display:grid; grid-template-columns: 70px 90px 1fr; gap:20px; padding:20px 0;
+    border-top:1px solid var(--line); align-items:baseline;
+  }
+  .rm-row:last-child{border-bottom:1px solid var(--line);}
+  .rm-row .num{font-family:var(--display); font-size:1.6rem; color: var(--gold); font-style:italic;}
+  .rm-row .ver{font-family:var(--mono); font-size:0.85rem; color: var(--text-dim); align-self:center;}
+  .rm-row .desc{font-size:0.95rem;}
+  .rm-row.done .ver{color: var(--green);}
+
+  footer{padding: 40px 0 60px;}
+  footer .wrap{display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; font-size:0.85rem; color: var(--text-dim);}
+  footer a{text-decoration:underline; text-underline-offset:3px;}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.01ms !important; transition-duration:0.01ms !important;}
+  }
 </style>
 </head>
 <body>
-  <h1>FeasibilityOS AI</h1>
-  <p class="tagline">AI Operating System for Investment Decisions</p>
-  <p>
-    <span class="badge">V1.1</span>
-    <span class="badge">FastAPI</span>
-    <span class="badge">Saudi Funding Programs</span>
-  </p>
 
-  <p>FeasibilityOS AI turns a business idea into an investment-ready
-  feasibility study: a real financial engine (ROI, NPV, IRR, sensitivity
-  analysis) paired with an explainable matcher against Saudi government
-  funding programs (NTDP, Monsha'at, CODE, SVC, Kafalah, RDIA).</p>
-
-  <div class="links">
-    <a href="https://feasibilityos-ai-20262031.vercel.app/docs">Live API Docs</a>
-    <a class="secondary" href="https://github.com/majaber1/FeasibilityOS-AI">Source on GitHub</a>
+<nav>
+  <div class="wrap">
+    <div class="wordmark">FeasibilityOS<span class="dot">.</span>AI</div>
+    <div class="navlinks">
+      <a href="#calculator">Run a check</a>
+      <a href="https://github.com/majaber1/FeasibilityOS-AI">Source</a>
+      <a class="cta" href="https://feasibilityos-ai-20262031.vercel.app/docs">API Docs</a>
+    </div>
   </div>
+</nav>
 
-  <h2>What's live in V1.1</h2>
-  <ul>
-    <li><code>POST /financial/evaluate</code> — ROI, payback, NPV, IRR, feasibility verdict</li>
-    <li><code>POST /financial/sensitivity</code> — revenue-shock sensitivity analysis</li>
-    <li><code>POST /funding/match</code> — scored, explainable match against 6 Saudi programs</li>
-    <li><code>POST /projects</code> — project creation and workflow status</li>
-  </ul>
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">AI Operating System for Investment Decisions</div>
+    <h1>From idea to <em>funded</em>, computed in one call.</h1>
+    <p class="lede">
+      A real discounted-cash-flow engine and an explainable matcher against
+      six Saudi funding programs — not a mockup. Enter your numbers below
+      and it runs against the live API.
+    </p>
 
-  <h2>Roadmap</h2>
-  <p>Multi-agent orchestration, RAG knowledge base, and a Next.js frontend
-  are documented in the repo but not yet built — see
-  <code>VERSION.md</code> for the exact implemented-vs-planned breakdown.</p>
+    <div class="calc" id="calculator">
+      <div class="calc-head">
+        <span class="label">FEASIBILITY CHECK — LIVE</span>
+        <span class="live-dot"><span class="pulse"></span>connected to production API</span>
+      </div>
+      <div class="calc-body">
+        <div class="inputs">
+          <div class="field">
+            <label for="investment">Initial investment (SAR)</label>
+            <input type="number" id="investment" value="500000" min="1">
+          </div>
+          <div class="field">
+            <label for="cashflow">Annual cash flow, year 1–5 (SAR)</label>
+            <input type="number" id="cashflow" value="150000" min="0">
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="discount">Discount rate</label>
+              <input type="number" id="discount" value="10" min="0" max="100" step="0.5">
+            </div>
+            <div class="field">
+              <label for="industry">Industry</label>
+              <select id="industry">
+                <option value="technology" selected>Technology</option>
+                <option value="healthcare">Healthcare</option>
+                <option value="retail">Retail</option>
+                <option value="industrial">Industrial</option>
+                <option value="tourism">Tourism</option>
+                <option value="education">Education</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="stage">Stage</label>
+            <select id="stage">
+              <option value="idea">Idea</option>
+              <option value="mvp" selected>MVP</option>
+              <option value="early_revenue">Early revenue</option>
+              <option value="growth">Growth</option>
+            </select>
+          </div>
+          <button class="run" id="runBtn" onclick="runCheck()">Run feasibility check</button>
+        </div>
 
-  <footer>FeasibilityOS AI — see the repository README for setup, Docker, and test instructions.</footer>
+        <div class="results" id="results">
+          <div class="placeholder">→ Results from /financial/evaluate and /funding/match will appear here.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="section-label">What's live</div>
+    <h2>Three working engines, one API</h2>
+    <p class="section-sub">Everything below is deployed and callable right now — not a roadmap slide.</p>
+    <div class="grid3">
+      <div class="card">
+        <span class="tag">Live</span>
+        <h3>Financial engine</h3>
+        <p>ROI, payback period, NPV, and IRR via Newton-Raphson, plus a 5-point
+        revenue-sensitivity sweep. <code>POST /financial/evaluate</code></p>
+      </div>
+      <div class="card">
+        <span class="tag">Live</span>
+        <h3>Funding matcher</h3>
+        <p>Scores your project against NTDP, Monsha'at, CODE, SVC, Kafalah, and
+        RDIA, with the reasons and gaps behind each score. <code>POST /funding/match</code></p>
+      </div>
+      <div class="card">
+        <span class="tag">Live</span>
+        <h3>Project API</h3>
+        <p>Create and track a project's workflow status through the intended
+        analysis pipeline. <code>POST /projects</code></p>
+      </div>
+      <div class="card">
+        <span class="tag soon">Roadmap</span>
+        <h3>Multi-agent orchestration</h3>
+        <p>An AI CEO agent routing to market, risk, and document agents via LangGraph.</p>
+      </div>
+      <div class="card">
+        <span class="tag soon">Roadmap</span>
+        <h3>RAG knowledge base</h3>
+        <p>Retrieval over Saudi regulations, program rules, and market benchmarks.</p>
+      </div>
+      <div class="card">
+        <span class="tag soon">Roadmap</span>
+        <h3>Investor marketplace</h3>
+        <p>Matching feasible projects to the investors actively looking for them.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="section-label">Architecture</div>
+    <h2>Where today's engines sit</h2>
+    <div class="flow">
+      <div class="node">Frontend</div>
+      <div class="arrow">→</div>
+      <div class="node">FastAPI backend</div>
+      <div class="arrow">→</div>
+      <div class="node">Financial engine</div>
+      <div class="arrow">→</div>
+      <div class="node">Funding engine</div>
+      <div class="arrow">→</div>
+      <div class="node dim">RAG · Agents (planned)</div>
+    </div>
+  </div>
+</section>
+
+<section style="border-bottom:none;">
+  <div class="wrap">
+    <div class="section-label">Roadmap</div>
+    <h2>Built in order, shipped in stages</h2>
+    <div class="roadmap">
+      <div class="rm-row done">
+        <div class="num">01</div>
+        <div class="ver">V1 — live</div>
+        <div class="desc">Project wizard, real financial model, funding match, report generation.</div>
+      </div>
+      <div class="rm-row">
+        <div class="num">02</div>
+        <div class="ver">V2</div>
+        <div class="desc">Multi-agent AI, RAG knowledge base, expanded funding intelligence.</div>
+      </div>
+      <div class="rm-row">
+        <div class="num">03</div>
+        <div class="ver">V3</div>
+        <div class="desc">Investor marketplace, AI CFO, due diligence workflows.</div>
+      </div>
+      <div class="rm-row">
+        <div class="num">04</div>
+        <div class="ver">V4</div>
+        <div class="desc">GCC-wide expansion.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>FeasibilityOS AI — see <a href="https://github.com/majaber1/FeasibilityOS-AI">VERSION.md</a> for exactly what's implemented vs. planned.</div>
+    <div><a href="https://feasibilityos-ai-20262031.vercel.app/docs">API docs</a> · <a href="https://github.com/majaber1/FeasibilityOS-AI">GitHub</a></div>
+  </div>
+</footer>
+
+<script>
+const API = "https://feasibilityos-ai-20262031.vercel.app";
+
+function fmtSAR(n){
+  if(n === null || n === undefined) return "—";
+  return new Intl.NumberFormat('en-US', {maximumFractionDigits:0}).format(n) + " SAR";
+}
+
+async function runCheck(){
+  const btn = document.getElementById('runBtn');
+  const resultsEl = document.getElementById('results');
+  const investment = parseFloat(document.getElementById('investment').value);
+  const cashflow = parseFloat(document.getElementById('cashflow').value);
+  const discount = parseFloat(document.getElementById('discount').value) / 100;
+  const industry = document.getElementById('industry').value;
+  const stage = document.getElementById('stage').value;
+
+  if(!investment || investment <= 0 || cashflow < 0){
+    resultsEl.innerHTML = '<div class="error-msg">Enter a positive investment amount and a non-negative cash flow.</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Running against the live API…";
+  resultsEl.innerHTML = '<div class="placeholder">Calculating…</div>';
+
+  try {
+    const evalReq = fetch(`${API}/financial/evaluate`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        investment: investment,
+        annual_cash_flows: [cashflow, cashflow, cashflow, cashflow, cashflow],
+        discount_rate: discount
+      })
+    });
+    const fundReq = fetch(`${API}/funding/match`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        industry: industry,
+        stage: stage,
+        has_mvp: stage !== 'idea',
+        has_technical_team: true
+      })
+    });
+
+    const [evalRes, fundRes] = await Promise.all([evalReq, fundReq]);
+    if(!evalRes.ok || !fundRes.ok) throw new Error('API returned an error');
+
+    const evalData = await evalRes.json();
+    const fundData = await fundRes.json();
+
+    const top3 = fundData.slice(0, 3);
+    const verdictLabel = {feasible:'Feasible', borderline:'Borderline', not_feasible:'Not feasible'}[evalData.verdict] || evalData.verdict;
+
+    resultsEl.innerHTML = `
+      <div class="verdict ${evalData.verdict}">${verdictLabel}</div>
+      <div class="metric-grid">
+        <div class="metric"><div class="k">NPV</div><div class="v">${fmtSAR(evalData.npv)}</div></div>
+        <div class="metric"><div class="k">IRR</div><div class="v">${evalData.irr_percent !== null ? evalData.irr_percent + '%' : '—'}</div></div>
+        <div class="metric"><div class="k">Payback</div><div class="v">${evalData.payback_years !== null ? evalData.payback_years + ' yrs' : '—'}</div></div>
+        <div class="metric"><div class="k">ROI</div><div class="v">${evalData.roi_percent !== null ? evalData.roi_percent + '%' : '—'}</div></div>
+      </div>
+      <div>
+        <div class="k" style="font-family:var(--mono); font-size:0.72rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Top funding matches</div>
+        <div class="fund-list">
+          ${top3.map(f => `
+            <div class="fund-row">
+              <span class="code">${f.program}</span>
+              <div class="bar-track"><div class="bar-fill" style="width:${f.score_percent}%"></div></div>
+              <span class="pct">${f.score_percent}%</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    resultsEl.innerHTML = `<div class="error-msg">Couldn't reach the API (${err.message}). The service may be cold-starting — try again in a few seconds.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run feasibility check";
+  }
+}
+</script>
+
 </body>
 </html>
