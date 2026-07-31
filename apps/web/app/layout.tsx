@@ -1,0 +1,32 @@
+import type { Metadata } from "next";
+import "./globals.css";
+import { LanguageProvider } from "@/components/LanguageProvider";
+import { Navbar } from "@/components/Navbar";
+import { Footer } from "@/components/Footer";
+
+export const metadata: Metadata = {
+  title: {
+    default: "Saudi Business | سعودي بزنس",
+    template: "%s | Saudi Business",
+  },
+  description:
+    "Saudi Business | سعودي بزنس — feasibility studies, financial analysis, and Saudi funding-program matching, in Arabic and English.",
+  keywords: ["Saudi Arabia", "feasibility study", "funding", "Vision 2030", "دراسة جدوى", "تمويل"],
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Defaults to Arabic/RTL; LanguageProvider updates lang/dir on the client.
+  return (
+    <html lang="ar" dir="rtl">
+      <body>
+        <LanguageProvider>
+          <div className="flex min-h-screen flex-col">
+            <Navbar />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </div>
+        </LanguageProvider>
+      </body>
+    </html>
+  );
+}
