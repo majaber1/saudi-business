@@ -6,6 +6,7 @@ from app.db import DB_ENABLED
 from app.api.projects import router as projects_router
 from app.api.financial import router as financial_router
 from app.api.funding import router as funding_router
+from app.api.auth import router as auth_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -21,6 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(financial_router)
 app.include_router(funding_router)
