@@ -2,6 +2,11 @@
 Persistence tests. Runs against a throwaway SQLite database so CI needs no
 external services, while exercising the exact ORM models and the projects
 router's DB code path (DB_ENABLED=True).
+
+Note: pytest may share one SQLite engine across test modules (app.db caches the
+engine from the first DATABASE_URL seen). These tests are therefore written to
+be isolation-safe: unique keys/emails and filtered assertions instead of global
+row counts.
 """
 import os
 import sys
@@ -10,9 +15,10 @@ from pathlib import Path
 
 # Configure a file-based SQLite DB BEFORE importing app.db so DB_ENABLED is True
 # and all connections share the same database file.
-_TMP = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-_TMP.close()
-os.environ["DATABASE_URL"] = "sqlite:///" + _TMP.name
+if not os.environ.get("DATABASE_URL"):
+    _TMP = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    _TMP.close()
+    os.environ["DATABASE_URL"] = "sqlite:///" + _TMP.name
 
 _BACKEND = Path(__file__).resolve().parents[1] / "backend"
 sys.path.insert(0, str(_BACKEND))
@@ -53,12 +59,21 @@ def test_core_entities_persist():
         org = models.Organization(name="Acme", name_ar="أكمي", sector="tech")
         session.add(org)
         session.flush()
-        role = models.Role(key="entrepreneur", name_en="Entrepreneur", name_ar="رائد أعمال", permissions={"projects": ["create"]})
+        role = models.Role(key="tester_role", name_en="Tester", name_ar="مختبر", permissions={"projects": ["create"]})
         session.add(role)
         session.flush()
-        user = models.User(email="founder@example.com", hashed_password="x", full_name="Founder", role_key="entrepreneur", organization_id=org.id)
+        user = models.User(
+            email="persistence_probe@example.com",
+            hashed_password="x",
+            full_name="Probe",
+            role_key="tester_role",
+            organization_id=org.id,
+        )
         session.add(user)
-        prog = models.FundingProgram(key="ntdp", name_en="NTDP", name_ar="المنشآت التقنية", verification_status="requires_verification")
+        prog = models.FundingProgram(
+            key="ntdp", name_en="NTDP", name_ar="المنشآت التقنية",
+            verification_status="requires_verification",
+        )
         session.add(prog)
         idea = models.IdeaBankEntry(title_en="Cold chain SaaS", title_ar="سلسلة تبريد", industry="logistics")
         session.add(idea)
@@ -69,8 +84,9 @@ def test_core_entities_persist():
 
     session = app_db.SessionLocal()
     try:
-        assert session.query(models.User).count() == 1
+        assert session.query(models.User).filter_by(email="persistence_probe@example.com").count() == 1
         assert session.query(models.FundingProgram).filter_by(key="ntdp").one().name_ar == "المنشآت التقنية"
+        assert session.query(models.IdeaBankEntry).filter_by(industry="logistics").count() >= 1
     finally:
         session.close()
 
