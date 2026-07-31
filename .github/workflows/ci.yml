@@ -23,7 +23,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run pytest (financial + funding engines)
+      - name: Run pytest (engines + persistence)
         run: pytest tests/ -v
 
       - name: Smoke-import FastAPI app (backend startup)
@@ -36,6 +36,54 @@ jobs:
       - name: Smoke-import Vercel serverless entrypoint
         run: python -c "import importlib.util, pathlib, sys; sys.path[:0]=[str(pathlib.Path('backend')), str(pathlib.Path('financial-engine')), str(pathlib.Path('funding-engine'))]; import app.main; print('Vercel entry imports OK')"
 
+  migrations:
+    name: Alembic migrations on Postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: saudi_business
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saudi_business
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run migrations (alembic upgrade head)
+        run: alembic -c database/alembic.ini upgrade head
+      - name: Verify expected tables exist in Postgres
+        run: |
+          python - <<'PY'
+          import os, sqlalchemy as sa
+          url = os.environ["DATABASE_URL"].replace("postgresql://", "postgresql+psycopg2://", 1)
+          insp = sa.inspect(sa.create_engine(url))
+          tables = set(insp.get_table_names())
+          required = {
+              "users", "organizations", "roles", "projects", "feasibility_studies",
+              "financial_assumptions", "financial_results", "sensitivity_scenarios",
+              "funding_programs", "funding_matches", "idea_bank_entries",
+              "franchise_opportunities", "auctions", "auction_bids",
+              "multazim_requirements", "documents", "reports", "audit_logs",
+              "alembic_version",
+          }
+          missing = required - tables
+          assert not missing, f"missing tables: {sorted(missing)}"
+          print("OK - all", len(required), "expected tables present")
+          PY
+
   secret-scan:
     name: Basic secret scan
     runs-on: ubuntu-latest
@@ -45,7 +93,7 @@ jobs:
         run: |
           set -e
           PATTERN='(-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[A-Za-z0-9]{36})'
-          if git grep -nIE "$PATTERN" -- . ':(exclude).github/workflows/ci.yml'; then
+          if git grep -nIE "\$PATTERN" -- . ':(exclude).github/workflows/ci.yml'; then
             echo "::error::Potential secret found in tracked files"; exit 1
           else
             echo "No obvious secrets found."
