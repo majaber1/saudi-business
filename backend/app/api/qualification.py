@@ -104,7 +104,6 @@ class RequirementUpdate(BaseModel):
 class RequirementOut(RequirementIn):
     id: int
     profile_id: int
-    model_config = {"from_attributes": True}
 
 
 class ProfileIn(BaseModel):
@@ -123,7 +122,6 @@ class ProfileOut(ProfileIn):
     overall_score: float
     category_scores: dict
     recommendations: list
-    model_config = {"from_attributes": True}
 
 
 class ScoreOut(BaseModel):
@@ -145,7 +143,58 @@ class MultazimRequestOut(BaseModel):
     summary_score: Optional[float]
     summary_en: Optional[str]
     summary_ar: Optional[str]
-    model_config = {"from_attributes": True}
+
+
+
+# --- Serializers (call while the session is still open) --------------------
+
+def _profile_out(p):
+    return ProfileOut(
+        id=p.id,
+        owner_id=p.owner_id,
+        project_id=p.project_id,
+        company_name_en=p.company_name_en,
+        company_name_ar=p.company_name_ar,
+        cr_number=p.cr_number,
+        sector=p.sector,
+        company_size=p.company_size,
+        saudization_rate=p.saudization_rate,
+        overall_score=p.overall_score,
+        category_scores=p.category_scores or {},
+        recommendations=p.recommendations or [],
+    )
+
+
+def _requirement_out(r):
+    return RequirementOut(
+        id=r.id,
+        profile_id=r.profile_id,
+        category=r.category,
+        title_en=r.title_en,
+        title_ar=r.title_ar,
+        description_en=r.description_en,
+        description_ar=r.description_ar,
+        authority=r.authority,
+        is_mandatory=r.is_mandatory,
+        status=r.status,
+        weight=r.weight,
+        document_id=r.document_id,
+        declared_reference=r.declared_reference,
+        expires_at=r.expires_at,
+        source_url=r.source_url,
+    )
+
+
+def _multazim_out(m):
+    return MultazimRequestOut(
+        id=m.id,
+        profile_id=m.profile_id,
+        scope=m.scope,
+        status=m.status,
+        summary_score=m.summary_score,
+        summary_en=m.summary_en,
+        summary_ar=m.summary_ar,
+    )
 
 
 # --- Scoring & recommendations ---------------------------------------------
@@ -280,7 +329,7 @@ def list_profiles(user: UserOut = Depends(get_current_user)):
         q = db.query(models.QualificationProfile)
         if user.role_key != "admin":
             q = q.filter(models.QualificationProfile.owner_id == user.id)
-        return q.order_by(models.QualificationProfile.id).all()
+        return [_profile_out(p) for p in q.order_by(models.QualificationProfile.id).all()]
     finally:
         db.close()
 
@@ -298,7 +347,7 @@ def create_profile(data: ProfileIn, user: UserOut = Depends(get_current_user)):
         db.commit()
         db.refresh(obj)
         _audit(db, user.id, "create", "qualification_profile", obj.id)
-        return obj
+        return _profile_out(obj)
     finally:
         db.close()
 
@@ -309,7 +358,7 @@ def get_profile(profile_id: int, user: UserOut = Depends(get_current_user)):
     from app import models
     db = SessionLocal()
     try:
-        return _get_owned_profile(db, models, profile_id, user)
+        return _profile_out(_get_owned_profile(db, models, profile_id, user))
     finally:
         db.close()
 
@@ -331,8 +380,9 @@ def list_requirements(profile_id: int, user: UserOut = Depends(get_current_user)
             q = q.filter(models.QualificationRequirement.category == category)
         if status:
             q = q.filter(models.QualificationRequirement.status == status)
-        return q.order_by(models.QualificationRequirement.category,
+        rows = q.order_by(models.QualificationRequirement.category,
                           models.QualificationRequirement.id).all()
+        return [_requirement_out(r) for r in rows]
     finally:
         db.close()
 
@@ -357,7 +407,7 @@ def add_requirement(profile_id: int, data: RequirementIn,
         db.refresh(profile)
         _refresh_profile(db, profile)
         _audit(db, user.id, "create", "qualification_requirement", obj.id)
-        return obj
+        return _requirement_out(obj)
     finally:
         db.close()
 
@@ -384,7 +434,7 @@ def update_requirement(profile_id: int, req_id: int, data: RequirementUpdate,
         db.refresh(profile)
         _refresh_profile(db, profile)
         _audit(db, user.id, "update", "qualification_requirement", obj.id)
-        return obj
+        return _requirement_out(obj)
     finally:
         db.close()
 
@@ -404,7 +454,7 @@ def get_score(profile_id: int, user: UserOut = Depends(get_current_user)):
         return ScoreOut(
             profile_id=profile.id,
             overall_score=profile.overall_score,
-            category_scores=profile.category_scores,
+            category_scores=profile.category_scores or {},
             missing=_missing_analysis(profile.requirements),
         )
     finally:
@@ -421,7 +471,7 @@ def get_recommendations(profile_id: int, user: UserOut = Depends(get_current_use
         profile = _get_owned_profile(db, models, profile_id, user)
         _refresh_profile(db, profile)
         db.refresh(profile)
-        return {"profile_id": profile.id, "recommendations": profile.recommendations}
+        return {"profile_id": profile.id, "recommendations": profile.recommendations or []}
     finally:
         db.close()
 
@@ -453,7 +503,7 @@ def request_multazim_assessment(profile_id: int, data: MultazimRequestIn,
         db.commit()
         db.refresh(obj)
         _audit(db, user.id, "create", "multazim_assessment_request", obj.id)
-        return obj
+        return _multazim_out(obj)
     finally:
         db.close()
 
@@ -466,12 +516,13 @@ def list_multazim_requests(profile_id: int, user: UserOut = Depends(get_current_
     db = SessionLocal()
     try:
         _get_owned_profile(db, models, profile_id, user)
-        return (
+        rows = (
             db.query(models.MultazimAssessmentRequest)
             .filter(models.MultazimAssessmentRequest.profile_id == profile_id)
             .order_by(models.MultazimAssessmentRequest.id)
             .all()
         )
+        return [_multazim_out(m) for m in rows]
     finally:
         db.close()
 
