@@ -23,7 +23,8 @@ export type UserProfile = {
   id: number;
   email: string;
   full_name?: string | null;
-  roles: string[];
+  role_key: string;
+  locale: string;
 };
 
 const TOKEN_KEY = "sb_token";
@@ -50,7 +51,8 @@ export function register(payload: {
   email: string;
   password: string;
   full_name?: string;
-  role?: string;
+  role_key?: string;
+  locale?: string;
 }) {
   return request<UserProfile>("/auth/register", {
     method: "POST",
