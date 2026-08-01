@@ -1,30 +1,43 @@
-# FeasibilityOS AI — V1.1 Developer Ready
+# Saudi Business | سعودي بزنس — V1.2 (in progress)
 
-## What actually works end-to-end in this version
-- FastAPI backend with health check, project CRUD (in-memory), financial
-  evaluation endpoint, and funding match endpoint — all runnable locally
-  or via Docker (`docker-compose up`).
-- Financial engine: ROI, payback period, NPV, IRR (Newton-Raphson with
-  bisection fallback), break-even, and a 5-point revenue sensitivity
-  analysis. Pure Python, no external numerical dependency.
-- Funding engine: transparent, explainable rule-based scoring across the
-  6 Saudi programs (NTDP, Monsha'at, CODE, SVC, Kafalah, RDIA) based on
-  industry, stage, MVP status, and technical team — replacing the V1
-  stub that returned all programs unconditionally.
-- Full Postgres schema (`database/schema.sql`) covering every entity
-  listed in the README (users, organizations, projects, feasibility
-  studies, AI tasks, financial models, funding programs/matches,
-  documents, knowledge sources, investors, audit logs).
-- Test suite (`pytest tests/`) covering both engines.
-- Dockerfile + docker-compose for local/Postgres-backed runs.
+This document tracks what is **implemented and verified** vs. what is **planned**, so
+the version file never overstates reality. "Verified" means it passed real GitHub
+Actions CI (backend tests, Alembic migrations on a live Postgres 16 service, and the
+Next.js production build) on the committed artifact — not just a local working copy.
 
-## Still a stub / not yet implemented (roadmap, not V1)
-- Multi-agent orchestration (AI CEO / Market / Risk / Document agents) —
-  `/projects/{id}/analyze` returns the intended workflow shape but does
-  not yet call an LLM or LangGraph graph.
-- RAG knowledge base (`knowledge-base/rag_pipeline.md`) — pipeline is
-  documented, not implemented; no vector DB or ingestion code yet.
-- Frontend (Next.js/React per the README's tech stack) — not present in
-  this package; the backend is API-only for now.
-- Persistence — project data is in-memory in V1.1; wiring the existing
-  schema.sql to SQLAlchemy/psycopg2 is the next concrete step.
+## Implemented and VERIFIED in CI (feat/saudi-business-mvp)
+
+- **Backend engines (from V1.1, still green):** financial engine (ROI, payback, NPV,
+  IRR, break-even, 5-point sensitivity) and the explainable rule-based funding engine.
+- **Persistence layer:** SQLAlchemy models for 18 entities, a demo-mode fallback when
+  DATABASE_URL is unset, and an Alembic migration that applies cleanly to a real
+  Postgres 16 service in CI (18 tables + alembic_version verified).
+- **Authentication & RBAC:** bcrypt password hashing, JWT issuance/verification,
+  register / login / me endpoints, six bilingual roles seeded on demand, and audit
+  logging. Auth returns 503 in demo mode rather than faking accounts. Covered by tests.
+- **Bilingual frontend (Next.js App Router):** Arabic-first with full RTL/LTR handling,
+  persisted language preference, home page, navbar, footer. Pages now build in CI:
+  home, login (wired to /auth), register (bilingual role picker), funding (program
+  names only, "requires verification" labels), Idea Bank, Franchises, Business Auctions
+  (with legal disclaimer, no payments/escrow), Multazim, and a bilingual Help Center.
+- **CI:** four jobs green — backend tests, Alembic migrations on Postgres, Next.js
+  build, and a basic secret scan.
+
+## Implemented but requires production configuration
+
+- **Production PostgreSQL:** migrations are verified in CI, but the deployed preview has
+  no database until DATABASE_URL is provisioned. Vercel Git is connected; provisioning a
+  free Postgres (e.g. Neon) requires the account owner to accept the provider's terms.
+- **Production deploy of the new frontend:** the app builds, but a deploy decision is
+  pending (see README) to avoid breaking the current working landing page on main.
+
+## Planned / not yet implemented
+
+- Feasibility study wizard UI and dashboard/admin pages.
+- PDF and Word report generation (dependencies installed; generators not written yet).
+- DB-backed catalogs + seed data for Idea Bank, Franchises, and Auctions.
+- Full Multazim module data integration (source repo identified: multazim-ai-mvp).
+- Verified Saudi funding data catalog with amounts/eligibility and source/verification dates.
+- AI abstraction layer (kept optional; core workflows must not depend on a paid API).
+
+_Previous milestone: V1.1 (API-only, in-memory persistence, no frontend)._
