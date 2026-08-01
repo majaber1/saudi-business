@@ -121,9 +121,12 @@ jobs:
           assert "users" in tables, "original schema missing after 0001"
           assert not (qual & tables), f"qualification tables should not exist at 0001: {sorted(qual & tables)}"
           with eng.begin() as c:
-              c.exec_driver_sql(
-                  "INSERT INTO organizations (name_en, name_ar, created_at, updated_at) "
-                  "VALUES (:e, :a, NOW(), NOW())", {"e": "ScenarioBCo", "a": "ScenarioBCo"}
+              c.execute(
+                  sa.text(
+                      "INSERT INTO organizations (name_en, name_ar, created_at, updated_at) "
+                      "VALUES (:e, :a, NOW(), NOW())"
+                  ),
+                  {"e": "ScenarioBCo", "a": "ScenarioBCo"},
               )
           print("OK - 0001 verified and sample org seeded")
           PY
@@ -138,7 +141,7 @@ jobs:
           qual = {"qualification_profiles", "qualification_requirements", "multazim_assessment_requests"}
           assert not (qual - tables), f"qualification tables not created: {sorted(qual - tables)}"
           with eng.connect() as c:
-              n = c.exec_driver_sql("SELECT count(*) FROM organizations WHERE name_en = :e", {"e": "ScenarioBCo"}).scalar()
+              n = c.execute(sa.text("SELECT count(*) FROM organizations WHERE name_en = :e"), {"e": "ScenarioBCo"}).scalar()
           assert n == 1, f"seeded org row lost during upgrade (found {n})"
           print("OK - qualification tables added, existing data preserved")
           PY
