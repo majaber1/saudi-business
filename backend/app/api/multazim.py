@@ -90,7 +90,7 @@ def create_requirement(
         db.add(obj)
         db.commit()
         db.refresh(obj)
-        _audit(db, user.id, "create", "multazim_requirement", obj.id, {"category": obj.category})
+        _audit(db, user.id, "create", "multazim_requirement", obj.id)
         return obj
     finally:
         db.close()
