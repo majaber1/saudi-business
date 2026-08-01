@@ -301,3 +301,100 @@ class AuditLog(TimestampMixin, Base):
     entity: Mapped[Optional[str]] = mapped_column(String(100))
     entity_id: Mapped[Optional[int]] = mapped_column(Integer)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+# ---------------------------------------------------------------------------
+# Business Qualification & Readiness | التأهيل والجاهزية  (Saudi Business)
+#
+# Lightweight, business-facing readiness tracking for SMEs / establishments:
+# qualification profiles, per-requirement status, and a *summarized* request
+# for a deeper Multazim (institutional GRC) assessment. This intentionally does
+# NOT implement full GRC (control libraries, evidence vault, risk register,
+# internal audit, policy lifecycle) — that lives in the separate Multazim
+# product. Only the summarized cross-product hand-off is modeled here.
+# ---------------------------------------------------------------------------
+
+
+class QualificationProfile(TimestampMixin, Base):
+    """A company's Business Qualification & Readiness profile.
+
+    Owned by a user (and optionally scoped to a project). Aggregates readiness
+    across categories such as tender readiness, funding readiness, Saudization,
+    and commercial/operational readiness.
+    """
+
+    __tablename__ = "qualification_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("projects.id"), index=True)
+
+    company_name_en: Mapped[Optional[str]] = mapped_column(String(200))
+    company_name_ar: Mapped[Optional[str]] = mapped_column(String(200))
+    cr_number: Mapped[Optional[str]] = mapped_column(String(50))  # Commercial Registration
+    sector: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    company_size: Mapped[Optional[str]] = mapped_column(String(30))  # micro|small|medium|large
+    saudization_rate: Mapped[Optional[float]] = mapped_column(Float)  # 0..1
+
+    overall_score: Mapped[float] = mapped_column(Float, default=0.0)
+    category_scores: Mapped[dict] = mapped_column(JSON, default=dict)
+    recommendations: Mapped[list] = mapped_column(JSON, default=list)
+
+    owner: Mapped[Optional["User"]] = relationship()
+    requirements: Mapped[list["QualificationRequirement"]] = relationship(
+        back_populates="profile", cascade="all, delete-orphan"
+    )
+
+
+class QualificationRequirement(TimestampMixin, Base):
+    """A single eligibility / readiness requirement within a profile.
+
+    Categories (business-facing, not GRC controls): tender, funding, licenses,
+    certificates, saudization, commercial, operational, eligibility.
+    Status is one of: missing | pending | valid | expired | not_applicable.
+    """
+
+    __tablename__ = "qualification_requirements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("qualification_profiles.id"), index=True, nullable=False
+    )
+    category: Mapped[str] = mapped_column(String(50), index=True)
+    title_en: Mapped[str] = mapped_column(String(200), nullable=False)
+    title_ar: Mapped[str] = mapped_column(String(200), nullable=False)
+    description_en: Mapped[Optional[str]] = mapped_column(Text)
+    description_ar: Mapped[Optional[str]] = mapped_column(Text)
+    authority: Mapped[Optional[str]] = mapped_column(String(150))
+    is_mandatory: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(20), default="missing")
+    weight: Mapped[float] = mapped_column(Float, default=1.0)
+    document_id: Mapped[Optional[int]] = mapped_column(ForeignKey("documents.id"))
+    declared_reference: Mapped[Optional[str]] = mapped_column(String(300))
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    source_url: Mapped[Optional[str]] = mapped_column(String(500))
+
+    profile: Mapped["QualificationProfile"] = relationship(back_populates="requirements")
+
+
+class MultazimAssessmentRequest(TimestampMixin, Base):
+    """A request from Saudi Business for a deeper external Multazim assessment.
+
+    Saudi Business only stores the request and a *summarized* result payload
+    (score + short bilingual summary). It never stores the full institutional
+    GRC assessment (controls, evidence, findings) — that stays in Multazim.
+    """
+
+    __tablename__ = "multazim_assessment_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("qualification_profiles.id"), index=True, nullable=False
+    )
+    requested_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
+    scope: Mapped[Optional[str]] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), default="requested")
+
+    summary_score: Mapped[Optional[float]] = mapped_column(Float)
+    summary_en: Mapped[Optional[str]] = mapped_column(Text)
+    summary_ar: Mapped[Optional[str]] = mapped_column(Text)
