@@ -1,45 +1,76 @@
 """
 Database engine, session, and Base.
 
-Persistence is driven entirely by the DATABASE_URL environment variable.
-If it is unset (e.g. on a preview with no DB provisioned) the app runs in a
-safe *demo mode*: DB_ENABLED is False and routers fall back to an in-memory
-store instead of raising. We never pretend data is persisted when it is not.
+Connection string resolution order (secrets are never printed or logged):
+  1. DATABASE_URL                     (explicit override)
+  2. POSTGRES_URL                     (Vercel/Neon managed integration)
+  3. SQLite demo fallback             (ONLY outside production)
+
+Persistence is considered ENABLED (DB_ENABLED=True) whenever the URL came from
+an explicit env var (DATABASE_URL or POSTGRES_URL), regardless of dialect — this
+is what the test suite relies on with a throwaway SQLite file. The auto-generated
+SQLite *demo fallback* (used only when no env var is set, outside production)
+keeps DB_ENABLED=False so persistence-only endpoints honor their demo contract.
+In production, if neither Postgres URL is present, persistence stays DISABLED
+rather than silently writing to an ephemeral file. We never fabricate a
+"connected" state, and never print the URL.
 """
 from __future__ import annotations
 
 import os
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Tuple
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
+def _is_production() -> bool:
+    env = (os.getenv("ENVIRONMENT") or os.getenv("VERCEL_ENV") or "").strip().lower()
+    return env in {"production", "prod"}
+
+
 def _normalize(url: Optional[str]) -> Optional[str]:
+    """Normalize a Postgres URL to the psycopg2 dialect without dropping query
+    params (e.g. sslmode=require that Neon needs). Non-postgres URLs (sqlite)
+    are returned unchanged."""
     if not url:
         return None
     url = url.strip()
     if not url:
         return None
-    # Heroku/Vercel style prefix -> SQLAlchemy dialect
+    # Only touch the scheme; host, credentials and ?sslmode=... are preserved
+    # verbatim so SSL parameters stay intact.
     if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+        url = "postgresql+psycopg2://" + url[len("postgres://"):]
     elif url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        url = "postgresql+psycopg2://" + url[len("postgresql://"):]
     return url
 
 
-DATABASE_URL: Optional[str] = _normalize(os.getenv("DATABASE_URL"))
-DB_ENABLED: bool = DATABASE_URL is not None
+def _resolve_url() -> Tuple[Optional[str], bool]:
+    """Return (engine_url, from_env). from_env=True means an explicit
+    DATABASE_URL/POSTGRES_URL was provided (=> persistence enabled)."""
+    for var in ("DATABASE_URL", "POSTGRES_URL"):
+        candidate = _normalize(os.getenv(var))
+        if candidate:
+            return candidate, True
+    if not _is_production():
+        return "sqlite:///./demo.db", False
+    return None, False
 
-# SQLite (used by the test suite) needs a special connect arg.
+
+_ENGINE_URL, _FROM_ENV = _resolve_url()
+DATABASE_URL: Optional[str] = _ENGINE_URL
+DB_ENABLED: bool = _FROM_ENV
+
 _connect_args = {}
-if DATABASE_URL and DATABASE_URL.startswith("sqlite"):
+if _ENGINE_URL and _ENGINE_URL.startswith("sqlite"):
     _connect_args = {"check_same_thread": False}
 
 engine = (
-    create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=_connect_args)
-    if DB_ENABLED
+    create_engine(_ENGINE_URL, pool_pre_ping=True, connect_args=_connect_args)
+    if _ENGINE_URL
     else None
 )
 
@@ -50,6 +81,17 @@ SessionLocal = (
 )
 
 
+def safe_backend() -> str:
+    """Return the DB backend name (e.g. 'postgresql', 'sqlite') WITHOUT any
+    host, credentials, or query string — safe to expose in /health."""
+    if not _ENGINE_URL:
+        return "none"
+    try:
+        return make_url(_ENGINE_URL).get_backend_name()
+    except Exception:
+        return "unknown"
+
+
 class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
@@ -57,11 +99,11 @@ class Base(DeclarativeBase):
 def get_db() -> Iterator[Session]:
     """FastAPI dependency yielding a transactional session.
 
-    Raises RuntimeError if called while persistence is disabled so callers
-    must explicitly handle demo mode rather than silently losing data.
+    Raises RuntimeError if no engine is configured so callers must explicitly
+    handle demo mode rather than silently losing data.
     """
     if SessionLocal is None:
-        raise RuntimeError("Database is not configured (DATABASE_URL unset).")
+        raise RuntimeError("Database is not configured.")
     db = SessionLocal()
     try:
         yield db
