@@ -11,6 +11,7 @@ row counts.
 import os
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 # Configure a file-based SQLite DB BEFORE importing app.db so DB_ENABLED is True
@@ -91,20 +92,67 @@ def test_core_entities_persist():
         session.close()
 
 
-def test_projects_router_persists_via_api():
+def test_projects_router_persists_for_authenticated_owner():
+    """The protected Projects API stores a real row for the authenticated owner
+    and lets that owner read it back.
+
+    The previous version of this test POSTed to /projects/ anonymously and
+    expected 201; that is incompatible with the now-protected API (anonymous ->
+    401). This replacement proves genuine authenticated persistence end to end:
+    register -> login -> create with bearer token -> server assigns owner_id ->
+    retrieve by owner -> confirm the row exists in the database.
+    """
     from fastapi.testclient import TestClient
     from app.main import app
 
     client = TestClient(app)
-    resp = client.post("/projects/", json={"name": "Solar farm", "industry": "energy", "investment": 1000000, "stage": "growth"})
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
+
+    email = f"persist_owner_{uuid.uuid4().hex[:12]}@example.com"
+    password = "Sup3rSecret!"
+
+    reg = client.post(
+        "/auth/register",
+        json={"email": email, "password": password, "full_name": "Owner", "role_key": "entrepreneur"},
+    )
+    assert reg.status_code == 201, reg.text
+    user_id = reg.json()["id"]
+
+    login = client.post("/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    # Anonymous creation is rejected (documents the protected contract).
+    anon = client.post("/projects/", json={"name": "Solar farm", "industry": "energy", "investment": 1000000, "stage": "growth"})
+    assert anon.status_code == 401, anon.text
+
+    # Authenticated creation succeeds and the server assigns ownership.
+    created = client.post(
+        "/projects/",
+        json={"name": "Solar farm", "industry": "energy", "investment": 1000000, "stage": "growth"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
     assert body["persisted"] is True
+    assert body["owner_id"] == user_id
     new_id = body["id"]
 
-    got = client.get(f"/projects/{new_id}")
-    assert got.status_code == 200
+    # The owner can read it back through the API.
+    got = client.get(f"/projects/{new_id}", headers=headers)
+    assert got.status_code == 200, got.text
     assert got.json()["name"] == "Solar farm"
 
-    listing = client.get("/projects/")
+    # And it appears in the owner's own listing.
+    listing = client.get("/projects/", headers=headers)
+    assert listing.status_code == 200
     assert any(p["id"] == new_id for p in listing.json())
+
+    # It is truly persisted in the database with the correct owner.
+    session = app_db.SessionLocal()
+    try:
+        row = session.get(models.Project, new_id)
+        assert row is not None
+        assert row.owner_id == user_id
+        assert row.name == "Solar farm"
+    finally:
+        session.close()
