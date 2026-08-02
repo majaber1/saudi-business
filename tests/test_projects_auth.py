@@ -70,6 +70,33 @@ def _auth(email: str, password: str = "Sup3rSecret!", role_key: str = "entrepren
     return {"Authorization": f"Bearer {_token(email, password)}"}
 
 
+def _make_admin_and_login(email: str, password: str = "Sup3rSecret!"):
+    """Create an admin directly via the ORM (public registration can never mint
+    admins) using the real password hasher, then authenticate through the normal
+    login endpoint and return Authorization headers."""
+    from app import auth as security
+
+    session = app_db.SessionLocal()
+    try:
+        # Ensure the canonical roles (incl. admin) exist for the FK.
+        existing = {r.key for r in session.query(models.Role).all()}
+        if "admin" not in existing:
+            session.add(models.Role(key="admin", name_en="Administrator", name_ar="مدير النظام", permissions={}))
+            session.commit()
+        session.add(models.User(
+            email=email,
+            hashed_password=security.hash_password(password),
+            full_name="Admin",
+            role_key="admin",
+        ))
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post("/auth/login", json={"email": email, "password": password})
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
 _PROJECT = {"name": "Solar farm", "industry": "energy", "investment": 1000000, "stage": "growth"}
 
 
@@ -159,7 +186,7 @@ def test_other_user_cannot_read_project_403():
 # ---------------------------------------------------------------------------
 def test_admin_can_read_others_project():
     owner_headers = _auth(_email("owner9"))
-    admin_headers = _auth(_email("admin9"), role_key="admin")
+    admin_headers = _make_admin_and_login(_email("admin9"))
     pid = client.post("/projects/", json=_PROJECT, headers=owner_headers).json()["id"]
 
     resp = client.get(f"/projects/{pid}", headers=admin_headers)
