@@ -40,8 +40,9 @@ _NEXT_ID = 1
 
 
 class ProjectCreate(BaseModel):
-    model_config = {"extra": "forbid"}
-
+    # NOTE: create intentionally does NOT forbid extra fields; a client-supplied
+    # owner_id (or similar) is silently ignored -- the server always assigns the
+    # authenticated caller as owner. ProjectUpdate below IS strict (extra=forbid).
     name: str = Field(..., min_length=1, max_length=200)
     industry: str = Field(..., min_length=1, max_length=100)
     investment: float = Field(..., gt=0)
