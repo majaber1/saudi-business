@@ -63,20 +63,35 @@ def _db_ping() -> bool:
 
 def _persistence_label(backend: str, connected: bool) -> str:
     """Human-readable persistence descriptor derived from the *safe* backend
-    name (never a URL). Reports the real dialect instead of always claiming
-    "postgres", and truthfully describes the demo fallback.
+    name (never a URL). It tells the truth about four distinct states:
 
-    The development demo fallback is a LOCAL, FILE-backed SQLite database
-    (sqlite:///./demo.db) with DB_ENABLED=False -- it is not in-memory and not
-    durable/production storage. We only say "in-memory" when the engine URL is
-    actually sqlite:///:memory:.
+    1. Development demo file (sqlite:///./demo.db, DB_ENABLED=False):
+       "sqlite demo fallback (local file, non-production)"
+    2. In-memory sqlite (sqlite:///:memory:):
+       "sqlite demo fallback (in-memory, non-persistent)"
+    3. Production with NO engine/URL configured (engine is None):
+       "disabled (database unconfigured)"
+    4. A configured backend that fails the connectivity ping:
+       "<backend> (unreachable)"
+    5. A configured, reachable backend: the safe dialect name only.
+
+    We NEVER claim durable/production storage for a demo fallback, and we NEVER
+    say "in-memory" unless the engine URL is actually sqlite:///:memory:. No
+    host, credentials, port, database name, or query string is ever exposed.
     """
     from app.db import DATABASE_URL as _DB_URL
 
+    # No persistence enabled from an explicit env var.
     if not DB_ENABLED:
-        if _DB_URL and ":memory:" in _DB_URL:
+        if not _DB_URL:
+            # No engine at all (production with neither Postgres URL present).
+            return "disabled (database unconfigured)"
+        if ":memory:" in _DB_URL:
             return "sqlite demo fallback (in-memory, non-persistent)"
-        return "sqlite demo fallback (local file, non-persistent)"
+        # Auto-generated local file demo (development only).
+        return "sqlite demo fallback (local file, non-production)"
+
+    # Persistence is configured from an env var.
     label = backend or "unknown"
     if not connected:
         return label + " (unreachable)"
