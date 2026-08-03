@@ -64,9 +64,19 @@ def _db_ping() -> bool:
 def _persistence_label(backend: str, connected: bool) -> str:
     """Human-readable persistence descriptor derived from the *safe* backend
     name (never a URL). Reports the real dialect instead of always claiming
-    "postgres", and clearly signals demo/disabled or degraded states."""
+    "postgres", and truthfully describes the demo fallback.
+
+    The development demo fallback is a LOCAL, FILE-backed SQLite database
+    (sqlite:///./demo.db) with DB_ENABLED=False -- it is not in-memory and not
+    durable/production storage. We only say "in-memory" when the engine URL is
+    actually sqlite:///:memory:.
+    """
+    from app.db import DATABASE_URL as _DB_URL
+
     if not DB_ENABLED:
-        return "disabled (demo, in-memory)"
+        if _DB_URL and ":memory:" in _DB_URL:
+            return "sqlite demo fallback (in-memory, non-persistent)"
+        return "sqlite demo fallback (local file, non-persistent)"
     label = backend or "unknown"
     if not connected:
         return label + " (unreachable)"
