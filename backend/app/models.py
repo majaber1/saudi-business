@@ -82,6 +82,11 @@ class Project(TimestampMixin, Base):
     investment: Mapped[float] = mapped_column(Float, nullable=False)
     stage: Mapped[str] = mapped_column(String(30), default="idea")
     workflow_status: Mapped[str] = mapped_column(String(30), default="created")
+    # Soft-archive: archived projects are hidden from the default list but
+    # never hard-deleted, so dependent feasibility studies / reports are not
+    # orphaned. is_archived is the authoritative flag; archived_at records when.
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     organization_id: Mapped[Optional[int]] = mapped_column(ForeignKey("organizations.id"))
 
