@@ -4,14 +4,17 @@ Alembic DDL should run over a DIRECT / NON-POOLING connection. Managed
 Postgres providers such as Neon (via Vercel) expose a transaction pooler
 (PgBouncer) for normal app traffic, but running migrations through the pooler
 can fail or behave inconsistently because DDL needs a real session. Providers
-therefore also expose a direct endpoint, commonly as ``POSTGRES_URL_NON_POOLING``
-or ``DIRECT_DATABASE_URL``.
+therefore also expose a direct endpoint, commonly as ``DIRECT_DATABASE_URL``
+or ``POSTGRES_URL_NON_POOLING``.
 
 Resolution priority (first non-empty wins):
-    1. POSTGRES_URL_NON_POOLING  (Vercel/Neon direct endpoint)
-    2. DIRECT_DATABASE_URL       (generic direct endpoint alias)
+    1. DIRECT_DATABASE_URL       (explicit owner override -- wins over all)
+    2. POSTGRES_URL_NON_POOLING  (Vercel/Neon direct endpoint)
     3. DATABASE_URL              (explicit override / CI)
     4. POSTGRES_URL              (pooled managed URL, last resort)
+
+DIRECT_DATABASE_URL is the operator's explicit choice, so it takes precedence
+over the provider-supplied POSTGRES_URL_NON_POOLING when both are present.
 
 The URL is returned normalized to the psycopg2 driver, with host, credentials
 and query parameters (e.g. sslmode=require) preserved verbatim. Nothing here is
@@ -21,10 +24,11 @@ from __future__ import annotations
 
 from typing import Mapping, Optional
 
-# Ordered candidates: direct/non-pooling endpoints take precedence over pooled.
+# Ordered candidates: the explicit direct override wins, then the provider
+# non-pooling endpoint, then the pooled/standard URLs.
 MIGRATION_URL_VARS = (
-    "POSTGRES_URL_NON_POOLING",
     "DIRECT_DATABASE_URL",
+    "POSTGRES_URL_NON_POOLING",
     "DATABASE_URL",
     "POSTGRES_URL",
 )
@@ -49,10 +53,11 @@ def normalize_pg_url(url: Optional[str]) -> Optional[str]:
 def resolve_migration_url(environ: Optional[Mapping[str, str]] = None) -> Optional[str]:
     """Resolve the connection URL Alembic should use for migrations.
 
-    Prefers a direct/non-pooling endpoint when configured, then falls back to
-    the standard DATABASE_URL / POSTGRES_URL. Blank environment values are
-    ignored so an empty var never shadows a populated one. Returns the
-    normalized URL, or None when nothing is configured.
+    Prefers an explicit direct override (DIRECT_DATABASE_URL), then the
+    provider non-pooling endpoint (POSTGRES_URL_NON_POOLING), then the standard
+    DATABASE_URL / POSTGRES_URL. Blank environment values are ignored so an
+    empty var never shadows a populated one. Returns the normalized URL, or
+    None when nothing is configured.
     """
     import os
 
