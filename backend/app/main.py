@@ -18,7 +18,7 @@ from app.api.admin import router as admin_router
 app = FastAPI(
     title=settings.app_name,
     description="Saudi Business | سعودي بزنس — AI Operating System for Investment Decisions",
-    version="1.2.0",
+    version=settings.app_version,
 )
 
 app.add_middleware(
@@ -58,15 +58,35 @@ def _db_ping() -> bool:
         return False
 
 
+def _persistence_label(backend: str, connected: bool) -> str:
+    """Human-readable persistence descriptor derived from the *safe* backend
+    name (never a URL). Reports the real dialect instead of always claiming
+    "postgres", and clearly signals demo/disabled or degraded states."""
+    if not DB_ENABLED:
+        return "disabled (demo, in-memory)"
+    label = backend or "unknown"
+    if not connected:
+        return label + " (unreachable)"
+    return label
+
+
 @app.get("/health")
 def health():
+    """Liveness + database observability contract.
+
+    Exposes only safe, non-sensitive fields. ``db_backend``/``persistence`` are
+    derived from the SQLAlchemy dialect name only and never include host,
+    credentials, port, database name, or query parameters.
+    """
     connected = _db_ping()
+    backend = safe_backend()
     return {
         "status": "running",
         "service": settings.app_name,
+        "version": settings.app_version,
         "environment": settings.environment,
-        "persistence": "postgres" if DB_ENABLED else "demo (in-memory)",
         "db_enabled": DB_ENABLED,
-        "db_backend": safe_backend(),
+        "db_backend": backend,
         "db_connected": connected,
+        "persistence": _persistence_label(backend, connected),
     }
