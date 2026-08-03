@@ -24,11 +24,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-
 def _is_production() -> bool:
     env = (os.getenv("ENVIRONMENT") or os.getenv("VERCEL_ENV") or "").strip().lower()
     return env in {"production", "prod"}
-
 
 def _normalize(url: Optional[str]) -> Optional[str]:
     """Normalize a Postgres URL to the psycopg2 dialect without dropping query
@@ -47,18 +45,28 @@ def _normalize(url: Optional[str]) -> Optional[str]:
         url = "postgresql+psycopg2://" + url[len("postgresql://"):]
     return url
 
+def _is_sqlite(url: str) -> bool:
+    return url.startswith("sqlite")
 
 def _resolve_url() -> Tuple[Optional[str], bool]:
     """Return (engine_url, from_env). from_env=True means an explicit
-    DATABASE_URL/POSTGRES_URL was provided (=> persistence enabled)."""
+    DATABASE_URL/POSTGRES_URL was provided (=> persistence enabled).
+
+    An explicit SQLite override is only honored outside production; in
+    production it is skipped entirely so production traffic never silently
+    runs against an ephemeral SQLite file.
+    """
+    production = _is_production()
     for var in ("DATABASE_URL", "POSTGRES_URL"):
         candidate = _normalize(os.getenv(var))
-        if candidate:
-            return candidate, True
-    if not _is_production():
+        if not candidate:
+            continue
+        if production and _is_sqlite(candidate):
+            continue
+        return candidate, True
+    if not production:
         return "sqlite:///./demo.db", False
     return None, False
-
 
 _ENGINE_URL, _FROM_ENV = _resolve_url()
 DATABASE_URL: Optional[str] = _ENGINE_URL
@@ -80,10 +88,9 @@ SessionLocal = (
     else None
 )
 
-
 def safe_backend() -> str:
     """Return the DB backend name (e.g. 'postgresql', 'sqlite') WITHOUT any
-    host, credentials, or query string — safe to expose in /health."""
+    host, credentials, or query string - safe to expose in /health."""
     if not _ENGINE_URL:
         return "none"
     try:
@@ -91,10 +98,8 @@ def safe_backend() -> str:
     except Exception:
         return "unknown"
 
-
 class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
-
 
 def get_db() -> Iterator[Session]:
     """FastAPI dependency yielding a transactional session.
@@ -109,7 +114,6 @@ def get_db() -> Iterator[Session]:
         yield db
     finally:
         db.close()
-
 
 def init_db() -> None:
     """Create all tables from model metadata (dev/test convenience only).
