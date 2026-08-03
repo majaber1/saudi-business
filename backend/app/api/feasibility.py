@@ -2,11 +2,15 @@
 Feasibility study API: the multi-step wizard backend.
 
 Flow:
-  POST   /feasibility/                 -> create a study (auto-creates a project)
-  GET    /feasibility/                 -> list studies (optionally by project)
-  GET    /feasibility/{id}             -> fetch one study (with latest result)
-  PATCH  /feasibility/{id}/step        -> save a wizard step (merges payload)
-  POST   /feasibility/{id}/compute     -> run the financial engine, persist result
+  POST   /feasibility/            -> create a study (auto-creates a project)
+  GET    /feasibility/            -> list the caller's studies (admins: all)
+  GET    /feasibility/{id}        -> fetch one owned study (with latest result)
+  PATCH  /feasibility/{id}/step   -> save a wizard step (merges payload)
+  POST   /feasibility/{id}/compute-> run the financial engine, persist result
+
+Ownership is enforced on the server through the study's parent project owner:
+a user may only read or mutate studies whose project they own; an admin may
+access any study. Ownership is never trusted from the client.
 
 Requires persistence (DATABASE_URL). In demo mode every endpoint returns 503 so
 nobody believes a study was saved when it was not.
@@ -34,6 +38,31 @@ def _require_db():
     if not DB_ENABLED:
         raise HTTPException(status_code=503, detail="Feasibility studies require persistence (database not configured).")
     return SessionLocal()
+
+
+def _project_owner_id(db, models, project_id) -> Optional[int]:
+    project = db.get(models.Project, project_id) if project_id is not None else None
+    return project.owner_id if project is not None else None
+
+
+def _can_access(user: UserOut, owner_id: Optional[int]) -> bool:
+    """Admins access anything; everyone else only their own resources."""
+    return user.role_key == "admin" or (owner_id is not None and owner_id == user.id)
+
+
+def _owned_study_or_error(db, models, study_id: int, user: UserOut):
+    """Fetch a study enforcing ownership via its project owner.
+
+    404 when the study does not exist; 403 when it exists but the caller is not
+    the owner (and not an admin). Never leaks another user's study contents.
+    """
+    study = db.get(models.FeasibilityStudy, study_id)
+    if study is None:
+        raise HTTPException(status_code=404, detail="Study not found")
+    owner_id = _project_owner_id(db, models, study.project_id)
+    if not _can_access(user, owner_id):
+        raise HTTPException(status_code=403, detail="Not authorized for this study")
+    return study
 
 
 class StudyCreate(BaseModel):
@@ -125,6 +154,9 @@ def create_study(data: StudyCreate, user: UserOut = Depends(get_current_user)):
             project = db.get(models.Project, project_id)
             if project is None:
                 raise HTTPException(status_code=404, detail="Project not found")
+            # A study may only be attached to a project the caller owns.
+            if not _can_access(user, project.owner_id):
+                raise HTTPException(status_code=403, detail="Not authorized for this project")
 
         study = models.FeasibilityStudy(
             project_id=project_id,
@@ -148,9 +180,15 @@ def list_studies(project_id: Optional[int] = None, user: UserOut = Depends(get_c
 
     db = _require_db()
     try:
-        q = db.query(models.FeasibilityStudy)
+        # Only the caller's own studies (admins see all). Ownership is derived
+        # from the parent project owner via a join.
+        q = db.query(models.FeasibilityStudy).join(
+            models.Project, models.FeasibilityStudy.project_id == models.Project.id
+        )
+        if user.role_key != "admin":
+            q = q.filter(models.Project.owner_id == user.id)
         if project_id is not None:
-            q = q.filter_by(project_id=project_id)
+            q = q.filter(models.FeasibilityStudy.project_id == project_id)
         studies = q.order_by(models.FeasibilityStudy.id.desc()).limit(100).all()
         return [_to_out(models, s, _latest_result(db, models, s.id)) for s in studies]
     finally:
@@ -163,9 +201,7 @@ def get_study(study_id: int, user: UserOut = Depends(get_current_user)):
 
     db = _require_db()
     try:
-        study = db.get(models.FeasibilityStudy, study_id)
-        if study is None:
-            raise HTTPException(status_code=404, detail="Study not found")
+        study = _owned_study_or_error(db, models, study_id, user)
         return _to_out(models, study, _latest_result(db, models, study.id))
     finally:
         db.close()
@@ -177,9 +213,7 @@ def save_step(study_id: int, body: StepIn, user: UserOut = Depends(get_current_u
 
     db = _require_db()
     try:
-        study = db.get(models.FeasibilityStudy, study_id)
-        if study is None:
-            raise HTTPException(status_code=404, detail="Study not found")
+        study = _owned_study_or_error(db, models, study_id, user)
         payload = dict(study.payload or {})
         payload[f"step_{body.step}"] = body.data
         study.payload = payload
@@ -200,9 +234,7 @@ def compute(study_id: int, body: ComputeIn, user: UserOut = Depends(get_current_
 
     db = _require_db()
     try:
-        study = db.get(models.FeasibilityStudy, study_id)
-        if study is None:
-            raise HTTPException(status_code=404, detail="Study not found")
+        study = _owned_study_or_error(db, models, study_id, user)
 
         investment = float((study.payload or {}).get("investment") or 0) or 0.0
         if investment <= 0:
