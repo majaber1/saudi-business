@@ -5,15 +5,17 @@ Requires persistence (DATABASE_URL). In demo mode it returns 503 rather than
 faking accounts, so nobody believes a login persisted when it did not.
 
 Security note (public registration):
-  ROLES is the *canonical* RBAC catalog used to seed the roles table so user
-  foreign keys are always valid. It is NOT the set of roles a member of the
-  public may self-assign. Public /auth/register only accepts
-  PUBLIC_REGISTRATION_ROLES; privileged roles (admin, gov_reviewer) can never be
-  obtained through public registration and must be provisioned through a
-  controlled DB/bootstrap process or a future authenticated admin-only workflow.
+ROLES is the *canonical* RBAC catalog used to seed the roles table so user
+foreign keys are always valid. It is NOT the set of roles a member of the
+public may self-assign. Public /auth/register only accepts
+PUBLIC_REGISTRATION_ROLES; privileged roles (admin, gov_reviewer) can never be
+obtained through public registration and must be provisioned through the
+authenticated admin-only endpoint (POST /admin/users) or a controlled DB
+process -- never through this public router.
 """
 from __future__ import annotations
 
+import re
 from typing import Iterable, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -47,6 +49,92 @@ PRIVILEGED_ROLES = frozenset(set(ROLES) - PUBLIC_REGISTRATION_ROLES)  # admin, g
 
 SUPPORTED_LOCALES = frozenset({"ar", "en"})
 DEFAULT_ROLE = "entrepreneur"
+
+# --- Password policy (subscription-free, no external services) --------------
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_MAX_LENGTH = 128
+# A small blocklist of trivially guessable passwords. Comparison is done
+# case-insensitively and also strips trailing digits so "Password123" and
+# "password" are both rejected.
+_COMMON_PASSWORDS = frozenset(
+    {
+        "password",
+        "passw0rd",
+        "12345678",
+        "123456789",
+        "1234567890",
+        "qwerty",
+        "qwerty123",
+        "qwertyuiop",
+        "letmein",
+        "welcome",
+        "admin",
+        "administrator",
+        "iloveyou",
+        "abc12345",
+        "changeme",
+        "secret",
+        "monkey",
+        "dragon",
+    }
+)
+
+
+class PasswordPolicyError(ValueError):
+    """Raised when a candidate password fails the policy. Message is safe to
+    surface to the client (it never echoes the password)."""
+
+
+def validate_password_policy(password: str) -> None:
+    """Enforce a reasonable password policy at account-creation boundaries.
+
+    Rules: length 8-128, at least one letter, at least one digit, not a common/
+    trivial password. Symbols are allowed but not required (no arbitrary
+    composition rules). Raises PasswordPolicyError with a safe message; never
+    includes the password itself in the error.
+
+    NOTE: this is applied at registration / password-change only, NEVER at
+    login (so policy tightening cannot lock out existing valid accounts).
+    """
+    if not isinstance(password, str):
+        raise PasswordPolicyError("Password must be a string")
+    if len(password) < PASSWORD_MIN_LENGTH:
+        raise PasswordPolicyError(
+            f"Password must be at least {PASSWORD_MIN_LENGTH} characters"
+        )
+    if len(password) > PASSWORD_MAX_LENGTH:
+        raise PasswordPolicyError(
+            f"Password must be at most {PASSWORD_MAX_LENGTH} characters"
+        )
+    if not re.search(r"[A-Za-z]", password):
+        raise PasswordPolicyError("Password must contain at least one letter")
+    if not re.search(r"[0-9]", password):
+        raise PasswordPolicyError("Password must contain at least one number")
+    lowered = password.strip().lower()
+    stripped = lowered.rstrip("0123456789")
+    if lowered in _COMMON_PASSWORDS or (stripped and stripped in _COMMON_PASSWORDS):
+        raise PasswordPolicyError("Password is too common; choose a stronger password")
+
+
+def _coerce_subject(raw) -> Optional[int]:
+    """Safely turn a JWT ``sub`` claim into a positive user id.
+
+    Any malformed value (None, "", non-numeric, negative, zero, wrong type)
+    returns None so the caller can respond 401 WITHOUT letting a ValueError or
+    TypeError bubble up as an HTTP 500. Tokens we mint always carry a positive
+    integer id as a string, so a value that fails here is never one we issued.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, bool):  # bool is a subclass of int; reject explicitly
+        return None
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    return value
 
 
 def _normalize_email(email: str) -> str:
@@ -129,6 +217,12 @@ def register(data: RegisterIn):
     if data.locale not in SUPPORTED_LOCALES:
         raise HTTPException(status_code=422, detail="Unsupported locale")
 
+    # Meaningful password policy (length 8 alone is NOT sufficient).
+    try:
+        validate_password_policy(data.password)
+    except PasswordPolicyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     email = _normalize_email(str(data.email))
 
     db = _require_db()
@@ -179,11 +273,15 @@ def get_current_user(creds: Optional[HTTPAuthorizationCredentials] = Depends(_be
     payload = security.decode_token(creds.credentials)
     if not payload or "sub" not in payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    # Never let a malformed/negative/non-numeric subject raise a 500.
+    subject = _coerce_subject(payload.get("sub"))
+    if subject is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     if not DB_ENABLED:
         raise HTTPException(status_code=503, detail="Auth requires persistence")
     db = SessionLocal()
     try:
-        user = db.get(models.User, int(payload["sub"]))
+        user = db.get(models.User, subject)
         if user is None or not user.is_active:
             raise HTTPException(status_code=401, detail="User not found")
         return UserOut(id=user.id, email=user.email, full_name=user.full_name,
