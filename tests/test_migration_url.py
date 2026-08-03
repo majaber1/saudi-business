@@ -2,8 +2,9 @@
 
 These are pure-function tests over an INJECTED environment mapping, so they
 never rely on process env, shared import state, or Alembic side effects. They
-prove that migrations prefer a direct/non-pooling endpoint and fall back
-correctly, and that the psycopg2 driver + query params are preserved.
+prove the migration priority (explicit DIRECT_DATABASE_URL override wins, then
+the provider non-pooling endpoint, then DATABASE_URL / POSTGRES_URL) and that
+the psycopg2 driver + query params are preserved.
 """
 import sys
 from pathlib import Path
@@ -20,24 +21,41 @@ from migration_url import (  # noqa: E402
 
 _POOLED = "postgresql://u:p@pooler.example.com:5432/db?sslmode=require"
 _DIRECT = "postgresql://u:p@direct.example.com:5432/db?sslmode=require"
+_OWNER = "postgresql://u:p@owner-direct.example.com:5432/db?sslmode=require"
 
 
-def test_non_pooling_takes_priority_over_everything():
+def test_direct_database_url_wins_over_non_pooling_when_both_present():
+    # The explicit operator override must beat the provider non-pooling URL.
+    env = {
+        "DIRECT_DATABASE_URL": _OWNER,
+        "POSTGRES_URL_NON_POOLING": _DIRECT,
+        "DATABASE_URL": _POOLED,
+        "POSTGRES_URL": _POOLED,
+    }
+    url = resolve_migration_url(env)
+    assert "owner-direct.example.com" in url
+    assert "direct.example.com" not in url
+    assert url.startswith("postgresql+psycopg2://")
+
+
+def test_direct_database_url_wins_over_everything():
+    env = {
+        "DIRECT_DATABASE_URL": _OWNER,
+        "DATABASE_URL": _POOLED,
+        "POSTGRES_URL": _POOLED,
+    }
+    assert "owner-direct.example.com" in resolve_migration_url(env)
+
+
+def test_non_pooling_used_when_direct_override_absent():
     env = {
         "POSTGRES_URL_NON_POOLING": _DIRECT,
-        "DIRECT_DATABASE_URL": "postgresql://x@other/db",
         "DATABASE_URL": _POOLED,
         "POSTGRES_URL": _POOLED,
     }
     url = resolve_migration_url(env)
     assert "direct.example.com" in url
     assert url.startswith("postgresql+psycopg2://")
-
-
-def test_direct_database_url_used_when_non_pooling_absent():
-    env = {"DIRECT_DATABASE_URL": _DIRECT, "DATABASE_URL": _POOLED}
-    url = resolve_migration_url(env)
-    assert "direct.example.com" in url
 
 
 def test_database_url_used_when_no_direct_endpoint():
@@ -54,8 +72,8 @@ def test_postgres_url_is_last_resort():
 
 def test_blank_values_are_ignored_and_do_not_shadow():
     env = {
-        "POSTGRES_URL_NON_POOLING": "",
-        "DIRECT_DATABASE_URL": "   ",
+        "DIRECT_DATABASE_URL": "",
+        "POSTGRES_URL_NON_POOLING": "   ",
         "DATABASE_URL": _POOLED,
     }
     url = resolve_migration_url(env)
@@ -87,8 +105,8 @@ def test_normalize_leaves_sqlite_and_empty_untouched():
 
 def test_var_priority_order_is_explicit_and_stable():
     assert MIGRATION_URL_VARS == (
-        "POSTGRES_URL_NON_POOLING",
         "DIRECT_DATABASE_URL",
+        "POSTGRES_URL_NON_POOLING",
         "DATABASE_URL",
         "POSTGRES_URL",
     )
