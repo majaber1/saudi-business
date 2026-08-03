@@ -49,6 +49,14 @@ SUPPORTED_LOCALES = frozenset({"ar", "en"})
 DEFAULT_ROLE = "entrepreneur"
 
 
+def _normalize_email(email: str) -> str:
+    """Canonicalize an email for storage and lookup so uniqueness is
+    case-insensitive. RFC technically allows a case-sensitive local part, but
+    for account identity we treat addresses case-insensitively (and trim
+    surrounding whitespace) so "A@X.com" and "a@x.com" are the same account."""
+    return email.strip().lower()
+
+
 class RegisterIn(BaseModel):
     # Strict: reject any unexpected field (e.g. is_admin, is_staff, is_superuser,
     # permissions, is_active, organization_id, owner_id) instead of silently
@@ -121,13 +129,15 @@ def register(data: RegisterIn):
     if data.locale not in SUPPORTED_LOCALES:
         raise HTTPException(status_code=422, detail="Unsupported locale")
 
+    email = _normalize_email(str(data.email))
+
     db = _require_db()
     try:
         _ensure_roles(db)
-        if db.query(models.User).filter_by(email=data.email).first():
+        if db.query(models.User).filter_by(email=email).first():
             raise HTTPException(status_code=409, detail="Email already registered")
         user = models.User(
-            email=str(data.email),
+            email=email,
             hashed_password=security.hash_password(data.password),
             full_name=data.full_name,
             role_key=data.role_key,  # validated public role only
@@ -149,7 +159,7 @@ def login(data: LoginIn):
 
     db = _require_db()
     try:
-        user = db.query(models.User).filter_by(email=str(data.email)).first()
+        user = db.query(models.User).filter_by(email=_normalize_email(str(data.email))).first()
         if not user or not security.verify_password(data.password, user.hashed_password):
             raise HTTPException(status_code=401, detail="Invalid email or password")
         if not user.is_active:
