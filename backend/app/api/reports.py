@@ -60,6 +60,11 @@ def download_report(
         if study is None:
             raise HTTPException(status_code=404, detail="Study not found")
         project = db.get(models.Project, study.project_id)
+        # Ownership: a report exposes a study's full financials, so only the
+        # study's project owner (or an admin) may download it.
+        owner_id = project.owner_id if project is not None else None
+        if user.role_key != "admin" and owner_id != user.id:
+            raise HTTPException(status_code=403, detail="Not authorized for this study")
         result = _latest_result(db, models, study.id)
         ctx = build_report_context(study, result, project)
 
