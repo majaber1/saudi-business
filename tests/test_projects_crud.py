@@ -91,7 +91,9 @@ def _audit_count(action: str, entity_id: int) -> int:
     ("delete", "/projects/1"),
 ])
 def test_anonymous_lifecycle_is_401(method, path):
-    resp = getattr(client, method)(path, json={})
+    # No body: auth is enforced before body parsing, and TestClient.delete()
+    # does not accept a json kwarg. request() works uniformly across methods.
+    resp = client.request(method.upper(), path)
     assert resp.status_code == 401, resp.text
 
 
