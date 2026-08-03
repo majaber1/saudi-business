@@ -24,6 +24,16 @@ jobs:
         run: pytest tests/test_auth_privilege.py -v
       - name: Run targeted Projects auth tests first (isolate order effects)
         run: pytest tests/test_projects_auth.py -v
+      - name: Run targeted health-demo tests
+        run: pytest tests/test_health_demo.py -v
+      - name: Run targeted auth-hardening tests
+        run: pytest tests/test_auth_hardening.py -v
+      - name: Run targeted router-authz tests
+        run: pytest tests/test_router_authz.py -v
+      - name: Run targeted migration-url tests
+        run: pytest tests/test_migration_url.py -v
+      - name: Run targeted CORS-config tests
+        run: pytest tests/test_cors_config.py -v
       - name: Run pytest (engines + persistence + auth)
         run: pytest tests/ -v
       - name: Smoke-import FastAPI app (backend startup)
