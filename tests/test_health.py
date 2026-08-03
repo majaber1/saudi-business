@@ -64,3 +64,32 @@ def test_health_never_leaks_credentials_or_url():
     # A safe backend name contains none of these connection-string markers.
     for marker in ("://", "@", ":", "/", "?", "password", "sslmode"):
         assert marker not in backend, f"/health leaked connection detail via '{marker}': {backend}"
+
+
+def test_health_reports_version_from_settings():
+    """/health must expose a ``version`` that mirrors settings.app_version
+    rather than a hard-coded literal that can drift from the real release."""
+    from app.core.config import settings
+
+    body = client.get("/health").json()
+    assert "version" in body, f"missing 'version' in /health payload: {body}"
+    assert body["version"] == settings.app_version
+
+
+def test_health_persistence_label_matches_backend_not_hardcoded_postgres():
+    """The ``persistence`` label must reflect the REAL backend (sqlite here),
+    never a hard-coded 'postgres'. It must also stay leak-free."""
+    body = client.get("/health").json()
+    assert "persistence" in body, f"missing 'persistence' in /health payload: {body}"
+
+    persistence = str(body["persistence"])
+    # In this suite the backend is sqlite; the label must say so, not postgres.
+    assert body["db_backend"] == "sqlite"
+    assert "sqlite" in persistence
+    assert "postgres" not in persistence.lower()
+
+    # Never leak connection details through the persistence label either.
+    for marker in ("://", "@", "password", "sslmode"):
+        assert marker not in persistence, (
+            f"/health leaked connection detail via persistence '{marker}': {persistence}"
+        )
