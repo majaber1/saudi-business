@@ -19,22 +19,24 @@ from migration_url import (  # noqa: E402
     MIGRATION_URL_VARS,
 )
 
+# Distinct, non-overlapping hostnames so substring checks are unambiguous.
 _POOLED = "postgresql://u:p@pooler.example.com:5432/db?sslmode=require"
-_DIRECT = "postgresql://u:p@direct.example.com:5432/db?sslmode=require"
-_OWNER = "postgresql://u:p@owner-direct.example.com:5432/db?sslmode=require"
+_NONPOOL = "postgresql://u:p@nonpooling.example.com:5432/db?sslmode=require"
+_OWNER = "postgresql://u:p@owner-override.example.com:5432/db?sslmode=require"
 
 
 def test_direct_database_url_wins_over_non_pooling_when_both_present():
     # The explicit operator override must beat the provider non-pooling URL.
     env = {
         "DIRECT_DATABASE_URL": _OWNER,
-        "POSTGRES_URL_NON_POOLING": _DIRECT,
+        "POSTGRES_URL_NON_POOLING": _NONPOOL,
         "DATABASE_URL": _POOLED,
         "POSTGRES_URL": _POOLED,
     }
     url = resolve_migration_url(env)
-    assert "owner-direct.example.com" in url
-    assert "direct.example.com" not in url
+    assert "owner-override.example.com" in url
+    assert "nonpooling.example.com" not in url
+    assert "pooler.example.com" not in url
     assert url.startswith("postgresql+psycopg2://")
 
 
@@ -44,17 +46,18 @@ def test_direct_database_url_wins_over_everything():
         "DATABASE_URL": _POOLED,
         "POSTGRES_URL": _POOLED,
     }
-    assert "owner-direct.example.com" in resolve_migration_url(env)
+    assert "owner-override.example.com" in resolve_migration_url(env)
 
 
 def test_non_pooling_used_when_direct_override_absent():
     env = {
-        "POSTGRES_URL_NON_POOLING": _DIRECT,
+        "POSTGRES_URL_NON_POOLING": _NONPOOL,
         "DATABASE_URL": _POOLED,
         "POSTGRES_URL": _POOLED,
     }
     url = resolve_migration_url(env)
-    assert "direct.example.com" in url
+    assert "nonpooling.example.com" in url
+    assert "pooler.example.com" not in url
     assert url.startswith("postgresql+psycopg2://")
 
 
@@ -85,7 +88,7 @@ def test_returns_none_when_nothing_configured():
 
 
 def test_query_params_and_credentials_preserved():
-    env = {"DATABASE_URL": _DIRECT}
+    env = {"DATABASE_URL": _NONPOOL}
     url = resolve_migration_url(env)
     # sslmode must survive so Neon TLS still works; credentials untouched.
     assert url.endswith("?sslmode=require")
