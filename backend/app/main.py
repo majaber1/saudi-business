@@ -21,10 +21,13 @@ app = FastAPI(
     version=settings.app_version,
 )
 
+# CORS origins/credentials are resolved so a wildcard is never paired with
+# credentials and production never serves "*" (see app.core.config.resolve_cors).
+_cors_allow_origins, _cors_allow_credentials = settings.cors
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=_cors_allow_origins,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
