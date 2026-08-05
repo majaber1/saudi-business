@@ -158,6 +158,9 @@ jobs:
           tables = set(sa.inspect(eng).get_table_names())
           qual = {"qualification_profiles", "qualification_requirements", "multazim_assessment_requests"}
           assert not (qual - tables), f"qualification tables not created: {sorted(qual - tables)}"
+          cols = {c["name"] for c in sa.inspect(eng).get_columns("projects")}
+          assert not ({"is_archived", "archived_at"} & cols), "archive cols at 0002"
+          print("OK - 0002 has qualification tables, no archive columns")
           with eng.connect() as c:
               n = c.execute(sa.text("SELECT count(*) FROM organizations WHERE name = :e"), {"e": "ScenarioBCo"}).scalar()
           assert n == 1, f"seeded org row lost during upgrade (found {n})"
