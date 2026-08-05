@@ -148,9 +148,9 @@ jobs:
               )
           print("OK - 0001 verified and sample org seeded")
           PY
-      - name: "Scenario B: upgrade to head, keep data, add qualification tables"
+      - name: "Scenario B: upgrade to 0002, qualification tables present, archive absent"
         run: |
-          alembic -c database/alembic.ini upgrade head
+          alembic -c database/alembic.ini upgrade 0002_business_qualification
           python - <<'PY'
           import os, sqlalchemy as sa
           url = os.environ["DATABASE_URL"].replace("postgresql://", "postgresql+psycopg2://", 1)
