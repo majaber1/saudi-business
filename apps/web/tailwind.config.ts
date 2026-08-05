@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss";
 
-// Saudi Business design tokens: refined green (Saudi-inspired) + slate neutrals.
+// Saudi Business design tokens: refined green (Saudi-inspired) + premium gold accent + slate neutrals.
 const config: Config = {
   content: [
     "./app/**/*.{ts,tsx}",
@@ -17,6 +17,17 @@ const config: Config = {
           600: "#0b6f3e",
           700: "#0a5c34",
           900: "#083f24",
+        },
+        gold: {
+          50: "#fdf9ec",
+          100: "#faf0cf",
+          200: "#f3e0a1",
+          300: "#e9cb6b",
+          400: "#dcb443",
+          500: "#c9a227",
+          600: "#a9851d",
+          700: "#86691b",
+          800: "#6d551d",
         },
         ink: {
           700: "#334155",
