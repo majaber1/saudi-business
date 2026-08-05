@@ -7,6 +7,7 @@ export function Navbar() {
   const { t, locale, toggle } = useLanguage();
 
   const links = [
+    { href: "/dashboard", label: locale === "ar" ? "لوحة التحكم" : "Dashboard" },
     { href: "/funding", label: t.nav.funding },
     { href: "/ideas", label: t.nav.ideas },
     { href: "/franchises", label: t.nav.franchises },
