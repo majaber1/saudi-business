@@ -134,6 +134,10 @@ jobs:
           qual = {"qualification_profiles", "qualification_requirements", "multazim_assessment_requests"}
           assert "users" in tables, "original schema missing after 0001"
           assert not (qual & tables), f"qualification tables should not exist at 0001: {sorted(qual & tables)}"
+          insp = sa.inspect(eng)
+          proj_cols = {c["name"] for c in insp.get_columns("projects")}
+          assert not ({"is_archived", "archived_at"} & proj_cols), f"archive columns must not exist at 0001: {sorted(proj_cols)}"
+          print("OK - 0001 has no archive columns (frozen schema verified)")
           with eng.begin() as c:
               c.execute(
                   sa.text(
