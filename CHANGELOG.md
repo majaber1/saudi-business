@@ -24,13 +24,31 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 - Typed API client (apps/web/lib/api.ts) aligned with the backend auth schema.
 - Documentation: implementation plan, README status ledger, and VERSION.md V1.2 ledger.
 
+### Added (verified locally; full stack)
+- Feasibility study wizard frontend (`apps/web/app/feasibility/new`): real
+  3-step flow (project details -> cash flow assumptions -> results) wired to
+  `POST /feasibility/`, `PATCH /feasibility/{id}/step`, and
+  `POST /feasibility/{id}/compute`, plus a PDF/DOCX report download and a
+  funding-match panel. Verified end-to-end against a migrated SQLite DB:
+  register -> login -> create study -> compute -> valid PDF returned.
+  Requires sign-in; shows a sign-in prompt otherwise.
+- Typed API client (`apps/web/lib/api.ts`) expanded beyond auth to cover
+  projects, feasibility studies, financial evaluation, and funding matching.
+- Dashboard now fetches real `GET /projects` and `GET /feasibility` data when
+  signed in and switches its badge/summary/table to a "live" view; falls back
+  to the existing labeled demo view otherwise. Never mixes real and demo
+  numbers in the same view.
+- PDF (reportlab) + Word (python-docx) report generation is fully wired, not
+  just dependency-installed as previously stated here.
+
 ### In progress / not yet implemented
-- Feasibility study wizard UI, dashboard, and admin pages.
-- PDF and Word report generation (dependencies present; generators pending).
-- DB-backed catalogs and seed data for Idea Bank, Franchises, and Auctions.
+- Admin frontend pages (backend admin API exists; no UI yet).
+- DB-backed catalogs and seed data for Idea Bank, Franchises, and Auctions
+  (endpoints exist and are real, but the tables are empty until seeded).
 - Full Multazim data-model integration (source repo identified: multazim-ai-mvp).
 - Verified Saudi funding data catalog (amounts/eligibility with source + verification dates).
 - Optional AI abstraction layer (core workflows must not depend on a paid API).
+- Business Qualification & Readiness UI (backend API exists; not wired to frontend).
 
 ### Infrastructure notes
 - Vercel Git is connected to the repository.

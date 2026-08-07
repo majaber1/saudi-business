@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
+import { getToken, listProjects, listStudies, type Project, type Study } from "@/lib/api";
 
 /**
  * Bilingual (AR/EN) dashboard for Saudi Business | سعودي بزنس.
  *
  * Data note: summary/project/qualification figures below are clearly labeled
- * DEMO data. They render whenever the API base (NEXT_PUBLIC_API_BASE_URL) is
- * not configured for this environment (e.g. the Vercel Preview), so the page
- * is always a visible, working dashboard. When a live API is wired in, these
- * blocks can be swapped for fetched data.
+ * DEMO data by default. When a token is present (signed in) and the API is
+ * reachable, the Summary + Recent projects sections switch to real data from
+ * GET /projects and GET /feasibility instead — never a mix of the two.
  */
 
 type Locale = "ar" | "en";
@@ -18,6 +19,7 @@ type Locale = "ar" | "en";
 const copy: Record<Locale, any> = {
   ar: {
     demoBadge: "بيانات تجريبية",
+    liveBadge: "بيانات حقيقية",
     header: {
       title: "لوحة التحكم",
       subtitle: "نظرة شاملة على مشاريعك ودراسات الجدوى وفرص التمويل.",
@@ -35,10 +37,10 @@ const copy: Record<Locale, any> = {
     quick: {
       title: "إجراءات سريعة",
       actions: [
-        { key: "project", label: "مشروع جديد", href: "/register" },
-        { key: "study", label: "دراسة جدوى", href: "/register" },
+        { key: "project", label: "مشروع جديد", href: "/feasibility/new" },
+        { key: "study", label: "دراسة جدوى", href: "/feasibility/new" },
         { key: "funding", label: "التمويل", href: "/funding" },
-        { key: "report", label: "تقرير", href: "/register" },
+        { key: "report", label: "تقرير", href: "/feasibility/new" },
       ],
     },
     projects: {
@@ -78,6 +80,7 @@ const copy: Record<Locale, any> = {
   },
   en: {
     demoBadge: "Demo data",
+    liveBadge: "Live data",
     header: {
       title: "Dashboard",
       subtitle: "A complete overview of your projects, feasibility studies, and funding opportunities.",
@@ -95,10 +98,10 @@ const copy: Record<Locale, any> = {
     quick: {
       title: "Quick actions",
       actions: [
-        { key: "project", label: "New Project", href: "/register" },
-        { key: "study", label: "Feasibility Study", href: "/register" },
+        { key: "project", label: "New Project", href: "/feasibility/new" },
+        { key: "study", label: "Feasibility Study", href: "/feasibility/new" },
         { key: "funding", label: "Funding", href: "/funding" },
-        { key: "report", label: "Report", href: "/register" },
+        { key: "report", label: "Report", href: "/feasibility/new" },
       ],
     },
     projects: {
@@ -189,6 +192,33 @@ export default function DashboardPage() {
   const { locale } = useLanguage();
   const c = copy[locale as Locale] ?? copy.en;
 
+  // Live data replaces the demo blocks below only when a token exists AND
+  // the API responds successfully. On any failure (no API configured, 503
+  // demo-mode backend, network error) we silently keep the demo view -- we
+  // never show a mix of real and fabricated numbers.
+  const [liveProjects, setLiveProjects] = useState<Project[] | null>(null);
+  const [liveStudies, setLiveStudies] = useState<Study[] | null>(null);
+  const isLive = liveProjects !== null;
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    let cancelled = false;
+    Promise.all([listProjects(token), listStudies(token)])
+      .then(([projects, studies]) => {
+        if (!cancelled) {
+          setLiveProjects(projects);
+          setLiveStudies(studies);
+        }
+      })
+      .catch(() => {
+        /* keep demo view */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="bg-slate-50">
       {/* Header band */}
@@ -202,7 +232,7 @@ export default function DashboardPage() {
               <p className="mt-3 max-w-xl text-sm text-white/80">{c.header.subtitle}</p>
             </div>
             <span className="rounded-full border border-gold-300/50 bg-white/10 px-3 py-1 text-xs font-medium text-gold-200 backdrop-blur">
-              {c.demoBadge}
+              {isLive ? c.liveBadge : c.demoBadge}
             </span>
           </div>
         </div>
@@ -213,7 +243,25 @@ export default function DashboardPage() {
         <section>
           <h2 className="mb-4 text-lg font-semibold text-ink-900">{c.summary.title}</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {c.summary.cards.map((card: any) => (
+            {(isLive
+              ? [
+                  {
+                    key: "projects",
+                    label: c.summary.cards[0].label,
+                    value: String(liveProjects!.length),
+                    hint: liveProjects!.filter((p) => !p.is_archived).length + (locale === "ar" ? " نشط" : " active"),
+                  },
+                  {
+                    key: "studies",
+                    label: c.summary.cards[1].label,
+                    value: String(liveStudies!.length),
+                    hint:
+                      liveStudies!.filter((s) => s.status === "completed").length +
+                      (locale === "ar" ? " مكتملة" : " completed"),
+                  },
+                ]
+              : c.summary.cards
+            ).map((card: any) => (
               <div
                 key={card.key}
                 className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
@@ -249,16 +297,16 @@ export default function DashboardPage() {
         </section>
 
         {/* Recent projects + qualification */}
-        <section className="grid gap-6 lg:grid-cols-3">
+        <section className={"grid gap-6 " + (isLive ? "" : "lg:grid-cols-3")}>
           {/* Recent projects table */}
-          <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className={"rounded-2xl border border-slate-200 bg-white shadow-sm " + (isLive ? "" : "lg:col-span-2")}>
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h2 className="text-lg font-semibold text-ink-900">{c.projects.title}</h2>
-              <Link href="/register" className="text-sm font-medium text-brand-600 hover:text-brand-700">
+              <Link href="/feasibility/new" className="text-sm font-medium text-brand-600 hover:text-brand-700">
                 {c.projects.viewAll}
               </Link>
             </div>
-            {c.projects.rows.length === 0 ? (
+            {(isLive ? liveProjects! : c.projects.rows).length === 0 ? (
               <p className="px-5 py-10 text-center text-sm text-ink-700">{c.projects.empty}</p>
             ) : (
               <div className="overflow-x-auto">
@@ -272,57 +320,72 @@ export default function DashboardPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {c.projects.rows.map((p: any, i: number) => (
-                      <tr key={i} className="hover:bg-slate-50">
-                        <td className="px-5 py-3 font-medium text-ink-900">{p.name}</td>
-                        <td className="px-5 py-3 text-ink-700">{p.industry}</td>
-                        <td className="px-5 py-3 text-ink-700">{p.investment}</td>
-                        <td className="px-5 py-3">
-                          <StatusBadge stage={p.stage} labels={c.projects.status} />
-                        </td>
-                      </tr>
-                    ))}
+                    {isLive
+                      ? liveProjects!.map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-50">
+                            <td className="px-5 py-3 font-medium text-ink-900">{p.name}</td>
+                            <td className="px-5 py-3 text-ink-700">{p.industry}</td>
+                            <td className="px-5 py-3 text-ink-700">
+                              {new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(p.investment)} SAR
+                            </td>
+                            <td className="px-5 py-3">
+                              <StatusBadge stage={p.workflow_status} labels={c.projects.status} />
+                            </td>
+                          </tr>
+                        ))
+                      : c.projects.rows.map((p: any, i: number) => (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="px-5 py-3 font-medium text-ink-900">{p.name}</td>
+                            <td className="px-5 py-3 text-ink-700">{p.industry}</td>
+                            <td className="px-5 py-3 text-ink-700">{p.investment}</td>
+                            <td className="px-5 py-3">
+                              <StatusBadge stage={p.stage} labels={c.projects.status} />
+                            </td>
+                          </tr>
+                        ))}
                   </tbody>
                 </table>
               </div>
             )}
           </div>
 
-          {/* Qualification score */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-ink-900">{c.qualification.title}</h2>
-            <p className="mt-1 text-sm text-ink-700">{c.qualification.subtitle}</p>
-            <div className="mt-4 flex items-center gap-5">
-              <Donut score={c.qualification.score} />
-              <div>
-                <span className="inline-flex rounded-full bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-700">
-                  {c.qualification.level}
-                </span>
-              </div>
-            </div>
-            <div className="mt-5 space-y-3">
-              {c.qualification.breakdown.map((b: any) => (
-                <div key={b.label}>
-                  <div className="flex justify-between text-xs text-ink-700">
-                    <span>{b.label}</span>
-                    <span>{b.value}%</span>
-                  </div>
-                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-brand-500 to-gold-500"
-                      style={{ width: b.value + "%" }}
-                    />
-                  </div>
+          {/* Qualification score -- demo estimate only; never shown alongside live data */}
+          {!isLive && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="text-lg font-semibold text-ink-900">{c.qualification.title}</h2>
+              <p className="mt-1 text-sm text-ink-700">{c.qualification.subtitle}</p>
+              <div className="mt-4 flex items-center gap-5">
+                <Donut score={c.qualification.score} />
+                <div>
+                  <span className="inline-flex rounded-full bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-700">
+                    {c.qualification.level}
+                  </span>
                 </div>
-              ))}
+              </div>
+              <div className="mt-5 space-y-3">
+                {c.qualification.breakdown.map((b: any) => (
+                  <div key={b.label}>
+                    <div className="flex justify-between text-xs text-ink-700">
+                      <span>{b.label}</span>
+                      <span>{b.value}%</span>
+                    </div>
+                    <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-brand-500 to-gold-500"
+                        style={{ width: b.value + "%" }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Link
+                href="/multazim"
+                className="mt-5 inline-flex w-full items-center justify-center rounded-xl border border-brand-500 px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50"
+              >
+                {c.qualification.cta}
+              </Link>
             </div>
-            <Link
-              href="/multazim"
-              className="mt-5 inline-flex w-full items-center justify-center rounded-xl border border-brand-500 px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50"
-            >
-              {c.qualification.cta}
-            </Link>
-          </div>
+          )}
         </section>
 
         {/* Modules grid */}

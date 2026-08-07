@@ -19,9 +19,28 @@ Next.js production build) on the committed artifact — not just a local working
   persisted language preference, home page, navbar, footer. Pages now build in CI:
   home, login (wired to /auth), register (bilingual role picker), funding (program
   names only, "requires verification" labels), Idea Bank, Franchises, Business Auctions
-  (with legal disclaimer, no payments/escrow), Multazim, and a bilingual Help Center.
+  (with legal disclaimer, no payments/escrow), Multazim, dashboard, and a bilingual
+  Help Center.
 - **CI:** four jobs green — backend tests, Alembic migrations on Postgres, Next.js
   build, and a basic secret scan.
+
+## Implemented and verified locally (full-stack; not yet exercised in CI)
+
+CI's Next.js job type-checks and builds these pages (compile-time verification only).
+The following was additionally proven with a real running stack — backend on a
+migrated SQLite DB, frontend dev server pointed at it — not just a build pass:
+
+- **Feasibility study wizard** (`/feasibility/new`): 3-step flow — project details,
+  cash-flow assumptions, results — wired to `POST /feasibility/`,
+  `PATCH /feasibility/{id}/step`, `POST /feasibility/{id}/compute`. Verified
+  end-to-end: register → login → create study → compute → real ROI/NPV/IRR/payback +
+  5-point sensitivity + funding match returned and rendered correctly.
+- **PDF/Word report generation**: `GET /reports/study/{id}` confirmed to return a
+  genuinely valid PDF (verified via `file` command: "PDF document, version 1.3, 1
+  page(s)"), not just a 200 status.
+- **Dashboard live data**: `GET /projects` + `GET /feasibility` fetched and rendered
+  when signed in, with the badge/summary/table switching to a "live" state; falls
+  back to the existing labeled demo view when signed out. Never mixes the two.
 
 ## Implemented but requires production configuration
 
@@ -33,9 +52,10 @@ Next.js production build) on the committed artifact — not just a local working
 
 ## Planned / not yet implemented
 
-- Feasibility study wizard UI and dashboard/admin pages.
-- PDF and Word report generation (dependencies installed; generators not written yet).
-- DB-backed catalogs + seed data for Idea Bank, Franchises, and Auctions.
+- Admin frontend pages (backend admin API exists; no UI yet).
+- DB-backed catalogs + seed data for Idea Bank, Franchises, and Auctions (endpoints
+  are real; tables are empty until seeded).
+- Business Qualification & Readiness UI (backend API exists; not wired to frontend).
 - Full Multazim module data integration (source repo identified: multazim-ai-mvp).
 - Verified Saudi funding data catalog with amounts/eligibility and source/verification dates.
 - AI abstraction layer (kept optional; core workflows must not depend on a paid API).

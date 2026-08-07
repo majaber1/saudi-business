@@ -26,11 +26,23 @@ Each item is one of: **VERIFIED** (proven green in CI), **UNVERIFIED**
 - Financial & funding engines preserved and still under test.
 - \`.env.example\` carries names only; no secrets committed.
 
+**Frontend & feasibility wizard — VERIFIED locally (full-stack smoke test):**
+- Next.js bilingual (AR/EN + RTL) frontend: home, login, register, dashboard,
+  Idea Bank / Franchise / Auctions / Funding / Multazim / Help pages (the
+  latter honestly labeled "in progress" — no fabricated data).
+- Feasibility study wizard (\`/feasibility/new\`): create study -> save cash-flow
+  step -> compute -> real ROI/NPV/IRR/payback + sensitivity + funding match,
+  gated behind sign-in. PDF/Word report download wired to the real
+  \`reportlab\`/\`python-docx\` generators. Verified end-to-end against a
+  migrated SQLite DB: register -> login -> create -> compute -> valid PDF.
+- Dashboard fetches real \`GET /projects\` + \`GET /feasibility\` when signed in
+  and clearly labels itself "Live data" vs. "Demo data" — never both at once.
+
 **PLANNED / not yet in this branch (tracked in PR #1):**
-- Next.js bilingual (AR/EN + RTL) frontend and all public/dashboard/admin pages.
-- Feasibility-study wizard UI, PDF/Word report generation (deps installed;
-  generators not yet wired).
-- Database-backed Idea Bank / Franchise / Auctions catalogs + seed data.
+- Admin frontend pages (backend admin API exists; no UI yet).
+- Database-backed Idea Bank / Franchise / Auctions seed data (endpoints are
+  real; tables are empty until seeded).
+- Business Qualification & Readiness UI (backend API exists; not wired).
 - Multazim module integration (source repo confirmed: \`majaber1/multazim-ai-mvp\`).
 - Production PostgreSQL provisioning + Vercel production verification.
 

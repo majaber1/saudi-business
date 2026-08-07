@@ -9,3 +9,7 @@ venv/
 node_modules/
 dist/
 .vercel/
+
+# Next.js build artifacts
+apps/web/.next/
+apps/web/next-env.d.ts
