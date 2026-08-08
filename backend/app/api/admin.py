@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -119,6 +120,29 @@ def audit_log(limit: int = 50, user: UserOut = Depends(require_roles("admin"))):
         db.close()
 
 
+@router.get("/users", response_model=List[UserOut])
+def list_users(
+    limit: int = 100,
+    actor: UserOut = Depends(require_roles("admin")),
+):
+    """List accounts for protected administration; never returns hashes."""
+    if not DB_ENABLED:
+        return []
+    from app import models
+    db = SessionLocal()
+    try:
+        limit = max(1, min(limit, 500))
+        rows = db.query(models.User).order_by(models.User.id.desc()).limit(limit).all()
+        return [
+            UserOut(id=row.id, email=row.email, full_name=row.full_name,
+                    role_key=row.role_key, locale=row.locale,
+                    email_verified=row.email_verified_at is not None)
+            for row in rows
+        ]
+    finally:
+        db.close()
+
+
 @router.post("/users", response_model=UserOut, status_code=201)
 def create_user(
     data: AdminCreateUserIn,
@@ -164,6 +188,7 @@ def create_user(
             role_key=data.role_key,
             locale=data.locale,
             is_active=True,
+            email_verified_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         db.add(user)
         db.commit()
@@ -175,6 +200,7 @@ def create_user(
             full_name=user.full_name,
             role_key=user.role_key,
             locale=user.locale,
+            email_verified=True,
         )
     finally:
         db.close()

@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "Saudi Business"
-    app_version: str = "1.2.0"
+    app_version: str = "1.0.0"
     environment: str = "development"
 
     # Env-driven only. Empty by default -- never a hard-coded credentialed URL.

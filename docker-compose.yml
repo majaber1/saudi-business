@@ -1,20 +1,66 @@
-version: "3.9"
 services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: saudi_business
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: saudi_business
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saudi_business -d saudi_business"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - saudi_business_db:/var/lib/postgresql/data
+
   api:
     build: .
-    ports:
-      - "8000:8000"
+    restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/feasibilityos
+      APP_VERSION: 1.0.0
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://saudi_business:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/saudi_business
+      AUTO_MIGRATE_DB: "true"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-true}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:?Set SMTP_HOST in .env}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:?Set SMTP_FROM in .env}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
     depends_on:
-      - db
-  db:
-    image: postgres:16
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=feasibilityos
-    volumes:
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      db:
+        condition: service_healthy
     ports:
-      - "5432:5432"
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        BACKEND_API_URL: http://api:8000
+    restart: unless-stopped
+    environment:
+      BACKEND_API_URL: http://api:8000
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  saudi_business_db:

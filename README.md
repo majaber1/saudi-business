@@ -1,50 +1,22 @@
-# Saudi Business | سعودي بزنس
+# Saudi-Buisness V1 | سعودي بزنس
 
-> **Rebrand in progress** — this repository is being transformed from the
-> FeasibilityOS-AI V1.1 prototype into the bilingual **Saudi Business** MVP.
-> Work is tracked on branch \`feat/saudi-business-mvp\` (PR #1). The original
-> product vision is preserved further down this file.
+> Production baseline release **1.0.0** — bilingual feasibility, investment,
+> funding, qualification and administration platform.
 
-## Current status (v1.2.0 branch) — honest ledger
+## V1 status
 
-Each item is one of: **VERIFIED** (proven green in CI), **UNVERIFIED**
-(implemented, not yet exercised), or **PLANNED**.
-
-**Backend & data — VERIFIED in CI (3 green jobs: tests, Postgres migrations, secret scan):**
-- FastAPI backend refactored; app + Vercel entrypoint import-check green.
-- Persistence: SQLAlchemy 2.x models for 18 entities (users, organizations,
-  roles, projects, feasibility studies, financial assumptions/results,
-  sensitivity scenarios, funding programs/matches, idea bank, franchise,
-  auctions/bids, multazim requirements, documents, reports, audit logs).
-  Round-trip proven on SQLite; full schema created via \`alembic upgrade head\`
-  against a real PostgreSQL 16 service in CI.
-- Safe demo-mode fallback when \`DATABASE_URL\` is unset (in-memory, and
-  \`/health\` reports \`db_enabled: false\` — persistence is never faked).
-- Authentication: bcrypt password hashing + JWT, \`/auth/register\`,
-  \`/auth/login\`, \`/auth/me\`, RBAC (\`require_roles\`), 6 canonical roles,
-  audit logging. Register->login->protected-route flow proven end-to-end in CI.
-- Financial & funding engines preserved and still under test.
-- \`.env.example\` carries names only; no secrets committed.
-
-**Frontend & feasibility wizard — VERIFIED locally (full-stack smoke test):**
-- Next.js bilingual (AR/EN + RTL) frontend: home, login, register, dashboard,
-  Idea Bank / Franchise / Auctions / Funding / Multazim / Help pages (the
-  latter honestly labeled "in progress" — no fabricated data).
-- Feasibility study wizard (\`/feasibility/new\`): create study -> save cash-flow
-  step -> compute -> real ROI/NPV/IRR/payback + sensitivity + funding match,
-  gated behind sign-in. PDF/Word report download wired to the real
-  \`reportlab\`/\`python-docx\` generators. Verified end-to-end against a
-  migrated SQLite DB: register -> login -> create -> compute -> valid PDF.
-- Dashboard fetches real \`GET /projects\` + \`GET /feasibility\` when signed in
-  and clearly labels itself "Live data" vs. "Demo data" — never both at once.
-
-**PLANNED / not yet in this branch (tracked in PR #1):**
-- Admin frontend pages (backend admin API exists; no UI yet).
-- Database-backed Idea Bank / Franchise / Auctions seed data (endpoints are
-  real; tables are empty until seeded).
-- Business Qualification & Readiness UI (backend API exists; not wired).
-- Multazim module integration (source repo confirmed: \`majaber1/multazim-ai-mvp\`).
-- Production PostgreSQL provisioning + Vercel production verification.
+- **Verified backend:** 188 automated tests pass across authentication, RBAC,
+  persistence, financial engines, qualification, projects and API hardening.
+- **Verified frontend:** Next.js 16 production build and TypeScript validation pass;
+  production dependencies report zero known vulnerabilities.
+- **Working product flows:** registration/login, feasibility wizard, financial
+  results, funding matching, PDF/DOCX reports, opportunities, lead capture,
+  business qualification and protected admin statistics.
+- **Production packaging:** PostgreSQL 16, FastAPI and Next.js services are defined
+  in Docker Compose. Alembic migrations run only when explicitly enabled.
+- **Honest boundary:** sample catalog rows remain labelled as demo/unverified.
+  Live payments, verified government catalog synchronization and full Multazim GRC
+  are integrations for later releases, not silently simulated in V1.
 
 ## Local development
 
@@ -64,6 +36,19 @@ PYTHONPATH=backend uvicorn app.main:app --reload --app-dir backend
 
 Run tests: \`pytest tests/ -v\`
 Apply migrations (needs \`DATABASE_URL\`): \`alembic -c database/alembic.ini upgrade head\`
+
+Full stack: copy \`.env.example\` to \`.env\`, replace both secrets, then run
+\`docker compose up --build\`. Open \`http://localhost:3000\`.
+
+Hosted web deployments must set \`BACKEND_API_URL\` to their FastAPI origin.
+The web application never falls back to a third-party production API.
+
+See [docs/V2_READINESS.md](docs/V2_READINESS.md) for the verified module audit,
+remaining production blockers, and staged V2 plan. The repository remains
+version 1.0.0 until those acceptance gates are complete.
+
+Operations, backups, readiness checks, SMTP configuration, and account-token
+behavior are documented in [docs/PRODUCTION_RUNBOOK.md](docs/PRODUCTION_RUNBOOK.md).
 
 ---
 

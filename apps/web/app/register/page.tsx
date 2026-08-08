@@ -40,7 +40,7 @@ const copy = {
     loading: "جارٍ الإنشاء...",
     haveAccount: "لديك حساب بالفعل؟",
     login: "تسجيل الدخول",
-    success: "تم إنشاء الحساب بنجاح لـ",
+    success: "تم إنشاء الحساب. تحقق من بريدك الإلكتروني لتفعيل حساب",
     demoNote:
       "بيئة تجريبية: يتطلب الإنشاء تشغيل الواجهة البرمجية وضبط قاعدة البيانات.",
   },
@@ -54,7 +54,7 @@ const copy = {
     loading: "Creating...",
     haveAccount: "Already have an account?",
     login: "Sign in",
-    success: "Account created for",
+    success: "Account created. Check your email to verify",
     demoNote:
       "Demo environment: registration requires the API running with a database configured.",
   },

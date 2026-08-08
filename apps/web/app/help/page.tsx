@@ -13,8 +13,8 @@ const FAQ: { q: { ar: string; en: string }; a: { ar: string; en: string } }[] = 
   {
     q: { ar: "كيف أبدأ دراسة جدوى؟", en: "How do I start a feasibility study?" },
     a: {
-      ar: "أنشئ حسابًا، ثم استخدم معالج دراسة الجدوى الذي ينتهي بتقرير قابل للتصدير. (المعالج قيد التطوير حاليًا.)",
-      en: "Create an account, then use the feasibility wizard that ends with an exportable report. (The wizard is currently in development.)",
+      ar: "أنشئ حسابًا، ثم استخدم معالج دراسة الجدوى لإدخال الافتراضات المالية والحصول على النتائج وتصدير التقرير.",
+      en: "Create an account, then use the feasibility wizard to enter financial assumptions, calculate results, and export the report.",
     },
   },
   {

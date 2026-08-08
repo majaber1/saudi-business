@@ -14,6 +14,7 @@ const copy = {
     loading: "جارٍ الدخول...",
     noAccount: "ليس لديك حساب؟",
     register: "إنشاء حساب",
+    forgot: "نسيت كلمة المرور؟",
     success: "تم تسجيل الدخول بنجاح، مرحبًا",
     demoNote:
       "بيئة تجريبية: يتطلب الدخول تشغيل الواجهة البرمجية وضبط NEXT_PUBLIC_API_BASE_URL.",
@@ -26,6 +27,7 @@ const copy = {
     loading: "Signing in...",
     noAccount: "No account yet?",
     register: "Create an account",
+    forgot: "Forgot password?",
     success: "Signed in successfully, welcome",
     demoNote:
       "Demo environment: sign-in requires the API running and NEXT_PUBLIC_API_BASE_URL set.",
@@ -100,6 +102,9 @@ export default function LoginPage() {
             >
               {busy ? c.loading : c.submit}
             </button>
+            <Link href="/forgot-password" className="block text-center text-sm font-medium text-brand-700 hover:underline">
+              {c.forgot}
+            </Link>
           </form>
         )}
 
