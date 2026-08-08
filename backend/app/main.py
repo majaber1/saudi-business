@@ -21,6 +21,17 @@ app = FastAPI(
     title=settings.app_name,
     description="Saudi Business | سعودي بزنس — AI Operating System for Investment Decisions",
     version=settings.app_version,
+    # The Next.js frontend proxies through a rewrite whose catch-all route
+    # param strips trailing slashes when reconstructing the destination URL
+    # (a Next.js routing characteristic, not a bug in either app). With the
+    # default redirect_slashes=True, that mismatch produced a 307 pointing
+    # directly at this backend's raw origin -- a cross-origin redirect that
+    # both fetch() and curl correctly strip the Authorization header from,
+    # silently 401-ing every authenticated collection endpoint through the
+    # proxy. Disabling it means /x and /x/ are distinct routes with no
+    # redirect; call sites (apps/web/lib/api.ts) already use the canonical
+    # trailing-slash form that matches every router's @router.get("/").
+    redirect_slashes=False,
 )
 
 # CORS origins/credentials are resolved so a wildcard is never paired with

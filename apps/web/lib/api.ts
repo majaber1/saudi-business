@@ -1,5 +1,11 @@
+// Defaults to a same-origin path proxied to the backend by next.config.mjs's
+// rewrites() -- this avoids needing any CORS configuration on the backend
+// (see backend/app/core/config.py: production denies cross-origin requests
+// by default unless CORS_ORIGINS is explicitly set, which this deployment
+// does not require). Override with an absolute URL via
+// NEXT_PUBLIC_API_BASE_URL if you point this frontend at a different backend.
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "/api/backend";
 
 export type ApiError = { detail?: string };
 
