@@ -157,7 +157,7 @@ def test_missing_bearer_is_401():
 
 
 def test_token_without_subject_rejected():
-    from jose import jwt
+    import jwt
     token = jwt.encode({"role": "entrepreneur"}, security.JWT_SECRET, algorithm=security.JWT_ALGORITHM)
     r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401, r.text
@@ -167,7 +167,7 @@ def test_token_without_subject_rejected():
 def test_malformed_subject_returns_401_not_500(sub):
     """A signed token with a bad subject must yield 401, never a 500 from an
     unguarded int() conversion."""
-    from jose import jwt
+    import jwt
     from datetime import datetime, timedelta, timezone
 
     claims = {
@@ -182,7 +182,7 @@ def test_malformed_subject_returns_401_not_500(sub):
 
 def test_expired_token_rejected():
     """A genuinely expired (not malformed) token must be rejected."""
-    from jose import jwt
+    import jwt
     from datetime import datetime, timedelta, timezone
 
     claims = {

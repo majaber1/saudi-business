@@ -1,4 +1,7 @@
-from fastapi import FastAPI
+import os
+
+from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
@@ -16,6 +19,8 @@ from app.api.qualification import router as qualification_router
 from app.api.admin import router as admin_router
 from app.api.opportunities import router as opportunities_router
 from app.api.leads import router as leads_router
+from app.api.auth import UserOut, require_roles
+from app.services.monitoring import metrics_snapshot, observe_request
 
 app = FastAPI(
     title=settings.app_name,
@@ -33,6 +38,11 @@ app = FastAPI(
     # trailing-slash form that matches every router's @router.get("/").
     redirect_slashes=False,
 )
+
+
+@app.middleware("http")
+async def request_observability(request, call_next):
+    return await observe_request(request, call_next)
 
 # CORS origins/credentials are resolved so a wildcard is never paired with
 # credentials and production never serves "*" (see app.core.config.resolve_cors).
@@ -58,6 +68,18 @@ app.include_router(qualification_router)
 app.include_router(admin_router)
 app.include_router(opportunities_router)
 app.include_router(leads_router)
+
+# Runs once per cold start (module import), not inside an ASGI lifespan
+# startup event -- Vercel's Python runtime wrapper does not reliably invoke
+# ASGI lifespan, but module-level code is guaranteed to run once when the
+# module is first imported into a fresh Lambda container. Genuinely inert
+# unless the account owner sets AUTO_MIGRATE_DB=true in Vercel -- see
+# app.db.ensure_migrations_applied for why this exists, the off-by-default
+# opt-in, and its safety guarantees (advisory-lock-guarded, idempotent,
+# never raises).
+from app.db import ensure_migrations_applied  # noqa: E402
+
+ensure_migrations_applied()
 
 
 def _db_ping() -> bool:
@@ -133,3 +155,33 @@ def health():
         "db_connected": connected,
         "persistence": _persistence_label(backend, connected),
     }
+
+
+def _production_readiness(connected: bool) -> tuple[bool, list[str]]:
+    production = settings.environment.strip().lower() in {"production", "prod"}
+    failures = []
+    if production and not connected:
+        failures.append("database_unavailable")
+    secret = os.getenv("JWT_SECRET", "")
+    if production and (len(secret) < 32 or secret in {"replace-this-before-production", "dev-only-insecure-secret-change-me"}):
+        failures.append("jwt_secret_insecure")
+    verification = os.getenv("REQUIRE_EMAIL_VERIFICATION", "true" if production else "false").lower() in {"1", "true", "yes"}
+    if production and verification and not (os.getenv("SMTP_HOST") and os.getenv("SMTP_FROM")):
+        failures.append("email_delivery_unconfigured")
+    return not failures, failures
+
+
+@app.get("/health/ready")
+def readiness():
+    """Deployment readiness gate with safe machine-readable failure codes."""
+    connected = _db_ping()
+    ready, failures = _production_readiness(connected)
+    payload = {"status": "ready" if ready else "not_ready", "version": settings.app_version,
+               "db_connected": connected, "checks": failures}
+    return JSONResponse(payload, status_code=200 if ready else 503)
+
+
+@app.get("/admin/metrics")
+def application_metrics(user: UserOut = Depends(require_roles("admin"))):
+    """Small protected operational snapshot; contains no URLs or credentials."""
+    return metrics_snapshot()

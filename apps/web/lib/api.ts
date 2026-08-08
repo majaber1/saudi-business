@@ -38,6 +38,7 @@ export type UserProfile = {
   full_name?: string | null;
   role_key: string;
   locale: string;
+  email_verified: boolean;
 };
 
 const TOKEN_KEY = "sb_token";
@@ -252,6 +253,132 @@ export type LeadPayload = {
 
 export function submitLead(payload: LeadPayload) {
   return request<{ received: boolean; persisted: boolean }>("/leads/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type AccountAction = {
+  accepted: boolean;
+  delivery_configured: boolean;
+  dev_token?: string | null;
+};
+
+export function requestEmailVerification(email: string) {
+  return request<AccountAction>("/auth/verification/request", {
+    method: "POST", body: JSON.stringify({ email }),
+  });
+}
+
+export function confirmEmailVerification(token: string) {
+  return request<AccountAction>("/auth/verification/confirm", {
+    method: "POST", body: JSON.stringify({ token }),
+  });
+}
+
+export function requestPasswordReset(email: string) {
+  return request<AccountAction>("/auth/password/forgot", {
+    method: "POST", body: JSON.stringify({ email }),
+  });
+}
+
+export function resetPassword(token: string, password: string) {
+  return request<AccountAction>("/auth/password/reset", {
+    method: "POST", body: JSON.stringify({ token, password }),
+  });
+}
+
+// --- Business qualification & readiness -----------------------------------
+
+export type QualificationProfile = {
+  id: number;
+  owner_id: number | null;
+  company_name_en?: string | null;
+  company_name_ar?: string | null;
+  cr_number?: string | null;
+  sector?: string | null;
+  company_size?: string | null;
+  saudization_rate?: number | null;
+  overall_score: number;
+  category_scores: Record<string, number>;
+  recommendations: Array<Record<string, unknown>>;
+};
+
+export type QualificationRequirement = {
+  id: number;
+  profile_id: number;
+  category: string;
+  title_en: string;
+  title_ar: string;
+  status: string;
+  is_mandatory: boolean;
+  authority?: string | null;
+};
+
+export function listQualificationProfiles(token: string) {
+  return authedRequest<QualificationProfile[]>("/api/qualification/", token);
+}
+
+export function createQualificationProfile(token: string, payload: Record<string, unknown>) {
+  return authedRequest<QualificationProfile>("/api/qualification/", token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listQualificationRequirements(token: string, profileId: number) {
+  return authedRequest<QualificationRequirement[]>(`/api/qualification/${profileId}/requirements`, token);
+}
+
+export function addQualificationRequirement(token: string, profileId: number, payload: Record<string, unknown>) {
+  return authedRequest<QualificationRequirement>(`/api/qualification/${profileId}/requirements`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateQualificationRequirement(token: string, profileId: number, requirementId: number, status: string) {
+  return authedRequest<QualificationRequirement>(`/api/qualification/${profileId}/requirements/${requirementId}`, token, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export type AdminStats = {
+  db_enabled: boolean;
+  db_backend: string;
+  users: number;
+  projects: number;
+  studies: number;
+  ideas: number;
+  franchises: number;
+  auctions: number;
+  reports: number;
+  recent_activity: Array<{ id: number; action: string; entity?: string | null; entity_id?: number | null }>;
+};
+
+export function getAdminStats(token: string) {
+  return authedRequest<AdminStats>("/admin/stats", token);
+}
+
+export type AdminLead = LeadPayload & { id: number; status: string };
+
+export function listAdminLeads(token: string) {
+  return authedRequest<AdminLead[]>("/leads/", token);
+}
+
+export function listAdminUsers(token: string) {
+  return authedRequest<UserProfile[]>("/admin/users", token);
+}
+
+export function createAdminUser(token: string, payload: {
+  email: string;
+  password: string;
+  full_name?: string;
+  role_key: string;
+  locale: "ar" | "en";
+}) {
+  return authedRequest<UserProfile>("/admin/users", token, {
     method: "POST",
     body: JSON.stringify(payload),
   });

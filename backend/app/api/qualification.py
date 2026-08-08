@@ -20,7 +20,7 @@ The MultazimRequirement catalog model is preserved (still used by the admin
 dashboard) but is no longer exposed under a "multazim" business API.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -201,7 +201,9 @@ def _multazim_out(m):
 
 def _expire_overdue(reqs) -> None:
     """Mark 'valid' requirements whose expiry has passed as 'expired' (in place)."""
-    now = datetime.utcnow()
+    # Existing migrations use timezone-naive UTC columns. Start from an aware
+    # UTC clock, then remove tzinfo only at the persistence comparison boundary.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     for r in reqs:
         if r.status == "valid" and r.expires_at and r.expires_at < now:
             r.status = "expired"

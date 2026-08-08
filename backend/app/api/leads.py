@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
 from app.db import DB_ENABLED, SessionLocal
@@ -45,7 +45,9 @@ class LeadAck(BaseModel):
 
 
 @router.post("/", response_model=LeadAck, status_code=201)
-def create_lead(data: LeadIn):
+def create_lead(data: LeadIn, request: Request):
+    from app.services.rate_limit import client_key, enforce
+    enforce(client_key(request, "lead", str(data.email)), 5, 3600)
     if not DB_ENABLED:
         return LeadAck(received=True, persisted=False)
     from app import models

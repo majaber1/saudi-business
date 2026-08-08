@@ -79,8 +79,8 @@ export const dictionaries: Record<Locale, Dict> = {
       cta: "استعرض الفرص الاستثمارية",
     },
     status: {
-      title: "قيد التطوير",
-      body: "الواجهة الأمامية قيد البناء تدريجيًا فوق واجهة برمجية تم التحقق منها (مصادقة، وثبات بيانات، محرّكات مالية).",
+      title: "إصدار V1 جاهز",
+      body: "منصة مترابطة تشمل المصادقة، وثبات البيانات، المحركات المالية، التأهيل ولوحة الإدارة.",
     },
     footer: {
       rights: "جميع الحقوق محفوظة",
@@ -134,8 +134,8 @@ export const dictionaries: Record<Locale, Dict> = {
       cta: "Browse investment opportunities",
     },
     status: {
-      title: "In progress",
-      body: "The frontend is being built incrementally on top of a CI-verified API (auth, persistence, financial engines).",
+      title: "V1 ready",
+      body: "An integrated platform covering authentication, persistence, financial engines, qualification, and administration.",
     },
     footer: {
       rights: "All rights reserved",

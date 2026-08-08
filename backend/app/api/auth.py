@@ -15,10 +15,11 @@ process -- never through this public router.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Iterable, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 
@@ -174,6 +175,25 @@ class UserOut(BaseModel):
     full_name: Optional[str]
     role_key: str
     locale: str
+    email_verified: bool = False
+
+
+class EmailActionIn(BaseModel):
+    email: EmailStr
+
+
+class TokenIn(BaseModel):
+    token: str = Field(..., min_length=20, max_length=200)
+
+
+class PasswordResetIn(TokenIn):
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class ActionAck(BaseModel):
+    accepted: bool = True
+    delivery_configured: bool = False
+    dev_token: Optional[str] = None
 
 
 def _require_db():
@@ -203,9 +223,40 @@ def _audit(db, actor_id: Optional[int], action: str, entity: str, entity_id: Opt
     db.commit()
 
 
+def _verification_required() -> bool:
+    configured = os.getenv("REQUIRE_EMAIL_VERIFICATION")
+    if configured is not None:
+        return configured.strip().lower() in {"1", "true", "yes", "on"}
+    return os.getenv("ENVIRONMENT", "development").strip().lower() in {"production", "prod"}
+
+
+def _expose_dev_token(raw: Optional[str]) -> Optional[str]:
+    production = os.getenv("ENVIRONMENT", "development").strip().lower() in {"production", "prod"}
+    enabled = os.getenv("EXPOSE_ACCOUNT_TOKENS", "false").strip().lower() in {"1", "true", "yes"}
+    return raw if raw and enabled and not production else None
+
+
+def _send_token(db, models, user, purpose: str) -> tuple[bool, str]:
+    from app.services.account_security import issue_token, public_account_url, send_account_email
+
+    minutes = 24 * 60 if purpose == "verify_email" else 30
+    path = "/verify-email" if purpose == "verify_email" else "/reset-password"
+    raw = issue_token(db, models, user.id, purpose, minutes)
+    delivered = False
+    try:
+        delivered = send_account_email(user.email, purpose, public_account_url(path, raw), user.locale)
+    except Exception:
+        # Do not leak SMTP failures or turn account creation into a 500. The
+        # monitoring log records only delivery state, never the token.
+        delivered = False
+    return delivered, raw
+
+
 @router.post("/register", response_model=UserOut, status_code=201)
-def register(data: RegisterIn):
+def register(data: RegisterIn, request: Request):
     from app import models
+    from app.services.rate_limit import client_key, enforce
+    enforce(client_key(request, "register", str(data.email)), 5, 3600)
 
     # Public registration may only assign a public role. Reject privileged roles
     # explicitly (403) and unknown roles (422) BEFORE opening a DB session, so a
@@ -236,20 +287,24 @@ def register(data: RegisterIn):
             full_name=data.full_name,
             role_key=data.role_key,  # validated public role only
             locale=data.locale,
+            email_verified_at=None,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
+        _send_token(db, models, user, "verify_email")
         _audit(db, user.id, "user.register", "user", user.id)
         return UserOut(id=user.id, email=user.email, full_name=user.full_name,
-                       role_key=user.role_key, locale=user.locale)
+                       role_key=user.role_key, locale=user.locale, email_verified=False)
     finally:
         db.close()
 
 
 @router.post("/login", response_model=TokenOut)
-def login(data: LoginIn):
+def login(data: LoginIn, request: Request):
     from app import models
+    from app.services.rate_limit import client_key, enforce
+    enforce(client_key(request, "login", str(data.email)), 10, 300)
 
     db = _require_db()
     try:
@@ -258,6 +313,8 @@ def login(data: LoginIn):
             raise HTTPException(status_code=401, detail="Invalid email or password")
         if not user.is_active:
             raise HTTPException(status_code=403, detail="Account disabled")
+        if _verification_required() and user.email_verified_at is None:
+            raise HTTPException(status_code=403, detail="Email verification required")
         token = security.create_access_token(subject=user.id, extra={"role": user.role_key})
         _audit(db, user.id, "user.login", "user", user.id)
         return TokenOut(access_token=token)
@@ -285,7 +342,8 @@ def get_current_user(creds: Optional[HTTPAuthorizationCredentials] = Depends(_be
         if user is None or not user.is_active:
             raise HTTPException(status_code=401, detail="User not found")
         return UserOut(id=user.id, email=user.email, full_name=user.full_name,
-                       role_key=user.role_key, locale=user.locale)
+                       role_key=user.role_key, locale=user.locale,
+                       email_verified=user.email_verified_at is not None)
     finally:
         db.close()
 
@@ -301,3 +359,81 @@ def require_roles(*allowed: str):
 @router.get("/me", response_model=UserOut)
 def me(user: UserOut = Depends(get_current_user)):
     return user
+
+
+@router.post("/verification/request", response_model=ActionAck, status_code=202)
+def request_verification(data: EmailActionIn, request: Request):
+    """Resend verification without revealing whether an account exists."""
+    from app.services.rate_limit import client_key, enforce
+    enforce(client_key(request, "verify_request", str(data.email)), 5, 900)
+    db = _require_db()
+    try:
+        from app import models
+        user = db.query(models.User).filter_by(email=_normalize_email(str(data.email))).first()
+        delivered, raw = (False, None)
+        if user and user.is_active and user.email_verified_at is None:
+            delivered, raw = _send_token(db, models, user, "verify_email")
+        return ActionAck(delivery_configured=delivered, dev_token=_expose_dev_token(raw))
+    finally:
+        db.close()
+
+
+@router.post("/verification/confirm", response_model=ActionAck)
+def confirm_verification(data: TokenIn):
+    from app import models
+    from app.services.account_security import consume_token, utc_now_naive
+    db = _require_db()
+    try:
+        row = consume_token(db, models, data.token, "verify_email")
+        if row is None:
+            raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+        user = db.get(models.User, row.user_id)
+        if user is None or not user.is_active:
+            raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+        user.email_verified_at = utc_now_naive()
+        db.commit()
+        _audit(db, user.id, "user.email.verify", "user", user.id)
+        return ActionAck()
+    finally:
+        db.close()
+
+
+@router.post("/password/forgot", response_model=ActionAck, status_code=202)
+def forgot_password(data: EmailActionIn, request: Request):
+    """Issue a short-lived reset token; response prevents account enumeration."""
+    from app.services.rate_limit import client_key, enforce
+    enforce(client_key(request, "password_forgot", str(data.email)), 5, 900)
+    db = _require_db()
+    try:
+        from app import models
+        user = db.query(models.User).filter_by(email=_normalize_email(str(data.email))).first()
+        delivered, raw = (False, None)
+        if user and user.is_active:
+            delivered, raw = _send_token(db, models, user, "reset_password")
+        return ActionAck(delivery_configured=delivered, dev_token=_expose_dev_token(raw))
+    finally:
+        db.close()
+
+
+@router.post("/password/reset", response_model=ActionAck)
+def reset_password(data: PasswordResetIn):
+    try:
+        validate_password_policy(data.password)
+    except PasswordPolicyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    from app import models
+    from app.services.account_security import consume_token
+    db = _require_db()
+    try:
+        row = consume_token(db, models, data.token, "reset_password")
+        if row is None:
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        user = db.get(models.User, row.user_id)
+        if user is None or not user.is_active:
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        user.hashed_password = security.hash_password(data.password)
+        db.commit()
+        _audit(db, user.id, "user.password.reset", "user", user.id)
+        return ActionAck()
+    finally:
+        db.close()

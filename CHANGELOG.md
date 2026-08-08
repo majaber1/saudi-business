@@ -6,7 +6,32 @@ listed under "In progress" so the changelog never overstates completion.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — feat/saudi-business-mvp (targeting V1.2)
+## [Unreleased] — V2 foundation
+
+- Expanded protected administration with account listing, secure user
+  provisioning, sales-lead inbox, statistics, and audit activity.
+- Removed the stale hard-coded external backend from the Next.js proxy.
+- Required Compose secrets, added API/web health checks, and made web wait for API health.
+- Replaced application-owned deprecated UTC calls without changing the database schema.
+- Added frontend lint and Docker Compose validation to CI.
+- Added expiring single-use email-verification and password-reset tokens,
+  optional SMTP delivery, bilingual account-recovery pages, and production
+  verification enforcement.
+- Added request IDs, structured JSON access events, protected runtime metrics,
+  production readiness checks, and per-instance abuse limits.
+- Added migration `0006_account_security`, minimal Docker build contexts, and
+  migration files inside the API image.
+
+## [1.0.0] — Saudi-Buisness V1
+
+- Upgraded to Next.js 16.3 and React 19; production dependency audit is clean.
+- Added live Business Qualification & Readiness workspace and starter checklist.
+- Added protected bilingual administration dashboard and audit activity view.
+- Added complete Docker Compose packaging for web, API and PostgreSQL 16.
+- Normalized product/backend/frontend version to 1.0.0 and refreshed documentation.
+- Acceptance: 188 backend tests, TypeScript check and production frontend build pass.
+
+## [Historical development] — feat/saudi-business-mvp
 
 ### Added (verified in CI)
 - CI pipeline (GitHub Actions) with four jobs: backend tests, Alembic migrations on a

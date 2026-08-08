@@ -66,11 +66,25 @@ class User(TimestampMixin, Base):
     full_name: Mapped[Optional[str]] = mapped_column(String(200))
     locale: Mapped[str] = mapped_column(String(5), default="ar")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    email_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     role_key: Mapped[str] = mapped_column(String(50), ForeignKey("roles.key"), default="entrepreneur")
     organization_id: Mapped[Optional[int]] = mapped_column(ForeignKey("organizations.id"))
 
     organization: Mapped[Optional["Organization"]] = relationship(back_populates="users")
     projects: Mapped[list["Project"]] = relationship(back_populates="owner")
+
+
+class AccountToken(TimestampMixin, Base):
+    """Single-use, hashed email-verification or password-reset token."""
+
+    __tablename__ = "account_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    purpose: Mapped[str] = mapped_column(String(30), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class Project(TimestampMixin, Base):

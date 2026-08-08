@@ -13,6 +13,7 @@ export function Navbar() {
     { href: "/dashboard", label: locale === "ar" ? "لوحة التحكم" : "Dashboard" },
     { href: "/opportunities", label: t.nav.opportunities },
     { href: "/funding", label: t.nav.funding },
+    { href: "/qualification", label: locale === "ar" ? "التأهيل" : "Qualification" },
     { href: "/ideas", label: t.nav.ideas },
     { href: "/pricing", label: t.nav.pricing },
     { href: "/help", label: t.nav.help },

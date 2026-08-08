@@ -1,11 +1,14 @@
 // Backend origin for the same-origin proxy below. Overridable via
 // BACKEND_API_URL (server-only, not exposed to the client) for other
-// deployments; defaults to the live backend so this works out of the box.
-const BACKEND_API_URL = (process.env.BACKEND_API_URL || "https://feasibilityos-ai-20262031.vercel.app").replace(/\/$/, "");
+// deployments. The safe fallback is local development only: production
+// operators must set BACKEND_API_URL explicitly instead of silently sending
+// credentials and business data to a stale third-party deployment.
+const BACKEND_API_URL = (process.env.BACKEND_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: "standalone",
   // Without this, Next.js auto-redirects /api/backend/opportunities/ ->
   // /api/backend/opportunities (308) BEFORE the rewrite runs. FastAPI then
   // 307-redirects back to the slash form -- but that second redirect's

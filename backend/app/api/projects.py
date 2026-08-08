@@ -22,7 +22,7 @@ Endpoints:
   DELETE /{id}                  SOFT delete == archive (dependent studies/
                                 reports are never orphaned)
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -32,6 +32,15 @@ from app.api.auth import UserOut, get_current_user
 from app.db import DB_ENABLED, SessionLocal
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+def _utc_now_naive() -> datetime:
+    """UTC now for the existing timezone-naive database columns.
+
+    Derive the value from an aware UTC clock while preserving compatibility
+    with the current PostgreSQL/SQLite migration schema.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 # In-memory fallback used only when DB_ENABLED is False. Keyed by project id;
 # each record carries its owner_id so demo mode enforces the same ownership rules.
@@ -140,7 +149,7 @@ def create_project(data: ProjectCreate, user: UserOut = Depends(get_current_user
     project = {
         "id": _NEXT_ID,
         "owner_id": user.id,
-        "created_at": datetime.utcnow(),
+        "created_at": _utc_now_naive(),
         "workflow_status": "created",
         "is_archived": False,
         **data.model_dump(),
@@ -250,7 +259,7 @@ def _set_archived_db(project_id: int, user: UserOut, archived: bool) -> "Project
         if not _can_write(user, r.owner_id):
             raise HTTPException(status_code=403, detail="Not authorized for this project")
         r.is_archived = archived
-        r.archived_at = datetime.utcnow() if archived else None
+        r.archived_at = _utc_now_naive() if archived else None
         _audit(db, user.id, "project.archive" if archived else "project.unarchive", r.id)
         db.commit()
         db.refresh(r)
@@ -265,7 +274,7 @@ def archive_project(project_id: int, user: UserOut = Depends(get_current_user)):
         return _set_archived_db(project_id, user, True)
     project = _get_writable_demo(project_id, user)
     project["is_archived"] = True
-    project["archived_at"] = datetime.utcnow()
+    project["archived_at"] = _utc_now_naive()
     return _demo_out(project)
 
 
@@ -288,5 +297,5 @@ def delete_project(project_id: int, user: UserOut = Depends(get_current_user)):
         return _set_archived_db(project_id, user, True)
     project = _get_writable_demo(project_id, user)
     project["is_archived"] = True
-    project["archived_at"] = datetime.utcnow()
+    project["archived_at"] = _utc_now_naive()
     return _demo_out(project)
