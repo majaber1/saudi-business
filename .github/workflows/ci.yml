@@ -177,9 +177,12 @@ jobs:
           assert {"is_archived", "archived_at"} <= cols, f"archive columns missing at head: {sorted(cols)}"
           print("OK - projects has is_archived/archived_at at head")
           PY
-      - name: "Cycle: downgrade -1 removes only the project archive columns"
+      # Explicit revision target (not a relative "-1" step): a relative step
+      # silently breaks every time a new migration is appended after 0003,
+      # since "head - 1" then undoes the newest migration instead of 0003.
+      - name: "Cycle: downgrade to 0002 removes archive columns + everything after"
         run: |
-          alembic -c database/alembic.ini downgrade -1
+          alembic -c database/alembic.ini downgrade 0002_business_qualification
           python - <<'PY'
           import os, sqlalchemy as sa
           url = os.environ["DATABASE_URL"].replace("postgresql://", "postgresql+psycopg2://", 1)
@@ -188,8 +191,10 @@ jobs:
           assert not ({"is_archived", "archived_at"} & cols), f"archive cols should be gone: {sorted(cols)}"
           tables = set(insp.get_table_names())
           qual = {"qualification_profiles", "qualification_requirements", "multazim_assessment_requests"}
-          assert not (qual - tables), "qualification tables must still exist after dropping 0003 only"
-          print("OK - 0003 downgrade removed archive columns, qualification intact")
+          assert not (qual - tables), "qualification tables must still exist at 0002"
+          assert "investment_opportunities" not in tables, "0004 table should be gone"
+          assert "sales_leads" not in tables, "0005 table should be gone"
+          print("OK - downgrade to 0002 removed archive cols + 0004/0005 tables, qualification intact")
           PY
       - name: "Cycle: downgrade -1 again removes qualification tables only"
         run: |
