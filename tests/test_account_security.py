@@ -82,3 +82,52 @@ def test_production_never_exposes_raw_account_token(monkeypatch):
     response = client.post("/auth/password/forgot", json={"email": email})
     assert response.status_code == 202
     assert response.json()["dev_token"] is None
+
+
+def test_signed_in_user_can_update_safe_profile_fields_only(monkeypatch):
+    monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "false")
+    email = _email("profile")
+    password = "StrongPass1"
+    assert client.post("/auth/register", json={"email": email, "password": password}).status_code == 201
+    token = client.post("/auth/login", json={"email": email, "password": password}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    updated = client.patch("/auth/me", headers=headers, json={"full_name": "  Nora Founder  ", "locale": "en"})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["full_name"] == "Nora Founder"
+    assert updated.json()["locale"] == "en"
+
+    # Account privilege and identity fields are never mass-assignable.
+    forbidden = client.patch("/auth/me", headers=headers, json={"role_key": "admin", "email": "admin@example.com"})
+    assert forbidden.status_code == 422
+    unchanged = client.get("/auth/me", headers=headers).json()
+    assert unchanged["role_key"] == "entrepreneur"
+    assert unchanged["email"] == email
+
+
+def test_authenticated_password_change_reauthenticates_and_invalidates_reset_links(monkeypatch):
+    monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "false")
+    monkeypatch.setenv("EXPOSE_ACCOUNT_TOKENS", "true")
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    email = _email("change")
+    old_password = "StrongPass1"
+    new_password = "BetterPass2"
+    assert client.post("/auth/register", json={"email": email, "password": old_password}).status_code == 201
+    token = client.post("/auth/login", json={"email": email, "password": old_password}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    reset_token = client.post("/auth/password/forgot", json={"email": email}).json()["dev_token"]
+    assert reset_token
+
+    wrong = client.post(
+        "/auth/password/change", headers=headers,
+        json={"current_password": "WrongPass9", "new_password": new_password},
+    )
+    assert wrong.status_code == 400
+    changed = client.post(
+        "/auth/password/change", headers=headers,
+        json={"current_password": old_password, "new_password": new_password},
+    )
+    assert changed.status_code == 200, changed.text
+    assert client.post("/auth/login", json={"email": email, "password": old_password}).status_code == 401
+    assert client.post("/auth/login", json={"email": email, "password": new_password}).status_code == 200
+    assert client.post("/auth/password/reset", json={"token": reset_token, "password": "ThirdPass3"}).status_code == 400

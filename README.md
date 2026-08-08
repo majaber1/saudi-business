@@ -5,7 +5,7 @@
 
 ## V1 status
 
-- **Verified backend:** 188 automated tests pass across authentication, RBAC,
+- **Verified backend baseline:** 191 automated tests pass across authentication, RBAC,
   persistence, financial engines, qualification, projects and API hardening.
 - **Verified frontend:** Next.js 16 production build and TypeScript validation pass;
   production dependencies report zero known vulnerabilities.
@@ -43,9 +43,11 @@ Full stack: copy \`.env.example\` to \`.env\`, replace both secrets, then run
 Hosted web deployments must set \`BACKEND_API_URL\` to their FastAPI origin.
 The web application never falls back to a third-party production API.
 
-See [docs/V2_READINESS.md](docs/V2_READINESS.md) for the verified module audit,
-remaining production blockers, and staged V2 plan. The repository remains
-version 1.0.0 until those acceptance gates are complete.
+See [docs/SAUDI_BUSINESS_FULL_AUDIT.md](docs/SAUDI_BUSINESS_FULL_AUDIT.md) for
+the evidence-based module inventory and priorities, and
+[docs/BASELINE_TEST_RESULTS.md](docs/BASELINE_TEST_RESULTS.md) for the exact
+pre-change test baseline. The repository remains version 1.0.0 while the
+sequential V2 module work is still incomplete.
 
 Operations, backups, readiness checks, SMTP configuration, and account-token
 behavior are documented in [docs/PRODUCTION_RUNBOOK.md](docs/PRODUCTION_RUNBOOK.md).

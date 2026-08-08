@@ -190,6 +190,20 @@ class PasswordResetIn(TokenIn):
     password: str = Field(..., min_length=8, max_length=128)
 
 
+class ProfileUpdateIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    full_name: Optional[str] = Field(default=None, max_length=200)
+    locale: Optional[str] = None
+
+
+class PasswordChangeIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
 class ActionAck(BaseModel):
     accepted: bool = True
     delivery_configured: bool = False
@@ -359,6 +373,75 @@ def require_roles(*allowed: str):
 @router.get("/me", response_model=UserOut)
 def me(user: UserOut = Depends(get_current_user)):
     return user
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(data: ProfileUpdateIn, user: UserOut = Depends(get_current_user)):
+    """Update only safe, user-owned profile fields; role/email remain controlled."""
+    from app import models
+
+    if data.locale is not None and data.locale not in SUPPORTED_LOCALES:
+        raise HTTPException(status_code=422, detail="Unsupported locale")
+    db = _require_db()
+    try:
+        row = db.get(models.User, user.id)
+        if row is None or not row.is_active:
+            raise HTTPException(status_code=401, detail="User not found")
+        if "full_name" in data.model_fields_set:
+            normalized_name = data.full_name.strip() if data.full_name else None
+            row.full_name = normalized_name or None
+        if data.locale is not None:
+            row.locale = data.locale
+        db.commit()
+        db.refresh(row)
+        _audit(db, row.id, "user.profile.update", "user", row.id)
+        return UserOut(
+            id=row.id, email=row.email, full_name=row.full_name,
+            role_key=row.role_key, locale=row.locale,
+            email_verified=row.email_verified_at is not None,
+        )
+    finally:
+        db.close()
+
+
+@router.post("/password/change", response_model=ActionAck)
+def change_password(
+    data: PasswordChangeIn,
+    request: Request,
+    user: UserOut = Depends(get_current_user),
+):
+    """Change a signed-in user's password after re-authenticating them."""
+    from app import models
+    from app.services.rate_limit import client_key, enforce
+
+    enforce(client_key(request, "password_change", str(user.id)), 5, 3600)
+    try:
+        validate_password_policy(data.new_password)
+    except PasswordPolicyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if data.current_password == data.new_password:
+        raise HTTPException(status_code=422, detail="New password must be different")
+
+    db = _require_db()
+    try:
+        row = db.get(models.User, user.id)
+        if row is None or not row.is_active:
+            raise HTTPException(status_code=401, detail="User not found")
+        if not security.verify_password(data.current_password, row.hashed_password):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        row.hashed_password = security.hash_password(data.new_password)
+        # Any outstanding reset links should no longer be usable after an
+        # authenticated password change.
+        db.query(models.AccountToken).filter(
+            models.AccountToken.user_id == row.id,
+            models.AccountToken.purpose == "reset_password",
+            models.AccountToken.consumed_at.is_(None),
+        ).delete(synchronize_session=False)
+        db.commit()
+        _audit(db, row.id, "user.password.change", "user", row.id)
+        return ActionAck()
+    finally:
+        db.close()
 
 
 @router.post("/verification/request", response_model=ActionAck, status_code=202)

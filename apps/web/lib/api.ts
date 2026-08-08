@@ -44,14 +44,20 @@ export type UserProfile = {
 const TOKEN_KEY = "sb_token";
 
 export function saveToken(token: string) {
-  if (typeof window !== "undefined") localStorage.setItem(TOKEN_KEY, token);
+  if (typeof window !== "undefined") {
+    localStorage.setItem(TOKEN_KEY, token);
+    window.dispatchEvent(new Event("sb-auth-change"));
+  }
 }
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
 }
 export function clearToken() {
-  if (typeof window !== "undefined") localStorage.removeItem(TOKEN_KEY);
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(TOKEN_KEY);
+    window.dispatchEvent(new Event("sb-auth-change"));
+  }
 }
 
 export function login(email: string, password: string) {
@@ -95,8 +101,20 @@ export type Project = {
   persisted: boolean;
 };
 
-export function listProjects(token: string) {
-  return authedRequest<Project[]>("/projects/", token);
+export function listProjects(token: string, includeArchived = false) {
+  return authedRequest<Project[]>("/projects/" + (includeArchived ? "?include_archived=true" : ""), token);
+}
+
+export function createProject(token: string, payload: { name: string; industry: string; investment: number; stage?: string }) {
+  return authedRequest<Project>("/projects/", token, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateProject(token: string, projectId: number, payload: Partial<Pick<Project, "name" | "industry" | "investment" | "stage">>) {
+  return authedRequest<Project>(`/projects/${projectId}`, token, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function setProjectArchived(token: string, projectId: number, archived: boolean) {
+  return authedRequest<Project>(`/projects/${projectId}/${archived ? "archive" : "unarchive"}`, token, { method: "POST" });
 }
 
 // --- Feasibility studies ------------------------------------------------------
@@ -255,6 +273,20 @@ export function submitLead(payload: LeadPayload) {
   return request<{ received: boolean; persisted: boolean }>("/leads/", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function updateProfile(token: string, payload: { full_name?: string | null; locale?: "ar" | "en" }) {
+  return authedRequest<UserProfile>("/auth/me", token, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function changePassword(token: string, currentPassword: string, newPassword: string) {
+  return authedRequest<AccountAction>("/auth/password/change", token, {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
   });
 }
 

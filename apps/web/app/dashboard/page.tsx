@@ -25,6 +25,17 @@ const copy: Record<Locale, any> = {
       subtitle: "نظرة شاملة على مشاريعك ودراسات الجدوى وفرص التمويل.",
       welcome: "مرحبًا بعودتك",
     },
+    next: {
+      title: "خطوتك التالية",
+      newTitle: "ابدأ بإضافة مشروعك الأول",
+      newBody: "أدخل المعلومات الأساسية فقط، وبعدها نرشدك لبناء دراسة الجدوى خطوة بخطوة.",
+      studyTitle: "أنشئ دراسة جدوى لمشروعك",
+      studyBody: "حوّل فكرة المشروع إلى أرقام واضحة تساعدك تعرف إن كانت تستحق البدء.",
+      fundingTitle: "راجع خيارات التمويل المناسبة",
+      fundingBody: "لديك دراسة مكتملة. تعرّف على أنواع التمويل التي قد تناسب مرحلتك.",
+      cta: "ابدأ الآن",
+    },
+    loadError: "تعذر تحميل بيانات حسابك الآن. لم نعرض بيانات تجريبية بدلًا منها — حاول تحديث الصفحة بعد قليل.",
     summary: {
       title: "الملخص",
       cards: [
@@ -86,6 +97,17 @@ const copy: Record<Locale, any> = {
       subtitle: "A complete overview of your projects, feasibility studies, and funding opportunities.",
       welcome: "Welcome back",
     },
+    next: {
+      title: "Your next step",
+      newTitle: "Add your first project",
+      newBody: "Start with the essentials. We will guide you through feasibility step by step.",
+      studyTitle: "Build a feasibility study",
+      studyBody: "Turn your project idea into clear numbers before deciding whether to proceed.",
+      fundingTitle: "Review suitable funding options",
+      fundingBody: "You have a completed study. Explore funding types that may fit your stage.",
+      cta: "Start now",
+    },
+    loadError: "We could not load your account data. We did not replace it with demo figures—please refresh shortly.",
     summary: {
       title: "Summary",
       cards: [
@@ -198,11 +220,14 @@ export default function DashboardPage() {
   // never show a mix of real and fabricated numbers.
   const [liveProjects, setLiveProjects] = useState<Project[] | null>(null);
   const [liveStudies, setLiveStudies] = useState<Study[] | null>(null);
+  const [hasToken, setHasToken] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const isLive = liveProjects !== null;
 
   useEffect(() => {
     const token = getToken();
     if (!token) return;
+    setHasToken(true);
     let cancelled = false;
     Promise.all([listProjects(token), listStudies(token)])
       .then(([projects, studies]) => {
@@ -212,12 +237,21 @@ export default function DashboardPage() {
         }
       })
       .catch(() => {
-        /* keep demo view */
+        if (!cancelled) setLoadFailed(true);
       });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const completedStudies = liveStudies?.filter((study) => study.status === "completed").length ?? 0;
+  const nextAction = !liveProjects?.length
+    ? { title: c.next.newTitle, body: c.next.newBody, href: "/feasibility/new" }
+    : !liveStudies?.length
+      ? { title: c.next.studyTitle, body: c.next.studyBody, href: "/feasibility/new" }
+      : completedStudies > 0
+        ? { title: c.next.fundingTitle, body: c.next.fundingBody, href: "/funding" }
+        : { title: c.next.studyTitle, body: c.next.studyBody, href: "/feasibility/new" };
 
   return (
     <div className="bg-slate-50">
@@ -232,15 +266,34 @@ export default function DashboardPage() {
               <p className="mt-3 max-w-xl text-sm text-white/80">{c.header.subtitle}</p>
             </div>
             <span className="rounded-full border border-gold-300/50 bg-white/10 px-3 py-1 text-xs font-medium text-gold-200 backdrop-blur">
-              {isLive ? c.liveBadge : c.demoBadge}
+              {isLive ? c.liveBadge : hasToken ? (locale === "ar" ? "حسابك" : "Your account") : c.demoBadge}
             </span>
           </div>
         </div>
       </section>
 
       <div className="container-page space-y-10 py-10">
+        {loadFailed && (
+          <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            {c.loadError}
+          </p>
+        )}
+
+        {isLive && (
+          <section aria-labelledby="next-action-title" className="rounded-2xl border border-brand-200 bg-brand-50 p-6 sm:flex sm:items-center sm:justify-between sm:gap-8">
+            <div>
+              <p className="text-sm font-semibold text-brand-700">{c.next.title}</p>
+              <h2 id="next-action-title" className="mt-1 text-2xl font-bold text-ink-900">{nextAction.title}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-700">{nextAction.body}</p>
+            </div>
+            <Link href={nextAction.href} className="mt-5 inline-flex shrink-0 rounded-lg bg-brand-600 px-5 py-2.5 font-medium text-white hover:bg-brand-700 sm:mt-0">
+              {c.next.cta}
+            </Link>
+          </section>
+        )}
+
         {/* Summary cards */}
-        <section>
+        {!loadFailed && <section>
           <h2 className="mb-4 text-lg font-semibold text-ink-900">{c.summary.title}</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {(isLive
@@ -275,7 +328,7 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
-        </section>
+        </section>}
 
         {/* Quick actions */}
         <section>
@@ -297,17 +350,22 @@ export default function DashboardPage() {
         </section>
 
         {/* Recent projects + qualification */}
-        <section className={"grid gap-6 " + (isLive ? "" : "lg:grid-cols-3")}>
+        {!loadFailed && <section className={"grid gap-6 " + (isLive ? "" : "lg:grid-cols-3")}>
           {/* Recent projects table */}
           <div className={"rounded-2xl border border-slate-200 bg-white shadow-sm " + (isLive ? "" : "lg:col-span-2")}>
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h2 className="text-lg font-semibold text-ink-900">{c.projects.title}</h2>
-              <Link href="/feasibility/new" className="text-sm font-medium text-brand-600 hover:text-brand-700">
+              <Link href="/projects" className="text-sm font-medium text-brand-600 hover:text-brand-700">
                 {c.projects.viewAll}
               </Link>
             </div>
             {(isLive ? liveProjects! : c.projects.rows).length === 0 ? (
-              <p className="px-5 py-10 text-center text-sm text-ink-700">{c.projects.empty}</p>
+              <div className="px-5 py-10 text-center text-sm text-ink-700">
+                <p>{c.projects.empty}</p>
+                <Link href="/feasibility/new" className="mt-4 inline-flex rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700">
+                  {c.next.cta}
+                </Link>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-start text-sm">
@@ -321,7 +379,7 @@ export default function DashboardPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {isLive
-                      ? liveProjects!.map((p) => (
+                      ? liveProjects!.slice(0, 5).map((p) => (
                           <tr key={p.id} className="hover:bg-slate-50">
                             <td className="px-5 py-3 font-medium text-ink-900">{p.name}</td>
                             <td className="px-5 py-3 text-ink-700">{p.industry}</td>
@@ -386,7 +444,7 @@ export default function DashboardPage() {
               </Link>
             </div>
           )}
-        </section>
+        </section>}
 
         {/* Modules grid */}
         <section>
