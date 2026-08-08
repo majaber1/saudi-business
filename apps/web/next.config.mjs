@@ -8,7 +8,9 @@ const BACKEND_API_URL = (process.env.BACKEND_API_URL || "http://127.0.0.1:8000")
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: "standalone",
+  // Docker consumes Next's standalone server; Vercel applies its own output
+  // adapter and must retain the normal Next.js build layout.
+  output: process.env.VERCEL ? undefined : "standalone",
   // Without this, Next.js auto-redirects /api/backend/opportunities/ ->
   // /api/backend/opportunities (308) BEFORE the rewrite runs. FastAPI then
   // 307-redirects back to the slash form -- but that second redirect's
