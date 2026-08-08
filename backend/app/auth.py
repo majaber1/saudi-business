@@ -11,7 +11,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -45,5 +46,5 @@ def create_access_token(subject: str, extra: Optional[dict] = None,
 def decode_token(token: str) -> Optional[dict]:
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except JWTError:
+    except InvalidTokenError:
         return None
