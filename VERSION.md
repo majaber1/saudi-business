@@ -41,6 +41,21 @@ migrated SQLite DB, frontend dev server pointed at it — not just a build pass:
 - **Dashboard live data**: `GET /projects` + `GET /feasibility` fetched and rendered
   when signed in, with the badge/summary/table switching to a "live" state; falls
   back to the existing labeled demo view when signed out. Never mixes the two.
+- **Investment Opportunities (investor hub)**: `InvestmentOpportunity` model,
+  migration `0004`, `GET/POST /opportunities` filterable by industry/risk/budget,
+  and the `/opportunities` frontend page. Verified: budget filter correctly
+  excludes opportunities above an investor's stated amount; industry filter
+  correct; RBAC on create (403 for non-admin/consultant). 8 tests in
+  `tests/test_opportunities_and_leads.py`.
+- **Pricing + sales lead capture**: `SalesLead` model, migration `0005`,
+  public `POST /leads` + admin-only `GET /leads`, backing the `/pricing` page.
+  Verified end-to-end: submit -> `persisted: true` -> visible via admin list.
+  This is a contact-capture inbox, not a payment integration -- no card data
+  is collected anywhere in this codebase.
+- **Design system**: `next/font` bilingual pairing (Inter + Tajawal) with
+  locale-driven switching, fixed a pre-existing bug (`ink-500`/`ink-600` and
+  several `brand-*` shades were used in components but never defined in
+  `tailwind.config.ts`), redesigned Navbar/Footer/home page.
 
 ## Implemented but requires production configuration
 
@@ -53,11 +68,12 @@ migrated SQLite DB, frontend dev server pointed at it — not just a build pass:
 ## Planned / not yet implemented
 
 - Admin frontend pages (backend admin API exists; no UI yet).
-- DB-backed catalogs + seed data for Idea Bank, Franchises, and Auctions (endpoints
-  are real; tables are empty until seeded).
 - Business Qualification & Readiness UI (backend API exists; not wired to frontend).
 - Full Multazim module data integration (source repo identified: multazim-ai-mvp).
 - Verified Saudi funding data catalog with amounts/eligibility and source/verification dates.
 - AI abstraction layer (kept optional; core workflows must not depend on a paid API).
+- Live payment gateway (Moyasar/PayTabs/Stripe or similar) -- requires the account
+  owner to choose a PSP and provide merchant credentials; out of scope for an
+  autonomous agent to configure.
 
 _Previous milestone: V1.1 (API-only, in-memory persistence, no frontend)._

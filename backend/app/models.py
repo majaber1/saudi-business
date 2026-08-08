@@ -229,6 +229,36 @@ class FranchiseOpportunity(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class InvestmentOpportunity(TimestampMixin, Base):
+    """Investor-facing catalog: projects/ventures open for outside investment.
+
+    Distinct from Project (a founder's own feasibility workspace) -- an
+    opportunity is what an investor browses and filters by ticket size.
+    expected_return_percent is always an indicative, source-labeled estimate,
+    never presented as a guarantee (see Source of truth README section 6).
+    """
+
+    __tablename__ = "investment_opportunities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title_en: Mapped[str] = mapped_column(String(200), nullable=False)
+    title_ar: Mapped[str] = mapped_column(String(200), nullable=False)
+    industry: Mapped[str] = mapped_column(String(100), index=True)
+    summary_en: Mapped[Optional[str]] = mapped_column(Text)
+    summary_ar: Mapped[Optional[str]] = mapped_column(Text)
+    stage: Mapped[str] = mapped_column(String(30), default="mvp")  # idea|mvp|early_revenue|growth
+    risk_level: Mapped[str] = mapped_column(String(20), default="medium")  # low|medium|high
+    investment_min: Mapped[Optional[float]] = mapped_column(Float, index=True)
+    investment_max: Mapped[Optional[float]] = mapped_column(Float)
+    expected_return_percent: Mapped[Optional[float]] = mapped_column(Float)
+    funding_goal: Mapped[Optional[float]] = mapped_column(Float)
+    funding_committed: Mapped[Optional[float]] = mapped_column(Float, default=0)
+    project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("projects.id"))
+    source_url: Mapped[Optional[str]] = mapped_column(String(500))
+    verification_status: Mapped[str] = mapped_column(String(30), default="demo")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class Auction(TimestampMixin, Base):
     __tablename__ = "auctions"
 
@@ -403,3 +433,24 @@ class MultazimAssessmentRequest(TimestampMixin, Base):
     summary_score: Mapped[Optional[float]] = mapped_column(Float)
     summary_en: Mapped[Optional[str]] = mapped_column(Text)
     summary_ar: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class SalesLead(TimestampMixin, Base):
+    """A captured sales/investor-interest lead from the public Pricing page.
+
+    Intentionally NOT a payment or subscription record -- Saudi Business does
+    not process payments. This is a contact-capture inbox for a human sales
+    follow-up (email/call), the actual first step of a B2B sales pipeline.
+    """
+
+    __tablename__ = "sales_leads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    full_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    company: Mapped[Optional[str]] = mapped_column(String(200))
+    phone: Mapped[Optional[str]] = mapped_column(String(50))
+    plan: Mapped[str] = mapped_column(String(50), default="starter")  # starter|professional|enterprise
+    intent: Mapped[str] = mapped_column(String(50), default="subscribe")  # subscribe|enterprise|investor|consultant
+    message: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(30), default="new")  # new|contacted|closed

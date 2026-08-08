@@ -8,11 +8,38 @@ export const dir = (locale: Locale): "rtl" | "ltr" => (locale === "ar" ? "rtl" :
 type Dict = {
   brand: string;
   tagline: string;
-  nav: { home: string; funding: string; ideas: string; franchises: string; auctions: string; multazim: string; help: string; login: string; register: string };
+  nav: {
+    home: string;
+    funding: string;
+    opportunities: string;
+    ideas: string;
+    franchises: string;
+    auctions: string;
+    multazim: string;
+    pricing: string;
+    help: string;
+    login: string;
+    register: string;
+  };
   hero: { title: string; subtitle: string; cta: string; secondary: string };
   features: { title: string; items: { title: string; body: string }[] };
+  investors: { title: string; body: string; cta: string };
   status: { title: string; body: string };
-  footer: { rights: string; disclaimer: string };
+  footer: {
+    rights: string;
+    disclaimer: string;
+    product: string;
+    forInvestors: string;
+    company: string;
+    links: {
+      feasibility: string;
+      funding: string;
+      opportunities: string;
+      pricing: string;
+      help: string;
+      source: string;
+    };
+  };
 };
 
 export const dictionaries: Record<Locale, Dict> = {
@@ -22,10 +49,12 @@ export const dictionaries: Record<Locale, Dict> = {
     nav: {
       home: "الرئيسية",
       funding: "برامج التمويل",
+      opportunities: "فرص استثمارية",
       ideas: "بنك الأفكار",
       franchises: "فرص الامتياز",
       auctions: "المزاد",
       multazim: "ملتزم",
+      pricing: "الأسعار",
       help: "مركز المساعدة",
       login: "تسجيل الدخول",
       register: "إنشاء حساب",
@@ -44,13 +73,29 @@ export const dictionaries: Record<Locale, Dict> = {
         { title: "مطابقة التمويل", body: "مطابقة قابلة للتفسير مع برامج مثل منشآت و NTDP و كفالة." },
       ],
     },
+    investors: {
+      title: "هل أنت مستثمر؟",
+      body: "تصفّح فرصًا استثمارية مصنّفة حسب القطاع ومستوى المخاطرة، وحدّد المبلغ المتاح لديك لعرض الفرص المناسبة فقط.",
+      cta: "استعرض الفرص الاستثمارية",
+    },
     status: {
       title: "قيد التطوير",
       body: "الواجهة الأمامية قيد البناء تدريجيًا فوق واجهة برمجية تم التحقق منها (مصادقة، وثبات بيانات، محرّكات مالية).",
     },
     footer: {
       rights: "جميع الحقوق محفوظة",
-      disclaimer: "المنصّة أداة مساعدة ولا تُعدّ استشارة قانونية أو مالية أو ضريبية.",
+      disclaimer: "المنصّة أداة مساعدة ولا تُعدّ استشارة قانونية أو مالية أو ضريبية، ولا تُنفّذ أي تحويلات مالية.",
+      product: "المنتج",
+      forInvestors: "للمستثمرين",
+      company: "الشركة",
+      links: {
+        feasibility: "دراسة جدوى جديدة",
+        funding: "برامج التمويل",
+        opportunities: "الفرص الاستثمارية",
+        pricing: "الأسعار",
+        help: "مركز المساعدة",
+        source: "الكود المصدري",
+      },
     },
   },
   en: {
@@ -59,10 +104,12 @@ export const dictionaries: Record<Locale, Dict> = {
     nav: {
       home: "Home",
       funding: "Funding Programs",
+      opportunities: "Investment Opportunities",
       ideas: "Idea Bank",
       franchises: "Franchises",
       auctions: "Auctions",
       multazim: "Multazim",
+      pricing: "Pricing",
       help: "Help Center",
       login: "Log in",
       register: "Sign up",
@@ -81,13 +128,29 @@ export const dictionaries: Record<Locale, Dict> = {
         { title: "Funding Matching", body: "Explainable matching against programs like Monsha'at, NTDP, and Kafalah." },
       ],
     },
+    investors: {
+      title: "Investing?",
+      body: "Browse opportunities categorized by sector and risk level, and enter the amount you have available to see only what fits.",
+      cta: "Browse investment opportunities",
+    },
     status: {
       title: "In progress",
       body: "The frontend is being built incrementally on top of a CI-verified API (auth, persistence, financial engines).",
     },
     footer: {
       rights: "All rights reserved",
-      disclaimer: "This platform is a decision-support tool, not legal, financial, or tax advice.",
+      disclaimer: "This platform is a decision-support tool, not legal, financial, or tax advice, and does not execute any financial transfers.",
+      product: "Product",
+      forInvestors: "For Investors",
+      company: "Company",
+      links: {
+        feasibility: "New Feasibility Study",
+        funding: "Funding Programs",
+        opportunities: "Investment Opportunities",
+        pricing: "Pricing",
+        help: "Help Center",
+        source: "Source Code",
+      },
     },
   },
 };

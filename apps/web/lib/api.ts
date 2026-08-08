@@ -201,3 +201,52 @@ export function matchFunding(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+// --- Investment opportunities (public, unauthenticated) ---------------------
+
+export type Opportunity = {
+  id: number;
+  title_en: string;
+  title_ar: string;
+  industry: string;
+  summary_en?: string | null;
+  summary_ar?: string | null;
+  stage: string;
+  risk_level: string;
+  investment_min: number | null;
+  investment_max: number | null;
+  expected_return_percent: number | null;
+  funding_goal: number | null;
+  funding_committed: number;
+  source_url?: string | null;
+  verification_status: string;
+  is_active: boolean;
+};
+
+export function listOpportunities(filters?: { industry?: string; risk_level?: string; max_amount?: number }) {
+  const params = new URLSearchParams();
+  if (filters?.industry) params.set("industry", filters.industry);
+  if (filters?.risk_level) params.set("risk_level", filters.risk_level);
+  if (filters?.max_amount !== undefined) params.set("max_amount", String(filters.max_amount));
+  const qs = params.toString();
+  return request<Opportunity[]>("/opportunities/" + (qs ? "?" + qs : ""));
+}
+
+// --- Sales lead capture (public, unauthenticated; not a payment endpoint) ---
+
+export type LeadPayload = {
+  full_name: string;
+  email: string;
+  company?: string;
+  phone?: string;
+  plan?: string;
+  intent?: string;
+  message?: string;
+};
+
+export function submitLead(payload: LeadPayload) {
+  return request<{ received: boolean; persisted: boolean }>("/leads/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}

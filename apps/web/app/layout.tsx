@@ -1,8 +1,24 @@
 import type { Metadata } from "next";
+import { Inter, Tajawal } from "next/font/google";
 import "./globals.css";
 import { LanguageProvider } from "@/components/LanguageProvider";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+
+// Professional bilingual pairing: Inter for Latin script, Tajawal for Arabic
+// (both variable weights, both self-hosted by next/font -- no runtime
+// request to Google Fonts, no layout shift).
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-latin",
+  display: "swap",
+});
+const tajawal = Tajawal({
+  subsets: ["arabic"],
+  weight: ["300", "400", "500", "700", "800"],
+  variable: "--font-arabic",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -17,7 +33,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // Defaults to Arabic/RTL; LanguageProvider updates lang/dir on the client.
   return (
-    <html lang="ar" dir="rtl">
+    <html lang="ar" dir="rtl" className={inter.variable + " " + tajawal.variable}>
       <body>
         <LanguageProvider>
           <div className="flex min-h-screen flex-col">

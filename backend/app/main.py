@@ -14,6 +14,8 @@ from app.api.franchises import router as franchises_router
 from app.api.auctions import router as auctions_router
 from app.api.qualification import router as qualification_router
 from app.api.admin import router as admin_router
+from app.api.opportunities import router as opportunities_router
+from app.api.leads import router as leads_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -43,6 +45,8 @@ app.include_router(franchises_router)
 app.include_router(auctions_router)
 app.include_router(qualification_router)
 app.include_router(admin_router)
+app.include_router(opportunities_router)
+app.include_router(leads_router)
 
 
 def _db_ping() -> bool:
