@@ -40,8 +40,8 @@ export function Navbar() {
   ];
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/85 backdrop-blur-md">
-      <nav className="container-page flex h-16 items-center justify-between gap-4">
+    <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
+      <nav className="container-page flex h-16 items-center justify-between gap-4" aria-label={locale === "ar" ? "التنقل الرئيسي" : "Primary navigation"}>
         <Link href="/" className="flex items-center gap-2.5">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-600 to-brand-800 font-bold text-white shadow-card">
             {locale === "ar" ? "س" : "S"}
@@ -90,6 +90,17 @@ export function Navbar() {
             </>
           )}
         </div>
+      </nav>
+      <nav className="container-page flex gap-1 overflow-x-auto pb-2 md:hidden" aria-label={locale === "ar" ? "روابط المنتجات" : "Product links"}>
+        {links.slice(0, 5).map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700"
+          >
+            {link.label}
+          </Link>
+        ))}
       </nav>
     </header>
   );

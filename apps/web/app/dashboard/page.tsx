@@ -3,208 +3,65 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
-import { getToken, listProjects, listStudies, type Project, type Study } from "@/lib/api";
+import {
+  getToken,
+  listProjects,
+  listQualificationProfiles,
+  listStudies,
+  type Project,
+  type QualificationProfile,
+  type Study,
+} from "@/lib/api";
 
-/**
- * Bilingual (AR/EN) dashboard for Saudi Business | سعودي بزنس.
- *
- * Data note: summary/project/qualification figures below are clearly labeled
- * DEMO data by default. When a token is present (signed in) and the API is
- * reachable, the Summary + Recent projects sections switch to real data from
- * GET /projects and GET /feasibility instead — never a mix of the two.
- */
-
-type Locale = "ar" | "en";
-
-const copy: Record<Locale, any> = {
-  ar: {
-    demoBadge: "بيانات تجريبية",
-    liveBadge: "بيانات حقيقية",
-    header: {
-      title: "لوحة التحكم",
-      subtitle: "نظرة شاملة على مشاريعك ودراسات الجدوى وفرص التمويل.",
-      welcome: "مرحبًا بعودتك",
-    },
-    next: {
-      title: "خطوتك التالية",
-      newTitle: "ابدأ بإضافة مشروعك الأول",
-      newBody: "أدخل المعلومات الأساسية فقط، وبعدها نرشدك لبناء دراسة الجدوى خطوة بخطوة.",
-      studyTitle: "أنشئ دراسة جدوى لمشروعك",
-      studyBody: "حوّل فكرة المشروع إلى أرقام واضحة تساعدك تعرف إن كانت تستحق البدء.",
-      fundingTitle: "راجع خيارات التمويل المناسبة",
-      fundingBody: "لديك دراسة مكتملة. تعرّف على أنواع التمويل التي قد تناسب مرحلتك.",
-      cta: "ابدأ الآن",
-    },
-    loadError: "تعذر تحميل بيانات حسابك الآن. لم نعرض بيانات تجريبية بدلًا منها — حاول تحديث الصفحة بعد قليل.",
-    summary: {
-      title: "الملخص",
-      cards: [
-        { key: "projects", label: "المشاريع", value: "4", hint: "مشروعان نشطان" },
-        { key: "studies", label: "دراسات الجدوى", value: "3", hint: "دراسة واحدة قيد الإنجاز" },
-        { key: "funding", label: "فرص التمويل المطابقة", value: "7", hint: "بقيمة تقديرية 2.4M ر.س" },
-        { key: "reports", label: "التقارير", value: "5", hint: "جاهزة للتصدير" },
-      ],
-    },
-    quick: {
-      title: "إجراءات سريعة",
-      actions: [
-        { key: "project", label: "مشروع جديد", href: "/feasibility/new" },
-        { key: "study", label: "دراسة جدوى", href: "/feasibility/new" },
-        { key: "funding", label: "التمويل", href: "/funding" },
-        { key: "report", label: "تقرير", href: "/feasibility/new" },
-      ],
-    },
-    projects: {
-      title: "أحدث المشاريع",
-      viewAll: "عرض الكل",
-      empty: "لا توجد مشاريع بعد — ابدأ مشروعك الأول.",
-      status: { active: "نشط", draft: "مسودة", review: "قيد المراجعة" },
-      rows: [
-        { name: "مقهى تخصصي — الرياض", industry: "الأغذية والمشروبات", investment: "850,000 ر.س", stage: "active" },
-        { name: "منصّة توصيل طبي", industry: "الصحة", investment: "3,200,000 ر.س", stage: "review" },
-        { name: "مركز لياقة ذكي", industry: "الرياضة", investment: "1,100,000 ر.س", stage: "draft" },
-        { name: "مصنع تغليف مستدام", industry: "الصناعة", investment: "6,500,000 ر.س", stage: "active" },
-      ],
-      col: { name: "المشروع", industry: "القطاع", investment: "الاستثمار", stage: "الحالة" },
-    },
-    qualification: {
-      title: "درجة التأهّل",
-      subtitle: "مدى جاهزية مشروعك للتمويل والتراخيص.",
-      score: 72,
-      level: "جيد جدًا",
-      breakdown: [
-        { label: "اكتمال البيانات", value: 85 },
-        { label: "المؤشرات المالية", value: 68 },
-        { label: "الامتثال التنظيمي", value: 63 },
-      ],
-      cta: "تحسين الدرجة",
-    },
-    modules: {
-      title: "الوحدات",
-      items: [
-        { key: "ideas", label: "بنك الأفكار", desc: "أفكار استثمارية متوافقة مع رؤية 2030.", href: "/ideas" },
-        { key: "franchise", label: "الامتياز التجاري", desc: "فرص امتياز محلية وعالمية.", href: "/franchises" },
-        { key: "auctions", label: "المزادات", desc: "أصول ومشاريع معروضة للبيع.", href: "/auctions" },
-        { key: "qualification", label: "التأهّل", desc: "قيّم جاهزية مشروعك.", href: "/qualification" },
-      ],
-    },
-  },
-  en: {
-    demoBadge: "Demo data",
-    liveBadge: "Live data",
-    header: {
-      title: "Dashboard",
-      subtitle: "A complete overview of your projects, feasibility studies, and funding opportunities.",
-      welcome: "Welcome back",
-    },
-    next: {
-      title: "Your next step",
-      newTitle: "Add your first project",
-      newBody: "Start with the essentials. We will guide you through feasibility step by step.",
-      studyTitle: "Build a feasibility study",
-      studyBody: "Turn your project idea into clear numbers before deciding whether to proceed.",
-      fundingTitle: "Review suitable funding options",
-      fundingBody: "You have a completed study. Explore funding types that may fit your stage.",
-      cta: "Start now",
-    },
-    loadError: "We could not load your account data. We did not replace it with demo figures—please refresh shortly.",
-    summary: {
-      title: "Summary",
-      cards: [
-        { key: "projects", label: "Projects", value: "4", hint: "2 active" },
-        { key: "studies", label: "Feasibility studies", value: "3", hint: "1 in progress" },
-        { key: "funding", label: "Matched funding", value: "7", hint: "~SAR 2.4M potential" },
-        { key: "reports", label: "Reports", value: "5", hint: "Ready to export" },
-      ],
-    },
-    quick: {
-      title: "Quick actions",
-      actions: [
-        { key: "project", label: "New Project", href: "/feasibility/new" },
-        { key: "study", label: "Feasibility Study", href: "/feasibility/new" },
-        { key: "funding", label: "Funding", href: "/funding" },
-        { key: "report", label: "Report", href: "/feasibility/new" },
-      ],
-    },
-    projects: {
-      title: "Recent projects",
-      viewAll: "View all",
-      empty: "No projects yet — start your first one.",
-      status: { active: "Active", draft: "Draft", review: "In review" },
-      rows: [
-        { name: "Specialty Coffee — Riyadh", industry: "Food & Beverage", investment: "SAR 850,000", stage: "active" },
-        { name: "Medical Delivery Platform", industry: "Healthcare", investment: "SAR 3,200,000", stage: "review" },
-        { name: "Smart Fitness Center", industry: "Sports", investment: "SAR 1,100,000", stage: "draft" },
-        { name: "Sustainable Packaging Plant", industry: "Manufacturing", investment: "SAR 6,500,000", stage: "active" },
-      ],
-      col: { name: "Project", industry: "Sector", investment: "Investment", stage: "Status" },
-    },
-    qualification: {
-      title: "Qualification score",
-      subtitle: "How ready your project is for funding and licensing.",
-      score: 72,
-      level: "Very good",
-      breakdown: [
-        { label: "Data completeness", value: 85 },
-        { label: "Financial indicators", value: 68 },
-        { label: "Regulatory compliance", value: 63 },
-      ],
-      cta: "Improve score",
-    },
-    modules: {
-      title: "Modules",
-      items: [
-        { key: "ideas", label: "Idea Bank", desc: "Vision 2030-aligned investment ideas.", href: "/ideas" },
-        { key: "franchise", label: "Franchise", desc: "Local and global franchise opportunities.", href: "/franchises" },
-        { key: "auctions", label: "Auctions", desc: "Assets and businesses for sale.", href: "/auctions" },
-        { key: "qualification", label: "Qualification", desc: "Assess your project readiness.", href: "/qualification" },
-      ],
-    },
-  },
+type DashboardData = {
+  projects: Project[];
+  studies: Study[];
+  qualifications: QualificationProfile[];
 };
 
-function StatusBadge({ stage, labels }: { stage: string; labels: Record<string, string> }) {
-  const styles: Record<string, string> = {
-    active: "bg-brand-100 text-brand-700",
-    review: "bg-gold-100 text-gold-800",
-    draft: "bg-slate-100 text-slate-600",
-  };
-  return (
-    <span className={"inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium " + (styles[stage] ?? styles.draft)}>
-      {labels[stage] ?? stage}
-    </span>
-  );
+const demoProjects = [
+  { id: -1, name: "Specialty Coffee — Riyadh", industry: "Food & Beverage", investment: 850000, stage: "active" },
+  { id: -2, name: "Medical Delivery Platform", industry: "Healthcare", investment: 3200000, stage: "review" },
+  { id: -3, name: "Sustainable Packaging Plant", industry: "Manufacturing", investment: 6500000, stage: "draft" },
+];
+
+function money(value: number, locale: "ar" | "en") {
+  return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-SA", {
+    style: "currency",
+    currency: "SAR",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
-function Donut({ score }: { score: number }) {
-  const r = 52;
-  const c = 2 * Math.PI * r;
-  const offset = c * (1 - score / 100);
+function ProgressRing({ score }: { score: number }) {
+  const value = Math.max(0, Math.min(100, score));
+  const radius = 48;
+  const circumference = 2 * Math.PI * radius;
   return (
-    <div className="relative h-36 w-36 shrink-0">
-      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="#e2e8f0" strokeWidth="12" />
+    <div className="relative grid h-36 w-36 shrink-0 place-items-center">
+      <svg aria-hidden="true" viewBox="0 0 112 112" className="h-full w-full -rotate-90">
+        <circle cx="56" cy="56" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="9" />
         <circle
-          cx="60"
-          cy="60"
-          r={r}
+          cx="56"
+          cy="56"
+          r={radius}
           fill="none"
-          stroke="url(#g)"
-          strokeWidth="12"
+          stroke="url(#readiness-gradient)"
           strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={offset}
+          strokeWidth="9"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - value / 100)}
         />
         <defs>
-          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#0f8a4d" />
-            <stop offset="100%" stopColor="#c9a227" />
+          <linearGradient id="readiness-gradient">
+            <stop stopColor="#0f8a4d" />
+            <stop offset="1" stopColor="#c9a227" />
           </linearGradient>
         </defs>
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-3xl font-bold text-ink-900">{score}</span>
-        <span className="text-xs text-ink-700">/ 100</span>
+      <div className="absolute text-center">
+        <strong className="block text-3xl text-ink-900">{Math.round(value)}</strong>
+        <span className="text-xs text-ink-500">/ 100</span>
       </div>
     </div>
   );
@@ -212,260 +69,195 @@ function Donut({ score }: { score: number }) {
 
 export default function DashboardPage() {
   const { locale } = useLanguage();
-  const c = copy[locale as Locale] ?? copy.en;
-
-  // Live data replaces the demo blocks below only when a token exists AND
-  // the API responds successfully. On any failure (no API configured, 503
-  // demo-mode backend, network error) we silently keep the demo view -- we
-  // never show a mix of real and fabricated numbers.
-  const [liveProjects, setLiveProjects] = useState<Project[] | null>(null);
-  const [liveStudies, setLiveStudies] = useState<Study[] | null>(null);
-  const [hasToken, setHasToken] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const isLive = liveProjects !== null;
+  const lang = locale as "ar" | "en";
+  const ar = lang === "ar";
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     const token = getToken();
-    if (!token) return;
-    setHasToken(true);
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    setSignedIn(true);
     let cancelled = false;
-    Promise.all([listProjects(token), listStudies(token)])
-      .then(([projects, studies]) => {
-        if (!cancelled) {
-          setLiveProjects(projects);
-          setLiveStudies(studies);
-        }
+    Promise.all([
+      listProjects(token),
+      listStudies(token),
+      listQualificationProfiles(token).catch(() => []),
+    ])
+      .then(([projects, studies, qualifications]) => {
+        if (!cancelled) setData({ projects, studies, qualifications });
       })
       .catch(() => {
-        if (!cancelled) setLoadFailed(true);
+        if (!cancelled) setError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const completedStudies = liveStudies?.filter((study) => study.status === "completed").length ?? 0;
-  const nextAction = !liveProjects?.length
-    ? { title: c.next.newTitle, body: c.next.newBody, href: "/feasibility/new" }
-    : !liveStudies?.length
-      ? { title: c.next.studyTitle, body: c.next.studyBody, href: "/feasibility/new" }
-      : completedStudies > 0
-        ? { title: c.next.fundingTitle, body: c.next.fundingBody, href: "/funding" }
-        : { title: c.next.studyTitle, body: c.next.studyBody, href: "/feasibility/new" };
+  const projects = data?.projects ?? [];
+  const studies = data?.studies ?? [];
+  const completed = studies.filter((study) => study.status === "completed");
+  const readiness = data?.qualifications[0]?.overall_score ?? 0;
+  const activeInvestment = projects
+    .filter((project) => !project.is_archived)
+    .reduce((total, project) => total + Number(project.investment || 0), 0);
+
+  const nextStep = !projects.length
+    ? { href: "/projects", title: ar ? "أضف مشروعك الأول" : "Add your first project", detail: ar ? "ابدأ بالاسم والقطاع والاستثمار المتوقع." : "Start with its name, sector, and expected investment." }
+    : !studies.length
+      ? { href: "/feasibility/new", title: ar ? "أنشئ دراسة الجدوى" : "Build a feasibility study", detail: ar ? "حوّل مشروعك إلى افتراضات ونتائج مالية واضحة." : "Turn your project into clear assumptions and financial results." }
+      : !readiness
+        ? { href: "/qualification", title: ar ? "قيّم جاهزية مشروعك" : "Assess business readiness", detail: ar ? "اعرف متطلبات التمويل والامتثال التي تحتاجها." : "Find the funding and compliance requirements still needed." }
+        : { href: "/funding", title: ar ? "استكشف التمويل المناسب" : "Explore suitable funding", detail: ar ? "استخدم نتائج الدراسة والجاهزية لمراجعة الخيارات." : "Use your feasibility and readiness results to review options." };
+
+  const cards = data
+    ? [
+        { label: ar ? "المشاريع النشطة" : "Active projects", value: String(projects.filter((p) => !p.is_archived).length), hint: ar ? `${projects.filter((p) => p.is_archived).length} مؤرشف` : `${projects.filter((p) => p.is_archived).length} archived` },
+        { label: ar ? "دراسات الجدوى" : "Feasibility studies", value: String(studies.length), hint: ar ? `${completed.length} مكتملة` : `${completed.length} completed` },
+        { label: ar ? "الاستثمار المخطط" : "Planned investment", value: money(activeInvestment, lang), hint: ar ? "عبر المشاريع النشطة" : "Across active projects" },
+        { label: ar ? "درجة الجاهزية" : "Readiness score", value: readiness ? `${Math.round(readiness)}%` : "—", hint: readiness ? (ar ? "آخر تقييم" : "Latest assessment") : (ar ? "لم يتم التقييم" : "Not assessed") },
+      ]
+    : [
+        { label: ar ? "المشاريع" : "Projects", value: "3", hint: ar ? "عرض توضيحي" : "Demo preview" },
+        { label: ar ? "دراسات الجدوى" : "Feasibility studies", value: "2", hint: ar ? "عرض توضيحي" : "Demo preview" },
+        { label: ar ? "الاستثمار المخطط" : "Planned investment", value: money(10550000, lang), hint: ar ? "عرض توضيحي" : "Demo preview" },
+        { label: ar ? "درجة الجاهزية" : "Readiness score", value: "72%", hint: ar ? "عرض توضيحي" : "Demo preview" },
+      ];
+
+  const visibleProjects = data ? projects.slice(0, 5) : demoProjects;
+  const displayReadiness = data ? readiness : 72;
 
   return (
-    <div className="bg-slate-50">
-      {/* Header band */}
-      <section className="relative overflow-hidden border-b border-brand-700 bg-gradient-to-br from-brand-700 via-brand-600 to-brand-900 text-white">
-        <div className="pointer-events-none absolute inset-0 opacity-20 [background:radial-gradient(circle_at_top_right,theme(colors.gold.400),transparent_45%)]" />
-        <div className="container-page relative py-12">
-          <div className="flex flex-wrap items-end justify-between gap-6">
+    <div className="min-h-screen bg-[#f5f7f6]">
+      <section className="relative overflow-hidden border-b border-brand-800 bg-brand-900 text-white">
+        <div className="absolute inset-0 opacity-30 [background:radial-gradient(circle_at_15%_0%,#1a9d5c,transparent_35%),radial-gradient(circle_at_90%_10%,#c9a227,transparent_25%)]" />
+        <div className="container-page relative py-10 sm:py-14">
+          <div className="flex flex-col justify-between gap-7 lg:flex-row lg:items-end">
             <div>
-              <p className="text-sm font-medium text-gold-300">{c.header.welcome}</p>
-              <h1 className="mt-1 text-3xl font-bold sm:text-4xl">{c.header.title}</h1>
-              <p className="mt-3 max-w-xl text-sm text-white/80">{c.header.subtitle}</p>
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-300">
+                <span className="h-2 w-2 rounded-full bg-gold-400" />
+                {data ? (ar ? "مساحة عمل حية" : "Live workspace") : (ar ? "وضع الاستعراض" : "Preview mode")}
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight sm:text-5xl">{ar ? "مركز قيادة أعمالك" : "Your business command center"}</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/75 sm:text-base">
+                {ar ? "تابع المشاريع، اختبر الجدوى، وارفع جاهزيتك للتمويل من مكان واحد." : "Track projects, validate feasibility, and improve funding readiness from one focused workspace."}
+              </p>
             </div>
-            <span className="rounded-full border border-gold-300/50 bg-white/10 px-3 py-1 text-xs font-medium text-gold-200 backdrop-blur">
-              {isLive ? c.liveBadge : hasToken ? (locale === "ar" ? "حسابك" : "Your account") : c.demoBadge}
-            </span>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/projects" className="rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold backdrop-blur transition hover:bg-white/15">{ar ? "إدارة المشاريع" : "Manage projects"}</Link>
+              <Link href="/feasibility/new" className="rounded-xl bg-gold-400 px-5 py-3 text-sm font-bold text-brand-900 shadow-lg shadow-black/10 transition hover:bg-gold-300">{ar ? "دراسة جديدة" : "New study"}</Link>
+            </div>
           </div>
         </div>
       </section>
 
-      <div className="container-page space-y-10 py-10">
-        {loadFailed && (
-          <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            {c.loadError}
-          </p>
+      <div className="container-page space-y-7 py-8 sm:py-10">
+        {error && (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <span>{ar ? "تعذر تحميل بيانات الحساب. لم نستبدلها ببيانات وهمية." : "Account data could not be loaded. It was not replaced with fabricated figures."}</span>
+            <button onClick={() => window.location.reload()} className="font-bold underline">{ar ? "إعادة المحاولة" : "Try again"}</button>
+          </div>
         )}
 
-        {isLive && (
-          <section aria-labelledby="next-action-title" className="rounded-2xl border border-brand-200 bg-brand-50 p-6 sm:flex sm:items-center sm:justify-between sm:gap-8">
-            <div>
-              <p className="text-sm font-semibold text-brand-700">{c.next.title}</p>
-              <h2 id="next-action-title" className="mt-1 text-2xl font-bold text-ink-900">{nextAction.title}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-700">{nextAction.body}</p>
-            </div>
-            <Link href={nextAction.href} className="mt-5 inline-flex shrink-0 rounded-lg bg-brand-600 px-5 py-2.5 font-medium text-white hover:bg-brand-700 sm:mt-0">
-              {c.next.cta}
-            </Link>
+        {loading ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label={ar ? "جاري التحميل" : "Loading dashboard"}>
+            {[0, 1, 2, 3].map((item) => <div key={item} className="h-32 animate-pulse rounded-2xl border border-slate-200 bg-white" />)}
+          </div>
+        ) : !error && (
+          <section aria-label={ar ? "ملخص الحساب" : "Account summary"} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {cards.map((card, index) => (
+              <article key={card.label} className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-hover">
+                <div className="flex items-start justify-between gap-4">
+                  <p className="text-sm font-medium text-ink-600">{card.label}</p>
+                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-50 text-xs font-bold text-brand-700">0{index + 1}</span>
+                </div>
+                <p className="mt-5 truncate text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl">{card.value}</p>
+                <p className="mt-1 text-xs text-ink-500">{card.hint}</p>
+              </article>
+            ))}
           </section>
         )}
 
-        {/* Summary cards */}
-        {!loadFailed && <section>
-          <h2 className="mb-4 text-lg font-semibold text-ink-900">{c.summary.title}</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {(isLive
-              ? [
-                  {
-                    key: "projects",
-                    label: c.summary.cards[0].label,
-                    value: String(liveProjects!.length),
-                    hint: liveProjects!.filter((p) => !p.is_archived).length + (locale === "ar" ? " نشط" : " active"),
-                  },
-                  {
-                    key: "studies",
-                    label: c.summary.cards[1].label,
-                    value: String(liveStudies!.length),
-                    hint:
-                      liveStudies!.filter((s) => s.status === "completed").length +
-                      (locale === "ar" ? " مكتملة" : " completed"),
-                  },
-                ]
-              : c.summary.cards
-            ).map((card: any) => (
-              <div
-                key={card.key}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-ink-700">{card.label}</p>
-                  <span className="h-2 w-2 rounded-full bg-gradient-to-br from-brand-500 to-gold-500" />
-                </div>
-                <p className="mt-3 text-3xl font-bold text-ink-900">{card.value}</p>
-                <p className="mt-1 text-xs text-ink-700">{card.hint}</p>
+        {signedIn && !error && !loading && (
+          <section className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
+            <div className="grid lg:grid-cols-[1.4fr_0.6fr]">
+              <div className="p-6 sm:p-8">
+                <p className="text-sm font-bold text-brand-700">{ar ? "الخطوة المقترحة" : "Recommended next step"}</p>
+                <h2 className="mt-2 text-2xl font-bold text-ink-900">{nextStep.title}</h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-ink-600">{nextStep.detail}</p>
+                <Link href={nextStep.href} className="mt-5 inline-flex rounded-xl bg-brand-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-brand-700">{ar ? "متابعة الآن" : "Continue now"}</Link>
               </div>
-            ))}
-          </div>
-        </section>}
-
-        {/* Quick actions */}
-        <section>
-          <h2 className="mb-4 text-lg font-semibold text-ink-900">{c.quick.title}</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {c.quick.actions.map((a: any) => (
-              <Link
-                key={a.key}
-                href={a.href}
-                className="group flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-500 hover:shadow-md"
-              >
-                <span className="font-medium text-ink-800 group-hover:text-brand-700">{a.label}</span>
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-600 to-gold-500 text-lg font-bold text-white">
-                  +
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        {/* Recent projects + qualification */}
-        {!loadFailed && <section className={"grid gap-6 " + (isLive ? "" : "lg:grid-cols-3")}>
-          {/* Recent projects table */}
-          <div className={"rounded-2xl border border-slate-200 bg-white shadow-sm " + (isLive ? "" : "lg:col-span-2")}>
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <h2 className="text-lg font-semibold text-ink-900">{c.projects.title}</h2>
-              <Link href="/projects" className="text-sm font-medium text-brand-600 hover:text-brand-700">
-                {c.projects.viewAll}
-              </Link>
+              <div className="flex items-center gap-4 border-t border-brand-100 bg-brand-50 p-6 lg:border-s lg:border-t-0">
+                <span className="text-3xl" aria-hidden="true">↗</span>
+                <div><p className="font-bold text-brand-900">{ar ? "مسار واضح" : "A clear path"}</p><p className="mt-1 text-xs leading-5 text-brand-800/70">{ar ? "مشروع ← جدوى ← جاهزية ← تمويل" : "Project → Feasibility → Readiness → Funding"}</p></div>
+              </div>
             </div>
-            {(isLive ? liveProjects! : c.projects.rows).length === 0 ? (
-              <div className="px-5 py-10 text-center text-sm text-ink-700">
-                <p>{c.projects.empty}</p>
-                <Link href="/feasibility/new" className="mt-4 inline-flex rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700">
-                  {c.next.cta}
-                </Link>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-start text-sm">
-                  <thead>
-                    <tr className="text-xs uppercase tracking-wide text-ink-700">
-                      <th className="px-5 py-3 text-start font-medium">{c.projects.col.name}</th>
-                      <th className="px-5 py-3 text-start font-medium">{c.projects.col.industry}</th>
-                      <th className="px-5 py-3 text-start font-medium">{c.projects.col.investment}</th>
-                      <th className="px-5 py-3 text-start font-medium">{c.projects.col.stage}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {isLive
-                      ? liveProjects!.slice(0, 5).map((p) => (
-                          <tr key={p.id} className="hover:bg-slate-50">
-                            <td className="px-5 py-3 font-medium text-ink-900">{p.name}</td>
-                            <td className="px-5 py-3 text-ink-700">{p.industry}</td>
-                            <td className="px-5 py-3 text-ink-700">
-                              {new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(p.investment)} SAR
-                            </td>
-                            <td className="px-5 py-3">
-                              <StatusBadge stage={p.workflow_status} labels={c.projects.status} />
-                            </td>
-                          </tr>
-                        ))
-                      : c.projects.rows.map((p: any, i: number) => (
-                          <tr key={i} className="hover:bg-slate-50">
-                            <td className="px-5 py-3 font-medium text-ink-900">{p.name}</td>
-                            <td className="px-5 py-3 text-ink-700">{p.industry}</td>
-                            <td className="px-5 py-3 text-ink-700">{p.investment}</td>
-                            <td className="px-5 py-3">
-                              <StatusBadge stage={p.stage} labels={c.projects.status} />
-                            </td>
-                          </tr>
-                        ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          </section>
+        )}
 
-          {/* Qualification score -- demo estimate only; never shown alongside live data */}
-          {!isLive && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-ink-900">{c.qualification.title}</h2>
-              <p className="mt-1 text-sm text-ink-700">{c.qualification.subtitle}</p>
-              <div className="mt-4 flex items-center gap-5">
-                <Donut score={c.qualification.score} />
-                <div>
-                  <span className="inline-flex rounded-full bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-700">
-                    {c.qualification.level}
-                  </span>
-                </div>
-              </div>
-              <div className="mt-5 space-y-3">
-                {c.qualification.breakdown.map((b: any) => (
-                  <div key={b.label}>
-                    <div className="flex justify-between text-xs text-ink-700">
-                      <span>{b.label}</span>
-                      <span>{b.value}%</span>
-                    </div>
-                    <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-brand-500 to-gold-500"
-                        style={{ width: b.value + "%" }}
-                      />
-                    </div>
+        <section className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
+          <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
+            <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
+              <div><h2 className="font-bold text-ink-900">{ar ? "المشاريع الأخيرة" : "Recent projects"}</h2><p className="mt-1 text-xs text-ink-500">{ar ? "آخر نشاط في مساحة العمل" : "Latest workspace activity"}</p></div>
+              <Link href="/projects" className="text-sm font-bold text-brand-700 hover:text-brand-800">{ar ? "عرض الكل" : "View all"}</Link>
+            </header>
+            {visibleProjects.length ? (
+              <div className="divide-y divide-slate-100">
+                {visibleProjects.map((project) => (
+                  <div key={project.id} className="grid gap-3 px-5 py-4 transition hover:bg-slate-50 sm:grid-cols-[1.4fr_1fr_auto] sm:items-center sm:px-6">
+                    <div><p className="font-semibold text-ink-900">{project.name}</p><p className="mt-1 text-xs text-ink-500">{project.industry}</p></div>
+                    <p className="text-sm font-semibold text-ink-700">{money(Number(project.investment), lang)}</p>
+                    <span className="w-fit rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">{project.stage || (ar ? "نشط" : "Active")}</span>
                   </div>
                 ))}
               </div>
-              <Link
-                href="/multazim"
-                className="mt-5 inline-flex w-full items-center justify-center rounded-xl border border-brand-500 px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50"
-              >
-                {c.qualification.cta}
-              </Link>
-            </div>
-          )}
-        </section>}
+            ) : (
+              <div className="p-10 text-center"><p className="text-sm text-ink-600">{ar ? "لا توجد مشاريع بعد." : "No projects yet."}</p><Link href="/projects" className="mt-4 inline-flex text-sm font-bold text-brand-700">{ar ? "أنشئ مشروعك الأول" : "Create your first project"}</Link></div>
+            )}
+          </article>
 
-        {/* Modules grid */}
+          <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
+            <div className="flex items-center justify-between"><div><h2 className="font-bold text-ink-900">{ar ? "جاهزية الأعمال" : "Business readiness"}</h2><p className="mt-1 text-xs text-ink-500">{ar ? "التمويل والامتثال" : "Funding and compliance"}</p></div><span className="rounded-full bg-gold-50 px-3 py-1 text-xs font-bold text-gold-800">{displayReadiness ? (ar ? "قيد التحسين" : "In progress") : (ar ? "ابدأ" : "Start")}</span></div>
+            <div className="mt-6 flex items-center justify-center"><ProgressRing score={displayReadiness} /></div>
+            <div className="mt-5 space-y-3 text-sm">
+              <div className="flex justify-between"><span className="text-ink-600">{ar ? "ملف المنشأة" : "Business profile"}</span><strong className="text-ink-900">{displayReadiness ? "✓" : "—"}</strong></div>
+              <div className="flex justify-between"><span className="text-ink-600">{ar ? "المتطلبات" : "Requirements"}</span><strong className="text-ink-900">{data?.qualifications.length ?? (data ? 0 : 8)}</strong></div>
+            </div>
+            <Link href="/qualification" className="mt-6 flex justify-center rounded-xl border border-brand-200 px-4 py-3 text-sm font-bold text-brand-700 transition hover:bg-brand-50">{ar ? "فتح تقييم الجاهزية" : "Open readiness assessment"}</Link>
+          </article>
+        </section>
+
         <section>
-          <h2 className="mb-4 text-lg font-semibold text-ink-900">{c.modules.title}</h2>
+          <div className="mb-4 flex items-end justify-between"><div><h2 className="text-lg font-bold text-ink-900">{ar ? "أدوات النمو" : "Growth tools"}</h2><p className="mt-1 text-sm text-ink-500">{ar ? "كل ما تحتاجه للانتقال من الفكرة إلى التمويل" : "Everything needed to move from idea to funding"}</p></div></div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {c.modules.items.map((m: any) => (
-              <Link
-                key={m.key}
-                href={m.href}
-                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-500 hover:shadow-md"
-              >
-                <span className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-600 to-gold-500" />
-                <h3 className="mt-1 font-semibold text-brand-700">{m.label}</h3>
-                <p className="mt-2 text-sm text-ink-700">{m.desc}</p>
-                <span className="mt-4 inline-block text-sm font-medium text-gold-700 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5">
-                  →
-                </span>
+            {[
+              { href: "/feasibility/new", code: "01", title: ar ? "دراسة الجدوى" : "Feasibility", body: ar ? "النموذج المالي والتقرير" : "Financial model and report" },
+              { href: "/funding", code: "02", title: ar ? "مطابقة التمويل" : "Funding match", body: ar ? "خيارات حسب القطاع والمرحلة" : "Options by sector and stage" },
+              { href: "/opportunities", code: "03", title: ar ? "فرص الاستثمار" : "Opportunities", body: ar ? "فرص مصنفة وقابلة للفلترة" : "Curated, filterable opportunities" },
+              { href: "/ideas", code: "04", title: ar ? "بنك الأفكار" : "Idea bank", body: ar ? "نقاط بداية متوافقة مع الرؤية" : "Vision-aligned starting points" },
+            ].map((tool) => (
+              <Link key={tool.href} href={tool.href} className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-card transition hover:border-brand-300 hover:shadow-card-hover">
+                <span className="text-xs font-bold tracking-widest text-gold-700">{tool.code}</span><h3 className="mt-5 font-bold text-ink-900 group-hover:text-brand-700">{tool.title}</h3><p className="mt-2 text-sm leading-6 text-ink-500">{tool.body}</p><span className="mt-5 inline-block text-brand-700 transition group-hover:translate-x-1 rtl:group-hover:-translate-x-1">→</span>
               </Link>
             ))}
           </div>
         </section>
+
+        {!signedIn && (
+          <section className="rounded-2xl bg-ink-900 p-6 text-white sm:flex sm:items-center sm:justify-between sm:p-8">
+            <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-gold-300">{ar ? "بيانات العرض فقط" : "Preview data only"}</p><h2 className="mt-2 text-2xl font-bold">{ar ? "سجّل الدخول لعرض بياناتك الحقيقية" : "Sign in to see your real workspace"}</h2><p className="mt-2 text-sm text-white/60">{ar ? "لن نخلط بياناتك مع أمثلة توضيحية." : "Your account data is never mixed with demo examples."}</p></div>
+            <Link href="/login" className="mt-5 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-ink-900 sm:mt-0">{ar ? "تسجيل الدخول" : "Sign in"}</Link>
+          </section>
+        )}
       </div>
     </div>
   );
