@@ -1,4 +1,7 @@
 {
+  "env": {
+    "AUTO_MIGRATE_DB": "true"
+  },
   "builds": [
     { "src": "api/index.py", "use": "@vercel/python" }
   ],

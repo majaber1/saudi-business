@@ -49,7 +49,7 @@ export function Navbar() {
           <span className="text-lg font-semibold tracking-tight text-ink-900">{t.brand}</span>
         </Link>
 
-        <ul className="hidden items-center gap-7 text-sm font-medium text-ink-600 md:flex">
+        <ul className="hidden items-center gap-7 text-sm font-medium text-ink-600 xl:flex">
           {links.map((l) => (
             <li key={l.href}>
               <Link href={l.href} className="transition-colors hover:text-brand-600">
@@ -91,7 +91,7 @@ export function Navbar() {
           )}
         </div>
       </nav>
-      <nav className="container-page flex gap-1 overflow-x-auto pb-2 md:hidden" aria-label={locale === "ar" ? "روابط المنتجات" : "Product links"}>
+      <nav className="container-page flex gap-1 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden" aria-label={locale === "ar" ? "روابط المنتجات" : "Product links"}>
         {links.slice(0, 5).map((link) => (
           <Link
             key={link.href}

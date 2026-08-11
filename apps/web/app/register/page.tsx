@@ -41,8 +41,7 @@ const copy = {
     haveAccount: "لديك حساب بالفعل؟",
     login: "تسجيل الدخول",
     success: "تم إنشاء الحساب. تحقق من بريدك الإلكتروني لتفعيل حساب",
-    demoNote:
-      "بيئة تجريبية: يتطلب الإنشاء تشغيل الواجهة البرمجية وضبط قاعدة البيانات.",
+    serviceNote: "يتطلب تفعيل الحساب وصول رسالة التحقق إلى بريدك الإلكتروني.",
   },
   en: {
     title: "Create an account",
@@ -55,8 +54,7 @@ const copy = {
     haveAccount: "Already have an account?",
     login: "Sign in",
     success: "Account created. Check your email to verify",
-    demoNote:
-      "Demo environment: registration requires the API running with a database configured.",
+    serviceNote: "Account activation requires access to the verification email sent to your inbox.",
   },
 };
 
@@ -167,7 +165,7 @@ export default function RegisterPage() {
             {c.login}
           </Link>
         </p>
-        <p className="mt-4 text-xs text-ink-500">{c.demoNote}</p>
+        <p className="mt-4 text-xs text-ink-500">{c.serviceNote}</p>
       </div>
     </main>
   );

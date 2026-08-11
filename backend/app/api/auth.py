@@ -244,6 +244,20 @@ def _verification_required() -> bool:
     return os.getenv("ENVIRONMENT", "development").strip().lower() in {"production", "prod"}
 
 
+def _is_production() -> bool:
+    return os.getenv("ENVIRONMENT", "development").strip().lower() in {"production", "prod"}
+
+
+def _email_delivery_configured() -> bool:
+    """Return whether account-action email has a usable delivery target.
+
+    Registration must not create an account that production immediately locks
+    behind an undeliverable verification token. Development can still expose
+    tokens explicitly for local testing.
+    """
+    return bool(os.getenv("SMTP_HOST", "").strip() and os.getenv("SMTP_FROM", "").strip())
+
+
 def _expose_dev_token(raw: Optional[str]) -> Optional[str]:
     production = os.getenv("ENVIRONMENT", "development").strip().lower() in {"production", "prod"}
     enabled = os.getenv("EXPOSE_ACCOUNT_TOKENS", "false").strip().lower() in {"1", "true", "yes"}
@@ -271,6 +285,12 @@ def register(data: RegisterIn, request: Request):
     from app import models
     from app.services.rate_limit import client_key, enforce
     enforce(client_key(request, "register", str(data.email)), 5, 3600)
+
+    if _is_production() and _verification_required() and not _email_delivery_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Account registration is temporarily unavailable because email delivery is not configured",
+        )
 
     # Public registration may only assign a public role. Reject privileged roles
     # explicitly (403) and unknown roles (422) BEFORE opening a DB session, so a

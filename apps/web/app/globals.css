@@ -7,6 +7,21 @@ html {
   font-family: var(--font-arabic), var(--font-latin), system-ui, sans-serif;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* English/Latin content should read in Inter, not the Arabic font's Latin
    glyphs -- next/font keeps both stacks loaded, so we just swap priority. */
 html:lang(en) {

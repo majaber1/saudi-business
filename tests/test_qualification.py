@@ -14,7 +14,7 @@ if not os.environ.get("DATABASE_URL"):
     _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     _tmp.close()
     os.environ["DATABASE_URL"] = "sqlite:///" + _tmp.name
-os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET", "test-secret-at-least-32-characters-long")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
