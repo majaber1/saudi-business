@@ -5,6 +5,10 @@
 // credentials and business data to a stale third-party deployment.
 const BACKEND_API_URL = (process.env.BACKEND_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 
+if (process.env.VERCEL && !process.env.BACKEND_API_URL) {
+  throw new Error("BACKEND_API_URL must be configured for Vercel deployments");
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,

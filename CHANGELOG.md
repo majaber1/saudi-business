@@ -8,6 +8,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased] — V2 foundation
 
+- Added evidence-based full repository audit, baseline results, brand
+  guidelines and per-module completion reports.
+- Added a bilingual account workspace, safe profile updates and
+  re-authenticated password changes that invalidate outstanding reset links.
+- Improved authenticated navigation with account/logout state.
+- Improved the dashboard with honest API-failure handling, useful empty states
+  and a data-driven recommended next action.
+- Added a bilingual project workspace for minimal creation, editing, archive
+  and restore without destructive deletion.
 - Expanded protected administration with account listing, secure user
   provisioning, sales-lead inbox, statistics, and audit activity.
 - Removed the stale hard-coded external backend from the Next.js proxy.
