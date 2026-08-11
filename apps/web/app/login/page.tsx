@@ -16,8 +16,7 @@ const copy = {
     register: "إنشاء حساب",
     forgot: "نسيت كلمة المرور؟",
     success: "تم تسجيل الدخول بنجاح، مرحبًا",
-    demoNote:
-      "بيئة تجريبية: يتطلب الدخول تشغيل الواجهة البرمجية وضبط NEXT_PUBLIC_API_BASE_URL.",
+    serviceNote: "تُحمى بيانات الدخول وتُرسل إلى خدمة الحساب عبر اتصال المنصّة الآمن.",
   },
   en: {
     title: "Sign in",
@@ -29,8 +28,7 @@ const copy = {
     register: "Create an account",
     forgot: "Forgot password?",
     success: "Signed in successfully, welcome",
-    demoNote:
-      "Demo environment: sign-in requires the API running and NEXT_PUBLIC_API_BASE_URL set.",
+    serviceNote: "Credentials are sent to the account service through the platform's secure connection.",
   },
 };
 
@@ -114,7 +112,7 @@ export default function LoginPage() {
             {c.register}
           </Link>
         </p>
-        <p className="mt-4 text-xs text-ink-500">{c.demoNote}</p>
+        <p className="mt-4 text-xs text-ink-500">{c.serviceNote}</p>
       </div>
     </main>
   );

@@ -28,7 +28,7 @@ if not os.environ.get("DATABASE_URL"):
     os.environ["DATABASE_URL"] = "sqlite:///" + _TMP.name
 # Fix the JWT secret so the expired-token test signs with the same key the app
 # verifies with.
-os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET", "test-secret-at-least-32-characters-long")
 
 _BACKEND = Path(__file__).resolve().parents[1] / "backend"
 sys.path.insert(0, str(_BACKEND))

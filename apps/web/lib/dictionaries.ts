@@ -79,8 +79,8 @@ export const dictionaries: Record<Locale, Dict> = {
       cta: "استعرض الفرص الاستثمارية",
     },
     status: {
-      title: "إصدار V1 جاهز",
-      body: "منصة مترابطة تشمل المصادقة، وثبات البيانات، المحركات المالية، التأهيل ولوحة الإدارة.",
+      title: "الوظائف الأساسية متاحة",
+      body: "منصة مترابطة تشمل المحركات المالية والتأهيل ولوحة الإدارة. بعض خدمات الحساب تعتمد على إعداد البريد التشغيلي.",
     },
     footer: {
       rights: "جميع الحقوق محفوظة",
@@ -134,8 +134,8 @@ export const dictionaries: Record<Locale, Dict> = {
       cta: "Browse investment opportunities",
     },
     status: {
-      title: "V1 ready",
-      body: "An integrated platform covering authentication, persistence, financial engines, qualification, and administration.",
+      title: "Core capabilities available",
+      body: "An integrated platform covering financial engines, qualification, and administration. Some account services depend on operational email configuration.",
     },
     footer: {
       rights: "All rights reserved",

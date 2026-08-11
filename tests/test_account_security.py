@@ -9,7 +9,7 @@ if not os.environ.get("DATABASE_URL"):
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()
     os.environ["DATABASE_URL"] = "sqlite:///" + tmp.name
-os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET", "test-secret-at-least-32-characters-long")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
@@ -82,6 +82,21 @@ def test_production_never_exposes_raw_account_token(monkeypatch):
     response = client.post("/auth/password/forgot", json={"email": email})
     assert response.status_code == 202
     assert response.json()["dev_token"] is None
+
+
+def test_production_registration_fails_before_creating_an_unverifiable_account(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "true")
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("SMTP_FROM", raising=False)
+
+    response = client.post(
+        "/auth/register",
+        json={"email": _email("no_delivery"), "password": "StrongPass1"},
+    )
+
+    assert response.status_code == 503
+    assert "email delivery" in response.json()["detail"].lower()
 
 
 def test_signed_in_user_can_update_safe_profile_fields_only(monkeypatch):
