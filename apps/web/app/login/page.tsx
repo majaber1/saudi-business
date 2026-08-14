@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 import { login, me, saveToken } from "@/lib/api";
 
@@ -39,6 +40,7 @@ const copy = {
 };
 
 export default function LoginPage() {
+  const router = useRouter();
   const { locale } = useLanguage();
   const c = copy[locale];
   const [email, setEmail] = useState("");
@@ -56,6 +58,7 @@ export default function LoginPage() {
       saveToken(access_token);
       const profile = await me(access_token);
       setProfileName(profile.full_name || profile.email);
+      router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
