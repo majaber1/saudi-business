@@ -94,6 +94,16 @@ const services = [
       en: "Generate professional reports and investor packages from your studies and analyses.",
     },
   },
+  {
+    href: "/tools/ideas",
+    icon: "💡",
+    code: "10",
+    title: { ar: "بنك الأفكار", en: "Idea Bank" },
+    description: {
+      ar: "أفكار مشاريع متوافقة مع رؤية 2030 ومصنفة حسب القطاع ومستوى الصعوبة.",
+      en: "Vision 2030-aligned project ideas categorized by sector and difficulty level.",
+    },
+  },
 ];
 
 export default function ToolsPage() {
