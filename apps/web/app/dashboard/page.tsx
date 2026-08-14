@@ -112,12 +112,12 @@ export default function DashboardPage() {
     .reduce((total, project) => total + Number(project.investment || 0), 0);
 
   const nextStep = !projects.length
-    ? { href: "/projects", title: ar ? "أضف مشروعك الأول" : "Add your first project", detail: ar ? "ابدأ بالاسم والقطاع والاستثمار المتوقع." : "Start with its name, sector, and expected investment." }
+    ? { href: "/businesses", title: ar ? "أضف مشروعك الأول" : "Add your first project", detail: ar ? "ابدأ بالاسم والقطاع والاستثمار المتوقع." : "Start with its name, sector, and expected investment." }
     : !studies.length
-      ? { href: "/feasibility/new", title: ar ? "أنشئ دراسة الجدوى" : "Build a feasibility study", detail: ar ? "حوّل مشروعك إلى افتراضات ونتائج مالية واضحة." : "Turn your project into clear assumptions and financial results." }
+      ? { href: "/tools/feasibility", title: ar ? "أنشئ دراسة الجدوى" : "Build a feasibility study", detail: ar ? "حوّل مشروعك إلى افتراضات ونتائج مالية واضحة." : "Turn your project into clear assumptions and financial results." }
       : !readiness
-        ? { href: "/qualification", title: ar ? "قيّم جاهزية مشروعك" : "Assess business readiness", detail: ar ? "اعرف متطلبات التمويل والامتثال التي تحتاجها." : "Find the funding and compliance requirements still needed." }
-        : { href: "/funding", title: ar ? "استكشف التمويل المناسب" : "Explore suitable funding", detail: ar ? "استخدم نتائج الدراسة والجاهزية لمراجعة الخيارات." : "Use your feasibility and readiness results to review options." };
+        ? { href: "/tools/qualification", title: ar ? "قيّم جاهزية مشروعك" : "Assess business readiness", detail: ar ? "اعرف متطلبات التمويل والامتثال التي تحتاجها." : "Find the funding and compliance requirements still needed." }
+        : { href: "/tools/funding", title: ar ? "استكشف التمويل المناسب" : "Explore suitable funding", detail: ar ? "استخدم نتائج الدراسة والجاهزية لمراجعة الخيارات." : "Use your feasibility and readiness results to review options." };
 
   const cards = data
     ? [
@@ -153,8 +153,8 @@ export default function DashboardPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link href="/projects" className="rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold backdrop-blur transition hover:bg-white/15">{ar ? "إدارة المشاريع" : "Manage projects"}</Link>
-              <Link href="/feasibility/new" className="rounded-xl bg-gold-400 px-5 py-3 text-sm font-bold text-brand-900 shadow-lg shadow-black/10 transition hover:bg-gold-300">{ar ? "دراسة جديدة" : "New study"}</Link>
+              <Link href="/businesses" className="rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold backdrop-blur transition hover:bg-white/15">{ar ? "إدارة المشاريع" : "Manage projects"}</Link>
+              <Link href="/tools" className="rounded-xl bg-gold-400 px-5 py-3 text-sm font-bold text-brand-900 shadow-lg shadow-black/10 transition hover:bg-gold-300">{ar ? "أدوات الأعمال" : "Business tools"}</Link>
             </div>
           </div>
         </div>
@@ -208,7 +208,7 @@ export default function DashboardPage() {
           <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
             <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
               <div><h2 className="font-bold text-ink-900">{ar ? "المشاريع الأخيرة" : "Recent projects"}</h2><p className="mt-1 text-xs text-ink-500">{ar ? "آخر نشاط في مساحة العمل" : "Latest workspace activity"}</p></div>
-              <Link href="/projects" className="text-sm font-bold text-brand-700 hover:text-brand-800">{ar ? "عرض الكل" : "View all"}</Link>
+              <Link href="/businesses" className="text-sm font-bold text-brand-700 hover:text-brand-800">{ar ? "عرض الكل" : "View all"}</Link>
             </header>
             {visibleProjects.length ? (
               <div className="divide-y divide-slate-100">
@@ -221,7 +221,7 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <div className="p-10 text-center"><p className="text-sm text-ink-600">{ar ? "لا توجد مشاريع بعد." : "No projects yet."}</p><Link href="/projects" className="mt-4 inline-flex text-sm font-bold text-brand-700">{ar ? "أنشئ مشروعك الأول" : "Create your first project"}</Link></div>
+              <div className="p-10 text-center"><p className="text-sm text-ink-600">{ar ? "لا توجد مشاريع بعد." : "No projects yet."}</p><Link href="/businesses" className="mt-4 inline-flex text-sm font-bold text-brand-700">{ar ? "أنشئ مشروعك الأول" : "Create your first project"}</Link></div>
             )}
           </article>
 
@@ -232,18 +232,20 @@ export default function DashboardPage() {
               <div className="flex justify-between"><span className="text-ink-600">{ar ? "ملف المنشأة" : "Business profile"}</span><strong className="text-ink-900">{displayReadiness ? "✓" : "—"}</strong></div>
               <div className="flex justify-between"><span className="text-ink-600">{ar ? "المتطلبات" : "Requirements"}</span><strong className="text-ink-900">{data?.qualifications.length ?? (data ? 0 : 8)}</strong></div>
             </div>
-            <Link href="/qualification" className="mt-6 flex justify-center rounded-xl border border-brand-200 px-4 py-3 text-sm font-bold text-brand-700 transition hover:bg-brand-50">{ar ? "فتح تقييم الجاهزية" : "Open readiness assessment"}</Link>
+            <Link href="/tools/qualification" className="mt-6 flex justify-center rounded-xl border border-brand-200 px-4 py-3 text-sm font-bold text-brand-700 transition hover:bg-brand-50">{ar ? "فتح تقييم الجاهزية" : "Open readiness assessment"}</Link>
           </article>
         </section>
 
         <section>
           <div className="mb-4 flex items-end justify-between"><div><h2 className="text-lg font-bold text-ink-900">{ar ? "أدوات النمو" : "Growth tools"}</h2><p className="mt-1 text-sm text-ink-500">{ar ? "كل ما تحتاجه للانتقال من الفكرة إلى التمويل" : "Everything needed to move from idea to funding"}</p></div></div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[
-              { href: "/feasibility/new", code: "01", title: ar ? "دراسة الجدوى" : "Feasibility", body: ar ? "النموذج المالي والتقرير" : "Financial model and report" },
-              { href: "/funding", code: "02", title: ar ? "مطابقة التمويل" : "Funding match", body: ar ? "خيارات حسب القطاع والمرحلة" : "Options by sector and stage" },
-              { href: "/opportunities", code: "03", title: ar ? "فرص الاستثمار" : "Opportunities", body: ar ? "فرص مصنفة وقابلة للفلترة" : "Curated, filterable opportunities" },
-              { href: "/ideas", code: "04", title: ar ? "بنك الأفكار" : "Idea bank", body: ar ? "نقاط بداية متوافقة مع الرؤية" : "Vision-aligned starting points" },
+              { href: "/tools/feasibility", code: "01", title: ar ? "دراسة الجدوى" : "Feasibility", body: ar ? "النموذج المالي والتقرير" : "Financial model and report" },
+              { href: "/tools/financial", code: "02", title: ar ? "التحليل المالي" : "Financial analysis", body: ar ? "عائد الاستثمار وصافي القيمة الحالية" : "ROI, NPV, IRR calculations" },
+              { href: "/tools/funding", code: "03", title: ar ? "مطابقة التمويل" : "Funding match", body: ar ? "خيارات حسب القطاع والمرحلة" : "Options by sector and stage" },
+              { href: "/tools/proposal", code: "04", title: ar ? "بناء العروض" : "Proposals", body: ar ? "عروض تجارية واستثمارية" : "Commercial and investor proposals" },
+              { href: "/tools/qualification", code: "05", title: ar ? "التأهيل" : "Qualification", body: ar ? "جاهزية التمويل والامتثال" : "Funding and compliance readiness" },
+              { href: "/tools/opportunities", code: "06", title: ar ? "فرص الاستثمار" : "Opportunities", body: ar ? "فرص مصنفة وقابلة للفلترة" : "Curated, filterable opportunities" },
             ].map((tool) => (
               <Link key={tool.href} href={tool.href} className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-card transition hover:border-brand-300 hover:shadow-card-hover">
                 <span className="text-xs font-bold tracking-widest text-gold-700">{tool.code}</span><h3 className="mt-5 font-bold text-ink-900 group-hover:text-brand-700">{tool.title}</h3><p className="mt-2 text-sm leading-6 text-ink-500">{tool.body}</p><span className="mt-5 inline-block text-brand-700 transition group-hover:translate-x-1 rtl:group-hover:-translate-x-1">→</span>

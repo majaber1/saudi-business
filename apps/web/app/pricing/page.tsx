@@ -18,19 +18,19 @@ const copy = {
         name: "أساسي",
         price: "مجانًا",
         audience: "لرواد الأعمال ودراسة أول مشروع",
-        features: ["دراسة جدوى واحدة نشطة", "التحليل المالي الكامل (ROI/NPV/IRR)", "مطابقة برامج التمويل", "تقرير PDF واحد شهريًا"],
+        features: ["دراسة جدوى واحدة نشطة", "التحليل المالي الكامل (ROI/NPV/IRR)", "مطابقة برامج التمويل", "تقرير PDF واحد شهريًا", "بنك الأفكار والفرص الاستثمارية", "تأهيل الأعمال — تقييم واحد"],
       },
       professional: {
         name: "احترافي",
         price: "٢٤٩ ر.س",
         audience: "للمستشارين وأصحاب عدة مشاريع",
-        features: ["دراسات جدوى غير محدودة", "تقارير PDF و Word غير محدودة", "أرشفة ومتابعة المشاريع", "دعم عبر البريد الإلكتروني"],
+        features: ["دراسات جدوى غير محدودة", "تقارير PDF و Word غير محدودة", "منشئ العروض التجارية", "أرشفة ومتابعة المشاريع", "تأهيل وتقارير غير محدودة", "دعم عبر البريد الإلكتروني"],
       },
       enterprise: {
         name: "المؤسسات",
         price: "تواصل معنا",
         audience: "للبنوك والجهات الحكومية والمستثمرين المؤسسيين",
-        features: ["عدد مستخدمين غير محدود وصلاحيات RBAC", "تكامل عبر MCP/API", "نطاق مخصص واتفاقية مستوى خدمة", "مدير حساب مخصص"],
+        features: ["جميع الأدوات العشر بلا حدود", "عدد مستخدمين غير محدود وصلاحيات RBAC", "تكامل عبر MCP/API", "نطاق مخصص واتفاقية مستوى خدمة", "مدير حساب مخصص"],
       },
     },
     form: {
@@ -58,19 +58,19 @@ const copy = {
         name: "Starter",
         price: "Free",
         audience: "For entrepreneurs studying their first project",
-        features: ["1 active feasibility study", "Full financial analysis (ROI/NPV/IRR)", "Funding program matching", "1 PDF report / month"],
+        features: ["1 active feasibility study", "Full financial analysis (ROI/NPV/IRR)", "Funding program matching", "1 PDF report / month", "Idea Bank & investment opportunities", "Business qualification — 1 assessment"],
       },
       professional: {
         name: "Professional",
         price: "SAR 249",
         audience: "For consultants and multi-project owners",
-        features: ["Unlimited feasibility studies", "Unlimited PDF & Word reports", "Project archive & tracking", "Email support"],
+        features: ["Unlimited feasibility studies", "Unlimited PDF & Word reports", "Proposal Builder", "Project archive & tracking", "Unlimited qualification & reports", "Email support"],
       },
       enterprise: {
         name: "Enterprise",
         price: "Contact us",
         audience: "For banks, government bodies, and institutional investors",
-        features: ["Unlimited seats with RBAC", "MCP/API integration", "Custom domain & SLA", "Dedicated account manager"],
+        features: ["All 10 tools with no limits", "Unlimited seats with RBAC", "MCP/API integration", "Custom domain & SLA", "Dedicated account manager"],
       },
     },
     form: {
@@ -180,6 +180,40 @@ export default function PricingPage() {
           );
         })}
       </div>
+
+      <section className="mt-16 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-card">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50">
+              <th className="px-5 py-4 text-start font-semibold text-ink-700">{locale === "ar" ? "الأداة" : "Tool"}</th>
+              <th className="px-4 py-4 text-center font-semibold text-ink-700">{c.plans.starter.name}</th>
+              <th className="px-4 py-4 text-center font-semibold text-brand-700">{c.plans.professional.name}</th>
+              <th className="px-4 py-4 text-center font-semibold text-ink-700">{c.plans.enterprise.name}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {[
+              { tool: locale === "ar" ? "دراسة الجدوى" : "Feasibility Study", s: "1", p: "∞", e: "∞" },
+              { tool: locale === "ar" ? "التحليل المالي" : "Financial Analysis", s: "∞", p: "∞", e: "∞" },
+              { tool: locale === "ar" ? "منشئ العروض" : "Proposal Builder", s: "—", p: "∞", e: "∞" },
+              { tool: locale === "ar" ? "مطابقة التمويل" : "Funding Matcher", s: "∞", p: "∞", e: "∞" },
+              { tool: locale === "ar" ? "تأهيل الأعمال" : "Qualification", s: "1", p: "∞", e: "∞" },
+              { tool: locale === "ar" ? "فرص الاستثمار" : "Opportunities", s: "✓", p: "✓", e: "✓" },
+              { tool: locale === "ar" ? "الامتياز التجاري" : "Franchise", s: "✓", p: "✓", e: "✓" },
+              { tool: locale === "ar" ? "المزادات" : "Auctions", s: "✓", p: "✓", e: "✓" },
+              { tool: locale === "ar" ? "التقارير" : "Reports", s: "1/mo", p: "∞", e: "∞" },
+              { tool: locale === "ar" ? "بنك الأفكار" : "Idea Bank", s: "✓", p: "✓", e: "✓" },
+            ].map((row) => (
+              <tr key={row.tool} className="hover:bg-slate-50">
+                <td className="px-5 py-3 font-medium text-ink-800">{row.tool}</td>
+                <td className="px-4 py-3 text-center text-ink-600">{row.s}</td>
+                <td className="px-4 py-3 text-center font-semibold text-brand-700">{row.p}</td>
+                <td className="px-4 py-3 text-center text-ink-600">{row.e}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
 
       <div id="request-access" className="mx-auto mt-16 max-w-lg scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-8 shadow-card">
         <h2 className="text-xl font-semibold text-ink-900">{c.form.title}</h2>

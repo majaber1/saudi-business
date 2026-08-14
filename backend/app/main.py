@@ -19,6 +19,8 @@ from app.api.qualification import router as qualification_router
 from app.api.admin import router as admin_router
 from app.api.opportunities import router as opportunities_router
 from app.api.leads import router as leads_router
+from app.api.proposals import router as proposals_router
+from app.api.entitlements import router as entitlements_router
 from app.api.auth import UserOut, require_roles
 from app.services.monitoring import metrics_snapshot, observe_request
 
@@ -68,6 +70,8 @@ app.include_router(qualification_router)
 app.include_router(admin_router)
 app.include_router(opportunities_router)
 app.include_router(leads_router)
+app.include_router(proposals_router)
+app.include_router(entitlements_router)
 
 # Runs once per cold start (module import), not inside an ASGI lifespan
 # startup event -- Vercel's Python runtime wrapper does not reliably invoke

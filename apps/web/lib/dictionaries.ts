@@ -10,6 +10,9 @@ type Dict = {
   tagline: string;
   nav: {
     home: string;
+    dashboard: string;
+    businesses: string;
+    tools: string;
     funding: string;
     opportunities: string;
     ideas: string;
@@ -20,6 +23,17 @@ type Dict = {
     help: string;
     login: string;
     register: string;
+  };
+  tools: {
+    feasibility: string;
+    financial: string;
+    proposal: string;
+    funding: string;
+    qualification: string;
+    opportunities: string;
+    franchise: string;
+    auctions: string;
+    reports: string;
   };
   hero: { title: string; subtitle: string; cta: string; secondary: string };
   features: { title: string; items: { title: string; body: string }[] };
@@ -48,6 +62,9 @@ export const dictionaries: Record<Locale, Dict> = {
     tagline: "من الفكرة إلى قرار الاستثمار",
     nav: {
       home: "الرئيسية",
+      dashboard: "لوحة التحكم",
+      businesses: "أعمالي",
+      tools: "الأدوات",
       funding: "برامج التمويل",
       opportunities: "فرص استثمارية",
       ideas: "بنك الأفكار",
@@ -58,6 +75,17 @@ export const dictionaries: Record<Locale, Dict> = {
       help: "مركز المساعدة",
       login: "تسجيل الدخول",
       register: "إنشاء حساب",
+    },
+    tools: {
+      feasibility: "دراسة الجدوى",
+      financial: "التحليل المالي",
+      proposal: "بناء العروض",
+      funding: "مطابقة التمويل",
+      qualification: "التأهيل",
+      opportunities: "فرص الاستثمار",
+      franchise: "الامتياز التجاري",
+      auctions: "المزاد",
+      reports: "التقارير",
     },
     hero: {
       title: "منصّة سعودية لدراسات الجدوى وقرارات الاستثمار",
@@ -103,6 +131,9 @@ export const dictionaries: Record<Locale, Dict> = {
     tagline: "From idea to investment decision",
     nav: {
       home: "Home",
+      dashboard: "Dashboard",
+      businesses: "My Businesses",
+      tools: "Tools",
       funding: "Funding Programs",
       opportunities: "Investment Opportunities",
       ideas: "Idea Bank",
@@ -113,6 +144,17 @@ export const dictionaries: Record<Locale, Dict> = {
       help: "Help Center",
       login: "Log in",
       register: "Sign up",
+    },
+    tools: {
+      feasibility: "Feasibility Study",
+      financial: "Financial Analysis",
+      proposal: "Proposal Builder",
+      funding: "Funding Matcher",
+      qualification: "Qualification",
+      opportunities: "Opportunities",
+      franchise: "Franchise",
+      auctions: "Auctions",
+      reports: "Reports",
     },
     hero: {
       title: "A Saudi platform for feasibility studies and investment decisions",
