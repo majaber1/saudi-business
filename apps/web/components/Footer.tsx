@@ -4,26 +4,35 @@ import Link from "next/link";
 import { useLanguage } from "@/components/LanguageProvider";
 
 export function Footer() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
+  const ar = locale === "ar";
   const year = new Date().getFullYear();
 
   const columns = [
     {
-      title: t.footer.product,
+      title: ar ? "الأدوات" : "Tools",
       links: [
-        { href: "/feasibility/new", label: t.footer.links.feasibility },
-        { href: "/funding", label: t.footer.links.funding },
-        { href: "/pricing", label: t.footer.links.pricing },
+        { href: "/tools/feasibility", label: ar ? "دراسة الجدوى" : "Feasibility Study" },
+        { href: "/tools/financial", label: ar ? "التحليل المالي" : "Financial Analysis" },
+        { href: "/tools/proposal", label: ar ? "منشئ العروض" : "Proposal Builder" },
+        { href: "/tools/funding", label: ar ? "مطابقة التمويل" : "Funding Matcher" },
+        { href: "/tools/qualification", label: ar ? "تأهيل الأعمال" : "Qualification" },
       ],
     },
     {
       title: t.footer.forInvestors,
-      links: [{ href: "/opportunities", label: t.footer.links.opportunities }],
+      links: [
+        { href: "/tools/opportunities", label: ar ? "الفرص الاستثمارية" : "Opportunities" },
+        { href: "/tools/franchise", label: ar ? "الامتياز التجاري" : "Franchise" },
+        { href: "/tools/auctions", label: ar ? "المزادات" : "Auctions" },
+      ],
     },
     {
       title: t.footer.company,
       links: [
+        { href: "/pricing", label: t.footer.links.pricing },
         { href: "/help", label: t.footer.links.help },
+        { href: "/tools/reports", label: ar ? "التقارير" : "Reports" },
         { href: "https://github.com/majaber1/saudi-business", label: t.footer.links.source },
       ],
     },
@@ -40,6 +49,9 @@ export function Footer() {
             <span className="font-semibold text-ink-900">{t.brand}</span>
           </div>
           <p className="mt-4 max-w-xs text-sm text-ink-600">{t.tagline}</p>
+          <p className="mt-3 text-xs text-ink-500">
+            {ar ? "من فكرة المشروع إلى جاهزية الاستثمار" : "From business idea to investment-ready"}
+          </p>
         </div>
 
         {columns.map((col) => (

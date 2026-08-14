@@ -468,3 +468,58 @@ class SalesLead(TimestampMixin, Base):
     intent: Mapped[str] = mapped_column(String(50), default="subscribe")  # subscribe|enterprise|investor|consultant
     message: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="new")  # new|contacted|closed
+
+
+class ServiceEntitlement(TimestampMixin, Base):
+    __tablename__ = "service_entitlements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[Optional[int]] = mapped_column(ForeignKey("organizations.id"), index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
+    service_key: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    plan: Mapped[str] = mapped_column(String(30), default="starter")
+    quota: Mapped[Optional[int]] = mapped_column(Integer)
+    used: Mapped[int] = mapped_column(Integer, default=0)
+    reset_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class Proposal(TimestampMixin, Base):
+    __tablename__ = "proposals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("projects.id"), index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    proposal_type: Mapped[str] = mapped_column(String(50), default="commercial")
+    status: Mapped[str] = mapped_column(String(30), default="draft")
+    locale: Mapped[str] = mapped_column(String(5), default="ar")
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    version: Mapped[str] = mapped_column(String(20), default="1.0")
+    feasibility_study_id: Mapped[Optional[int]] = mapped_column(ForeignKey("feasibility_studies.id"))
+
+
+class Notification(TimestampMixin, Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(50), nullable=False)
+    title_en: Mapped[str] = mapped_column(String(200), nullable=False)
+    title_ar: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[Optional[str]] = mapped_column(Text)
+    entity: Mapped[Optional[str]] = mapped_column(String(100))
+    entity_id: Mapped[Optional[int]] = mapped_column(Integer)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AnalyticsEvent(TimestampMixin, Base):
+    __tablename__ = "analytics_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    service_key: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+    entity: Mapped[Optional[str]] = mapped_column(String(100))
+    entity_id: Mapped[Optional[int]] = mapped_column(Integer)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)

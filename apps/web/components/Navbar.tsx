@@ -8,6 +8,7 @@ import { clearToken, getToken, me } from "@/lib/api";
 export function Navbar() {
   const { t, locale, toggle } = useLanguage();
   const [signedIn, setSignedIn] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     async function refreshAuth() {
@@ -26,16 +27,11 @@ export function Navbar() {
     return () => window.removeEventListener("sb-auth-change", refreshAuth);
   }, []);
 
-  // Kept intentionally short for a clean, professional first impression --
-  // Franchises/Auctions/Multazim stay reachable from the dashboard modules
-  // grid and the footer rather than crowding the primary nav.
   const links = [
     { href: "/dashboard", label: locale === "ar" ? "لوحة التحكم" : "Dashboard" },
-    { href: "/projects", label: locale === "ar" ? "مشاريعي" : "My projects" },
-    { href: "/opportunities", label: t.nav.opportunities },
-    { href: "/funding", label: t.nav.funding },
-    { href: "/qualification", label: locale === "ar" ? "التأهيل" : "Qualification" },
-    { href: "/ideas", label: t.nav.ideas },
+    { href: "/businesses", label: locale === "ar" ? "أعمالي" : "My Businesses" },
+    { href: "/tools", label: locale === "ar" ? "الأدوات" : "Tools" },
+    { href: "/tools/opportunities", label: t.nav.opportunities },
     { href: "/pricing", label: t.nav.pricing },
   ];
 
@@ -89,10 +85,47 @@ export function Navbar() {
               </Link>
             </>
           )}
+          <button
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-ink-600 xl:hidden"
+            aria-label="Menu"
+          >
+            {mobileOpen ? "✕" : "☰"}
+          </button>
         </div>
       </nav>
+
+      {mobileOpen && (
+        <div className="border-t border-slate-100 bg-white px-4 pb-4 xl:hidden">
+          <ul className="space-y-1 py-2">
+            {links.map((l) => (
+              <li key={l.href}>
+                <Link href={l.href} onClick={() => setMobileOpen(false)} className="block rounded-lg px-3 py-2.5 text-sm font-medium text-ink-700 hover:bg-brand-50 hover:text-brand-700">
+                  {l.label}
+                </Link>
+              </li>
+            ))}
+            <li className="border-t border-slate-100 pt-2">
+              <Link href="/tools/funding" onClick={() => setMobileOpen(false)} className="block rounded-lg px-3 py-2.5 text-sm font-medium text-ink-700 hover:bg-brand-50">
+                {t.nav.funding}
+              </Link>
+            </li>
+            <li>
+              <Link href="/tools/qualification" onClick={() => setMobileOpen(false)} className="block rounded-lg px-3 py-2.5 text-sm font-medium text-ink-700 hover:bg-brand-50">
+                {locale === "ar" ? "التأهيل" : "Qualification"}
+              </Link>
+            </li>
+            <li>
+              <Link href="/help" onClick={() => setMobileOpen(false)} className="block rounded-lg px-3 py-2.5 text-sm font-medium text-ink-700 hover:bg-brand-50">
+                {t.nav.help}
+              </Link>
+            </li>
+          </ul>
+        </div>
+      )}
+
       <nav className="container-page flex gap-1 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden" aria-label={locale === "ar" ? "روابط المنتجات" : "Product links"}>
-        {links.slice(0, 5).map((link) => (
+        {links.slice(0, 4).map((link) => (
           <Link
             key={link.href}
             href={link.href}
