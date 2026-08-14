@@ -320,6 +320,112 @@ export function resetPassword(token: string, password: string) {
   });
 }
 
+// --- Proposals -----------------------------------------------------------
+
+export type Proposal = {
+  id: number;
+  owner_id: number | null;
+  project_id: number | null;
+  title: string;
+  proposal_type: string;
+  status: string;
+  locale: string;
+  payload: Record<string, unknown>;
+  version: string;
+  feasibility_study_id: number | null;
+};
+
+export function listProposals(token: string) {
+  return authedRequest<Proposal[]>("/proposals/", token);
+}
+
+export function createProposal(token: string, payload: {
+  title: string;
+  proposal_type?: string;
+  locale?: string;
+  project_id?: number;
+  feasibility_study_id?: number;
+  payload?: Record<string, unknown>;
+}) {
+  return authedRequest<Proposal>("/proposals/", token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getProposal(token: string, proposalId: number) {
+  return authedRequest<Proposal>(`/proposals/${proposalId}`, token);
+}
+
+export function updateProposal(token: string, proposalId: number, payload: {
+  title?: string;
+  status?: string;
+  payload?: Record<string, unknown>;
+  version?: string;
+}) {
+  return authedRequest<Proposal>(`/proposals/${proposalId}`, token, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteProposal(token: string, proposalId: number) {
+  return authedRequest<void>(`/proposals/${proposalId}`, token, { method: "DELETE" });
+}
+
+// --- Entitlements --------------------------------------------------------
+
+export type Entitlement = {
+  service_key: string;
+  enabled: boolean;
+  plan: string;
+  quota: number | null;
+  used: number;
+};
+
+export function listEntitlements(token: string) {
+  return authedRequest<Entitlement[]>("/entitlements/", token);
+}
+
+// --- Franchises (public, unauthenticated) ---------------------------------
+
+export type Franchise = {
+  id: number;
+  brand: string;
+  description_en?: string | null;
+  description_ar?: string | null;
+  sector: string;
+  investment_min?: number | null;
+  investment_max?: number | null;
+  franchise_fee?: number | null;
+  regions: string[];
+  verification_status: string;
+  is_active: boolean;
+};
+
+export function listFranchises() {
+  return request<Franchise[]>("/franchises/");
+}
+
+// --- Auctions (public, unauthenticated) -----------------------------------
+
+export type Auction = {
+  id: number;
+  title: string;
+  category: string;
+  description?: string | null;
+  asking_price?: number | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  status: string;
+  source_url?: string | null;
+  is_active: boolean;
+};
+
+export function listAuctions() {
+  return request<Auction[]>("/auctions/");
+}
+
 // --- Business qualification & readiness -----------------------------------
 
 export type QualificationProfile = {

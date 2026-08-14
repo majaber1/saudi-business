@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 import { login, me, saveToken } from "@/lib/api";
 
@@ -15,6 +16,9 @@ const copy = {
     noAccount: "ليس لديك حساب؟",
     register: "إنشاء حساب",
     forgot: "نسيت كلمة المرور؟",
+    demoTitle: "تريد استكشاف المنصّة الآن؟",
+    demoBody: "ادخل إلى لوحة عرض ببيانات توضيحية فقط. لن يتم إنشاء حساب أو حفظ أي تغييرات.",
+    demoCta: "الدخول إلى العرض التجريبي",
     success: "تم تسجيل الدخول بنجاح، مرحبًا",
     serviceNote: "تُحمى بيانات الدخول وتُرسل إلى خدمة الحساب عبر اتصال المنصّة الآمن.",
   },
@@ -27,12 +31,16 @@ const copy = {
     noAccount: "No account yet?",
     register: "Create an account",
     forgot: "Forgot password?",
+    demoTitle: "Want to explore first?",
+    demoBody: "Open a preview dashboard with sample data only. No account is created and no changes are saved.",
+    demoCta: "Continue in demo mode",
     success: "Signed in successfully, welcome",
     serviceNote: "Credentials are sent to the account service through the platform's secure connection.",
   },
 };
 
 export default function LoginPage() {
+  const router = useRouter();
   const { locale } = useLanguage();
   const c = copy[locale];
   const [email, setEmail] = useState("");
@@ -50,6 +58,7 @@ export default function LoginPage() {
       saveToken(access_token);
       const profile = await me(access_token);
       setProfileName(profile.full_name || profile.email);
+      router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -105,6 +114,23 @@ export default function LoginPage() {
             </Link>
           </form>
         )}
+
+        <div className="my-6 flex items-center gap-3" aria-hidden="true">
+          <span className="h-px flex-1 bg-slate-200" />
+          <span className="text-xs font-medium text-ink-400">{locale === "ar" ? "أو" : "OR"}</span>
+          <span className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        <section className="rounded-xl border border-brand-200 bg-brand-50 p-4" aria-labelledby="demo-access-title">
+          <h2 id="demo-access-title" className="font-semibold text-brand-900">{c.demoTitle}</h2>
+          <p className="mt-1 text-sm leading-6 text-brand-900/70">{c.demoBody}</p>
+          <Link
+            href="/dashboard"
+            className="mt-4 flex w-full items-center justify-center rounded-md border border-brand-300 bg-white px-4 py-2.5 text-sm font-bold text-brand-800 transition hover:bg-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
+          >
+            {c.demoCta}
+          </Link>
+        </section>
 
         <p className="mt-6 text-sm text-ink-700">
           {c.noAccount}{" "}
