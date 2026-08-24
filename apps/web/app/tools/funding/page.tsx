@@ -27,6 +27,27 @@ const stages = [
   { value: "growth", ar: "نمو", en: "Growth" },
 ];
 
+const fundingPrograms: Record<string, { ar: string; url?: string }> = {
+  RDIA: { ar: "هيئة تنمية البحث والتطوير والابتكار", url: "https://rdia.gov.sa" },
+  MONSHAAT: { ar: "الهيئة العامة للمنشآت الصغيرة والمتوسطة (منشآت)", url: "https://www.monshaat.gov.sa" },
+  KAFALAH: { ar: "برنامج كفالة لضمان التمويل", url: "https://www.kafalah.gov.sa/ar/Pages/default.aspx" },
+  NTDP: { ar: "البرنامج الوطني لتنمية تقنية المعلومات", url: "https://ntdp.gov.sa" },
+  CODE: { ar: "مركز ريادة الأعمال الرقمية" },
+  SVC: { ar: "الشركة السعودية للاستثمار الجريء", url: "https://svc.com.sa" },
+};
+
+function localizeMatch(text: string, ar: boolean) {
+  if (!ar) return text;
+  return text
+    .replace(/Industry '([^']+)' matches (.+) focus areas/, "القطاع المختار ضمن مجالات تركيز البرنامج")
+    .replace(/Industry '([^']+)' is outside (.+) typical focus/, "القطاع المختار خارج نطاق التركيز المعتاد للبرنامج")
+    .replace(/(.+) supports general\/cross-sector SMEs/, "البرنامج يدعم المنشآت الصغيرة والمتوسطة في قطاعات متعددة")
+    .replace(/Project stage '([^']+)' is within (.+)'s supported range/, "مرحلة المشروع ضمن المراحل التي يدعمها البرنامج")
+    .replace(/Stage '([^']+)' is not typically funded by (.+)/, "مرحلة المشروع ليست ضمن المراحل التي يمولها البرنامج عادةً")
+    .replace("MVP validation strengthens the application", "وجود منتج أولي يعزز ملف الطلب")
+    .replace("Technical team in place", "الفريق التقني متوفر");
+}
+
 export default function FundingMatcherPage() {
   const { locale } = useLanguage();
   const ar = locale === "ar";
@@ -167,7 +188,7 @@ export default function FundingMatcherPage() {
                   <article key={r.program} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <h3 className="text-lg font-bold text-ink-900">{r.name}</h3>
+                        <h3 className="text-lg font-bold text-ink-900">{ar ? fundingPrograms[r.program]?.ar || r.name : r.name}</h3>
                         <p className="mt-1 text-sm text-ink-600">{r.program}</p>
                       </div>
                       <div className="text-end">
@@ -184,7 +205,7 @@ export default function FundingMatcherPage() {
                       <div className="mt-4">
                         <p className="text-xs font-bold text-ink-600">{ar ? "أسباب المطابقة" : "Match reasons"}</p>
                         <div className="mt-2 flex flex-wrap gap-2">
-                          {r.reasons.map((reason, i) => <Badge key={i} variant="success">{reason}</Badge>)}
+                          {r.reasons.map((reason, i) => <Badge key={i} variant="success">{localizeMatch(reason, ar)}</Badge>)}
                         </div>
                       </div>
                     )}
@@ -193,9 +214,14 @@ export default function FundingMatcherPage() {
                       <div className="mt-3">
                         <p className="text-xs font-bold text-ink-600">{ar ? "متطلبات ناقصة" : "Missing requirements"}</p>
                         <div className="mt-2 flex flex-wrap gap-2">
-                          {r.missing.map((m, i) => <Badge key={i} variant="warning">{m}</Badge>)}
+                          {r.missing.map((m, i) => <Badge key={i} variant="warning">{localizeMatch(m, ar)}</Badge>)}
                         </div>
                       </div>
+                    )}
+                    {fundingPrograms[r.program]?.url && (
+                      <a href={fundingPrograms[r.program].url} target="_blank" rel="noreferrer" className="mt-5 inline-flex text-sm font-semibold text-brand-700 hover:underline">
+                        {ar ? "زيارة الموقع الرسمي ↗" : "Visit official website ↗"}
+                      </a>
                     )}
                   </article>
                 ))}
