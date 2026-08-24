@@ -3,9 +3,13 @@
 > Production baseline release **1.0.0** — bilingual feasibility, investment,
 > funding, qualification and administration platform.
 
+**Production:** [saudi-business-web.vercel.app](https://saudi-business-web.vercel.app/)
+
+**Repository:** [github.com/majaber1/saudi-business](https://github.com/majaber1/saudi-business)
+
 ## V1 status
 
-- **Verified backend baseline:** 191 automated tests pass across authentication, RBAC,
+- **Verified backend baseline:** 197 automated tests pass across authentication, RBAC,
   persistence, financial engines, qualification, projects and API hardening.
 - **Verified frontend:** Next.js 16 production build and TypeScript validation pass;
   production dependencies report zero known vulnerabilities.
