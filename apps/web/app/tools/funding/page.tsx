@@ -45,7 +45,9 @@ function localizeMatch(text: string, ar: boolean) {
     .replace(/Project stage '([^']+)' is within (.+)'s supported range/, "مرحلة المشروع ضمن المراحل التي يدعمها البرنامج")
     .replace(/Stage '([^']+)' is not typically funded by (.+)/, "مرحلة المشروع ليست ضمن المراحل التي يمولها البرنامج عادةً")
     .replace("MVP validation strengthens the application", "وجود منتج أولي يعزز ملف الطلب")
-    .replace("Technical team in place", "الفريق التقني متوفر");
+    .replace("MVP validation not yet available", "لا يتوفر منتج أولي موثّق بعد")
+    .replace("Technical team in place", "الفريق التقني متوفر")
+    .replace("Technical team requirements not yet met", "متطلبات الفريق التقني غير مكتملة بعد");
 }
 
 export default function FundingMatcherPage() {
