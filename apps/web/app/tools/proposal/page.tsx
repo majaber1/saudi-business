@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Stepper } from "@/components/ui/Stepper";
 import { Badge } from "@/components/ui/Badge";
 import { getToken, listProposals, createProposal, updateProposal, deleteProposal, type Proposal } from "@/lib/api";
+import { useProjectContext } from "@/lib/use-project-context";
 
 const proposalTypes = [
   { key: "commercial", icon: "🤝", ar: "عرض تجاري", en: "Commercial Proposal" },
@@ -68,6 +69,7 @@ export default function ProposalBuilderPage() {
   const [signedIn, setSignedIn] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [error, setError] = useState("");
+  const { project, error: projectError } = useProjectContext();
 
   useEffect(() => {
     const token = getToken();
@@ -75,6 +77,15 @@ export default function ProposalBuilderPage() {
     setAuthChecked(true);
     if (token) listProposals(token).then(setProposals).catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [mode]);
+
+  useEffect(() => {
+    if (!project || editingId) return;
+    setDraft((current) => ({
+      ...current,
+      title: current.title || `${ar ? "عرض" : "Proposal"} — ${project.name}`,
+      price: current.price || String(project.investment),
+    }));
+  }, [ar, editingId, project]);
 
   const set = (field: keyof ProposalDraft, value: string) =>
     setDraft((prev) => ({ ...prev, [field]: value }));
@@ -94,6 +105,8 @@ export default function ProposalBuilderPage() {
         proposal_type: selectedType || "commercial",
         locale: ar ? "ar" : "en",
         payload: {
+          project_id: project?.id,
+          project_name: project?.name,
           client_name: draft.client_name,
           client_email: draft.client_email,
           client_company: draft.client_company,
@@ -179,7 +192,8 @@ export default function ProposalBuilderPage() {
           ]}
         />
         <div className="container-page space-y-8 py-8">
-          {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+          {project && <div className="rounded-xl border border-brand-200 bg-brand-50 px-5 py-4 text-sm text-brand-800">{ar ? "العرض مرتبط بالمشروع:" : "Proposal linked to project:"} <strong>{project.name}</strong></div>}
+          {(error || projectError) && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error || projectError}</p>}
           <Stepper steps={ar ? steps.ar : steps.en} current={currentStep} />
 
           {currentStep === 0 && (

@@ -6,6 +6,7 @@ import { useLanguage } from "@/components/LanguageProvider";
 import { ServiceHeader } from "@/components/ui/ServiceHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getToken, listStudies, reportDownloadUrl, type Study } from "@/lib/api";
+import { useProjectContext } from "@/lib/use-project-context";
 
 const reportTypes = [
   { key: "feasibility", icon: "📊", ar: "تقرير دراسة الجدوى", en: "Feasibility Report" },
@@ -18,16 +19,17 @@ export default function ReportsServicePage() {
   const [loading, setLoading] = useState(true);
   const [signedIn, setSignedIn] = useState(false);
   const [error, setError] = useState("");
+  const { project, error: projectError } = useProjectContext();
 
   useEffect(() => {
     const token = getToken();
     if (!token) { setLoading(false); return; }
     setSignedIn(true);
-    listStudies(token)
+    listStudies(token, project?.id)
       .then(setStudies)
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [project?.id]);
 
   async function downloadReport(studyId: number, format: "pdf" | "docx", language: "ar" | "en") {
     const token = getToken();
@@ -66,7 +68,8 @@ export default function ReportsServicePage() {
       />
 
       <div className="container-page space-y-8 py-8">
-        {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+        {project && <div className="rounded-xl border border-brand-200 bg-brand-50 px-5 py-4 text-sm text-brand-800">{ar ? "تقارير المشروع:" : "Project reports:"} <strong>{project.name}</strong></div>}
+        {(error || projectError) && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error || projectError}</p>}
         <section className="rounded-2xl border border-brand-200 bg-white p-6 shadow-card sm:p-8">
           <h2 className="text-xl font-bold text-ink-900">{ar ? "أنواع التقارير" : "Report types"}</h2>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

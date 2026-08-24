@@ -36,7 +36,10 @@ const copy = {
     },
     step2: {
       heading: "٢. التدفقات النقدية",
-      cashflow: "التدفق النقدي السنوي (سنوات ١-٥، ر.س)",
+      revenue: "الإيرادات السنوية (سنوات ١-٥، مفصولة بفواصل)",
+      costs: "التكاليف التشغيلية السنوية (سنوات ١-٥، مفصولة بفواصل)",
+      fixedCosts: "التكاليف الثابتة السنوية (ر.س)",
+      variableCost: "نسبة التكلفة المتغيرة من الإيراد (%)",
       discount: "معدل الخصم (%)",
       compute: "احسب النتائج",
       computing: "جارٍ الحساب...",
@@ -72,7 +75,10 @@ const copy = {
     },
     step2: {
       heading: "2. Cash flow assumptions",
-      cashflow: "Annual cash flow, years 1-5 (SAR)",
+      revenue: "Annual revenue, years 1-5 (comma-separated)",
+      costs: "Annual operating costs, years 1-5 (comma-separated)",
+      fixedCosts: "Annual fixed costs (SAR)",
+      variableCost: "Variable cost as % of revenue",
       discount: "Discount rate (%)",
       compute: "Compute results",
       computing: "Computing...",
@@ -122,7 +128,10 @@ export default function NewFeasibilityStudyPage() {
   const [investment, setInvestment] = useState<number>(500000);
   const [stage, setStage] = useState<string>("mvp");
 
-  const [cashflow, setCashflow] = useState<number>(150000);
+  const [revenues, setRevenues] = useState("420000,600000,780000,900000,1020000");
+  const [operatingCosts, setOperatingCosts] = useState("360000,430000,500000,560000,620000");
+  const [fixedCosts, setFixedCosts] = useState(300000);
+  const [variableCostPercent, setVariableCostPercent] = useState(25);
   const [discount, setDiscount] = useState<number>(10);
 
   const [study, setStudy] = useState<Study | null>(null);
@@ -169,9 +178,14 @@ export default function NewFeasibilityStudyPage() {
     setBusy(true);
     setError(null);
     try {
-      const annual_cash_flows = [cashflow, cashflow, cashflow, cashflow, cashflow];
+      const revenueValues = revenues.split(",").map((value) => Number(value.trim()));
+      const costValues = operatingCosts.split(",").map((value) => Number(value.trim()));
+      if (revenueValues.length !== 5 || costValues.length !== 5 || [...revenueValues, ...costValues].some((value) => !Number.isFinite(value) || value < 0)) {
+        throw new Error(locale === "ar" ? "أدخل خمس قيم صحيحة للإيرادات والتكاليف." : "Enter five valid revenue and cost values.");
+      }
+      const annual_cash_flows = revenueValues.map((revenue, index) => revenue - costValues[index]);
       const discount_rate = discount / 100;
-      await saveStudyStep(token, study.id, 2, { annual_cash_flows, discount_rate });
+      await saveStudyStep(token, study.id, 2, { revenues: revenueValues, operating_costs: costValues, annual_cash_flows, discount_rate, fixed_costs: fixedCosts, variable_cost_percent: variableCostPercent });
       const computed = await computeStudy(token, study.id, { annual_cash_flows, discount_rate });
       setStudy(computed);
       const matches = await matchFunding({ industry, stage, has_mvp: stage !== "idea", has_technical_team: true });
@@ -236,6 +250,8 @@ export default function NewFeasibilityStudyPage() {
 
   const result = study?.result;
   const verdict = result?.verdict as keyof typeof c.step3.verdict | undefined;
+  const contributionMargin = 1 - variableCostPercent / 100;
+  const breakEvenRevenue = contributionMargin > 0 ? fixedCosts / contributionMargin : null;
 
   return (
     <main className="container-page py-14">
@@ -324,16 +340,29 @@ export default function NewFeasibilityStudyPage() {
         <form onSubmit={onCompute} className="mt-8 max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="font-semibold text-ink-900">{c.step2.heading}</h2>
           <label className="block text-sm">
-            <span className="text-ink-700">{c.step2.cashflow}</span>
+            <span className="text-ink-700">{c.step2.revenue}</span>
             <input
-              type="number"
+              type="text"
               required
-              min={0}
-              value={cashflow}
-              onChange={(e) => setCashflow(parseFloat(e.target.value))}
+              value={revenues}
+              onChange={(e) => setRevenues(e.target.value)}
               className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
             />
           </label>
+          <label className="block text-sm">
+            <span className="text-ink-700">{c.step2.costs}</span>
+            <input type="text" required value={operatingCosts} onChange={(e) => setOperatingCosts(e.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-brand-500" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm">
+              <span className="text-ink-700">{c.step2.fixedCosts}</span>
+              <input type="number" min={0} value={fixedCosts} onChange={(e) => setFixedCosts(Number(e.target.value))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-brand-500" />
+            </label>
+            <label className="block text-sm">
+              <span className="text-ink-700">{c.step2.variableCost}</span>
+              <input type="number" min={0} max={99} value={variableCostPercent} onChange={(e) => setVariableCostPercent(Number(e.target.value))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-brand-500" />
+            </label>
+          </div>
           <label className="block text-sm">
             <span className="text-ink-700">{c.step2.discount}</span>
             <input
@@ -375,7 +404,7 @@ export default function NewFeasibilityStudyPage() {
                 {c.step3.verdict[verdict] ?? verdict}
               </span>
             )}
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                 <p className="text-xs text-ink-500">{c.step3.npv}</p>
                 <p className="mt-1 text-sm font-semibold">{fmtSAR(result.npv, locale)}</p>
@@ -391,6 +420,10 @@ export default function NewFeasibilityStudyPage() {
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                 <p className="text-xs text-ink-500">{c.step3.roi}</p>
                 <p className="mt-1 text-sm font-semibold">{fmtMetric(result.roi_percent, locale)}%</p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <p className="text-xs text-ink-500">{locale === "ar" ? "إيراد التعادل" : "Break-even revenue"}</p>
+                <p className="mt-1 text-sm font-semibold">{fmtSAR(breakEvenRevenue, locale)}</p>
               </div>
             </div>
             <div className="mt-5 flex flex-wrap gap-3">
@@ -414,6 +447,18 @@ export default function NewFeasibilityStudyPage() {
               </button>
             </div>
           </div>
+
+          {result.sensitivity?.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="font-semibold text-ink-900">{locale === "ar" ? "تحليل الحساسية" : "Sensitivity analysis"}</h3>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b text-start text-ink-500"><th className="p-2">{locale === "ar" ? "تغير الإيراد" : "Revenue change"}</th><th className="p-2">NPV</th><th className="p-2">IRR</th><th className="p-2">{locale === "ar" ? "القرار" : "Verdict"}</th></tr></thead>
+                  <tbody>{result.sensitivity.map((row) => <tr key={row.revenue_change_percent} className="border-b border-slate-100"><td className="p-2">{fmtMetric(row.revenue_change_percent, locale)}%</td><td className="p-2">{fmtSAR(row.npv, locale)}</td><td className="p-2">{fmtMetric(row.irr_percent, locale)}%</td><td className="p-2">{c.step3.verdict[row.verdict as keyof typeof c.step3.verdict] || row.verdict}</td></tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {funding && funding.length > 0 && (
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

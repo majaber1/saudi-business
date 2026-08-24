@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
 import { ServiceHeader } from "@/components/ui/ServiceHeader";
 import { Badge } from "@/components/ui/Badge";
 import { matchFunding, type FundingMatch } from "@/lib/api";
+import { useProjectContext } from "@/lib/use-project-context";
 
 const industries = [
   { value: "technology", ar: "تقنية", en: "Technology" },
@@ -33,9 +34,31 @@ export default function FundingMatcherPage() {
   const [stage, setStage] = useState("");
   const [hasMvp, setHasMvp] = useState(false);
   const [hasTeam, setHasTeam] = useState(false);
+  const [requestedAmount, setRequestedAmount] = useState("");
+  const [annualRevenue, setAnnualRevenue] = useState("");
+  const [annualExpenses, setAnnualExpenses] = useState("");
+  const [existingDebt, setExistingDebt] = useState("0");
+  const [employees, setEmployees] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [hasCr, setHasCr] = useState(false);
+  const [hasFinancials, setHasFinancials] = useState(false);
+  const [hasBankStatements, setHasBankStatements] = useState(false);
+  const [hasLicense, setHasLicense] = useState(false);
   const [results, setResults] = useState<FundingMatch[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { project, error: projectError } = useProjectContext();
+
+  useEffect(() => {
+    if (!project) return;
+    setIndustry(project.industry);
+    setStage(project.stage);
+    setHasMvp(project.stage !== "idea");
+    setRequestedAmount(String(project.investment));
+  }, [project]);
+
+  const readinessChecks = [Boolean(industry), Boolean(stage), Number(requestedAmount) > 0, Number(annualRevenue) > 0, Number(annualExpenses) >= 0, Number(existingDebt) >= 0, Number(employees) >= 0, Boolean(purpose.trim()), hasCr, hasFinancials, hasBankStatements, hasLicense];
+  const readinessScore = Math.round((readinessChecks.filter(Boolean).length / readinessChecks.length) * 100);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -62,6 +85,12 @@ export default function FundingMatcherPage() {
       />
 
       <div className="container-page space-y-8 py-8">
+        {project && (
+          <div className="rounded-xl border border-brand-200 bg-brand-50 px-5 py-4 text-sm text-brand-800">
+            {ar ? "تمت تعبئة بيانات المشروع:" : "Project data loaded:"} <strong>{project.name}</strong>
+          </div>
+        )}
+        {projectError && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{projectError}</p>}
         <div className="grid gap-8 lg:grid-cols-[400px_1fr]">
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
             <h2 className="text-lg font-bold text-ink-900">{ar ? "بيانات المطابقة" : "Matching criteria"}</h2>
@@ -74,6 +103,17 @@ export default function FundingMatcherPage() {
                   {industries.map((i) => <option key={i.value} value={i.value}>{ar ? i.ar : i.en}</option>)}
                 </select>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm text-ink-700">{ar ? "التمويل المطلوب" : "Requested funding"}<input type="number" min="1" value={requestedAmount} onChange={(e) => setRequestedAmount(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                <label className="text-sm text-ink-700">{ar ? "عدد الموظفين" : "Employees"}<input type="number" min="0" value={employees} onChange={(e) => setEmployees(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                <label className="text-sm text-ink-700">{ar ? "الإيراد السنوي" : "Annual revenue"}<input type="number" min="0" value={annualRevenue} onChange={(e) => setAnnualRevenue(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                <label className="text-sm text-ink-700">{ar ? "المصاريف السنوية" : "Annual expenses"}<input type="number" min="0" value={annualExpenses} onChange={(e) => setAnnualExpenses(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                <label className="col-span-2 text-sm text-ink-700">{ar ? "الديون الحالية" : "Existing debt"}<input type="number" min="0" value={existingDebt} onChange={(e) => setExistingDebt(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+              </div>
+              <label className="block text-sm text-ink-700">{ar ? "غرض التمويل" : "Funding purpose"}<textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={2} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" placeholder={ar ? "تجهيز، رأس مال عامل، توسع..." : "Equipment, working capital, expansion..."} /></label>
+              <fieldset className="space-y-2 rounded-xl border border-slate-200 p-4"><legend className="px-1 text-sm font-semibold text-ink-700">{ar ? "المستندات المتاحة" : "Available documents"}</legend>
+                {[[hasCr,setHasCr,ar?"سجل تجاري":"Commercial registration"],[hasFinancials,setHasFinancials,ar?"قوائم أو توقعات مالية":"Financials or projections"],[hasBankStatements,setHasBankStatements,ar?"كشوف حساب":"Bank statements"],[hasLicense,setHasLicense,ar?"التراخيص المطلوبة":"Required licenses"]].map(([checked,setChecked,label]) => <label key={String(label)} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checked as boolean} onChange={(e) => (setChecked as (value:boolean)=>void)(e.target.checked)} />{String(label)}</label>)}
+              </fieldset>
               <div>
                 <label className="block text-sm font-medium text-ink-700">{ar ? "المرحلة" : "Stage"}</label>
                 <select value={stage} onChange={(e) => setStage(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-brand-500 focus:outline-none">
@@ -107,6 +147,7 @@ export default function FundingMatcherPage() {
           </section>
 
           <section>
+            <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-card"><div className="flex items-center justify-between"><div><h2 className="font-bold text-ink-900">{ar ? "جاهزية ملف التمويل" : "Funding file readiness"}</h2><p className="mt-1 text-xs text-ink-500">{ar ? "تقييم ذاتي أولي، وليس قرار أهلية رسميًا." : "Initial self-assessment, not an official eligibility decision."}</p></div><strong className="text-3xl text-brand-700">{readinessScore}%</strong></div></div>
             {results === null ? (
               <div className="flex h-full items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-16 text-center">
                 <div>
