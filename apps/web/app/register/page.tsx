@@ -40,8 +40,8 @@ const copy = {
     loading: "جارٍ الإنشاء...",
     haveAccount: "لديك حساب بالفعل؟",
     login: "تسجيل الدخول",
-    success: "تم إنشاء الحساب. تحقق من بريدك الإلكتروني لتفعيل حساب",
-    serviceNote: "يتطلب تفعيل الحساب وصول رسالة التحقق إلى بريدك الإلكتروني.",
+    success: "تم إنشاء الحساب بنجاح. يمكنك الآن تسجيل الدخول باسم",
+    serviceNote: "قد يُطلب تأكيد البريد الإلكتروني عند تفعيل خدمة الرسائل في المنصة.",
   },
   en: {
     title: "Create an account",
@@ -53,8 +53,8 @@ const copy = {
     loading: "Creating...",
     haveAccount: "Already have an account?",
     login: "Sign in",
-    success: "Account created. Check your email to verify",
-    serviceNote: "Account activation requires access to the verification email sent to your inbox.",
+    success: "Account created successfully. You can now sign in as",
+    serviceNote: "Email confirmation may be required when email delivery is enabled for the platform.",
   },
 };
 
