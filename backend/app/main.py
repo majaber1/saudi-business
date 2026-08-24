@@ -169,7 +169,9 @@ def _production_readiness(connected: bool) -> tuple[bool, list[str]]:
     secret = os.getenv("JWT_SECRET", "")
     if production and (len(secret) < 32 or secret in {"replace-this-before-production", "dev-only-insecure-secret-change-me"}):
         failures.append("jwt_secret_insecure")
-    verification = os.getenv("REQUIRE_EMAIL_VERIFICATION", "true" if production else "false").lower() in {"1", "true", "yes"}
+    # Keep readiness aligned with auth._verification_required(): verification
+    # is enabled explicitly, never merely because ENVIRONMENT=production.
+    verification = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() in {"1", "true", "yes"}
     if production and verification and not (os.getenv("SMTP_HOST") and os.getenv("SMTP_FROM")):
         failures.append("email_delivery_unconfigured")
     return not failures, failures
