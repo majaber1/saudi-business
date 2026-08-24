@@ -75,19 +75,9 @@ const services = [
     },
   },
   {
-    href: "/tools/auctions",
-    icon: "🔨",
-    code: "08",
-    title: { ar: "المزادات", en: "Auctions" },
-    description: {
-      ar: "تصفّح مزادات الأعمال والأصول التجارية.",
-      en: "Browse business and commercial asset auctions.",
-    },
-  },
-  {
     href: "/tools/reports",
     icon: "📄",
-    code: "09",
+    code: "08",
     title: { ar: "التقارير وحزمة المستثمر", en: "Reports & Investor Package" },
     description: {
       ar: "أنشئ تقارير احترافية وحزمة المستثمر من دراساتك وتحليلاتك.",
@@ -97,7 +87,7 @@ const services = [
   {
     href: "/tools/ideas",
     icon: "💡",
-    code: "10",
+    code: "09",
     title: { ar: "بنك الأفكار", en: "Idea Bank" },
     description: {
       ar: "أفكار مشاريع متوافقة مع رؤية 2030 ومصنفة حسب القطاع ومستوى الصعوبة.",

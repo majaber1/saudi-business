@@ -14,7 +14,7 @@ from app.api.feasibility import router as feasibility_router
 from app.api.reports import router as reports_router
 from app.api.ideas import router as ideas_router
 from app.api.franchises import router as franchises_router
-from app.api.auctions import router as auctions_router
+from app.api.documents import router as documents_router
 from app.api.qualification import router as qualification_router
 from app.api.admin import router as admin_router
 from app.api.opportunities import router as opportunities_router
@@ -65,7 +65,7 @@ app.include_router(feasibility_router)
 app.include_router(reports_router)
 app.include_router(ideas_router)
 app.include_router(franchises_router)
-app.include_router(auctions_router)
+app.include_router(documents_router)
 app.include_router(qualification_router)
 app.include_router(admin_router)
 app.include_router(opportunities_router)

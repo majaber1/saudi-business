@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
 import { ServiceHeader } from "@/components/ui/ServiceHeader";
 import { Badge } from "@/components/ui/Badge";
-import { matchFunding, type FundingMatch } from "@/lib/api";
+import { getToken, listFundingDocuments, matchFunding, uploadFundingDocument, type FundingDocument, type FundingMatch } from "@/lib/api";
 import { useProjectContext } from "@/lib/use-project-context";
 
 const industries = [
@@ -70,6 +70,8 @@ export default function FundingMatcherPage() {
   const [results, setResults] = useState<FundingMatch[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [documents, setDocuments] = useState<FundingDocument[]>([]);
+  const [uploading, setUploading] = useState(false);
   const { project, error: projectError } = useProjectContext();
 
   useEffect(() => {
@@ -79,6 +81,20 @@ export default function FundingMatcherPage() {
     setHasMvp(project.stage !== "idea");
     setRequestedAmount(String(project.investment));
   }, [project]);
+
+  useEffect(() => {
+    const token = getToken();
+    if (project && token) listFundingDocuments(token, project.id).then(setDocuments).catch(() => undefined);
+  }, [project]);
+
+  async function handleDocument(file?: File) {
+    const token = getToken();
+    if (!file || !project || !token) { setError(ar ? "سجّل الدخول واختر مشروعًا قبل رفع المستند." : "Sign in and select a project before uploading."); return; }
+    setUploading(true); setError("");
+    try { const saved = await uploadFundingDocument(token, project.id, file); setDocuments((current) => [saved, ...current]); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setUploading(false); }
+  }
 
   const readinessChecks = [Boolean(industry), Boolean(stage), Number(requestedAmount) > 0, Number(annualRevenue) > 0, Number(annualExpenses) >= 0, Number(existingDebt) >= 0, Number(employees) >= 0, Boolean(purpose.trim()), hasCr, hasFinancials, hasBankStatements, hasLicense];
   const readinessScore = Math.round((readinessChecks.filter(Boolean).length / readinessChecks.length) * 100);
@@ -167,6 +183,13 @@ export default function FundingMatcherPage() {
                   : "💡 You can use your existing business profile to auto-fill these fields."}
               </p>
             </div>
+            <div className="mt-5 rounded-xl border border-slate-200 p-4">
+              <h3 className="text-sm font-bold text-ink-800">{ar ? "خزنة مستندات التمويل" : "Funding document vault"}</h3>
+              <p className="mt-1 text-xs text-ink-500">{ar ? "PDF أو Word أو Excel أو صورة — حتى 10MB. التخزين خاص على Cloudflare R2." : "PDF, Word, Excel, or image — up to 10MB. Privately stored on Cloudflare R2."}</p>
+              <input aria-label={ar ? "رفع مستند تمويل" : "Upload funding document"} type="file" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png" disabled={uploading || !project} onChange={(event) => handleDocument(event.target.files?.[0])} className="mt-3 block w-full text-xs" />
+              {!project && <p className="mt-2 text-xs text-amber-700">{ar ? "افتح الأداة من صفحة مشروع لربط المستند به." : "Open this tool from a project to attach documents."}</p>}
+              {documents.length > 0 && <ul className="mt-3 space-y-1 text-xs text-ink-700">{documents.map((doc) => <li key={doc.id}>✓ {doc.name} ({Math.ceil((doc.size_bytes || 0) / 1024)} KB)</li>)}</ul>}
+            </div>
           </section>
 
           <section>
@@ -190,7 +213,7 @@ export default function FundingMatcherPage() {
                   <article key={r.program} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <h3 className="text-lg font-bold text-ink-900">{ar ? fundingPrograms[r.program]?.ar || r.name : r.name}</h3>
+                        <h3 className="text-lg font-bold text-ink-900">{ar ? r.name_ar || fundingPrograms[r.program]?.ar || r.name : r.name}</h3>
                         <p className="mt-1 text-sm text-ink-600">{r.program}</p>
                       </div>
                       <div className="text-end">
@@ -220,8 +243,9 @@ export default function FundingMatcherPage() {
                         </div>
                       </div>
                     )}
-                    {fundingPrograms[r.program]?.url && (
-                      <a href={fundingPrograms[r.program].url} target="_blank" rel="noreferrer" className="mt-5 inline-flex text-sm font-semibold text-brand-700 hover:underline">
+                    {ar && r.eligibility_sample_ar?.length > 0 && <div className="mt-4 rounded-xl bg-slate-50 p-4"><p className="text-xs font-bold text-ink-700">عينة شروط أهلية موثقة</p><p className="mt-1 text-xs text-ink-500">{r.provider_role_ar}</p><ul className="mt-2 list-inside list-disc space-y-1 text-xs text-ink-700">{r.eligibility_sample_ar.map((item) => <li key={item}>{item}</li>)}</ul><p className="mt-2 text-[11px] text-ink-500">آخر تحقق: {r.verified_at}</p></div>}
+                    {(r.source_url || fundingPrograms[r.program]?.url) && (
+                      <a href={r.source_url || fundingPrograms[r.program].url} target="_blank" rel="noreferrer" className="mt-5 inline-flex text-sm font-semibold text-brand-700 hover:underline">
                         {ar ? "زيارة الموقع الرسمي ↗" : "Visit official website ↗"}
                       </a>
                     )}

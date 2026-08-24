@@ -273,36 +273,6 @@ class InvestmentOpportunity(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class Auction(TimestampMixin, Base):
-    __tablename__ = "auctions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
-    category: Mapped[str] = mapped_column(String(80), index=True)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    seller_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
-    asking_price: Mapped[Optional[float]] = mapped_column(Float)
-    reserve_price: Mapped[Optional[float]] = mapped_column(Float)
-    starts_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    status: Mapped[str] = mapped_column(String(20), default="draft")
-
-    bids: Mapped[list["AuctionBid"]] = relationship(back_populates="auction")
-
-
-class AuctionBid(TimestampMixin, Base):
-    __tablename__ = "auction_bids"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    auction_id: Mapped[int] = mapped_column(ForeignKey("auctions.id"), index=True, nullable=False)
-    bidder_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
-    amount: Mapped[Optional[float]] = mapped_column(Float)
-    kind: Mapped[str] = mapped_column(String(30), default="expression_of_interest")
-    message: Mapped[Optional[str]] = mapped_column(Text)
-
-    auction: Mapped["Auction"] = relationship(back_populates="bids")
-
-
 class MultazimRequirement(TimestampMixin, Base):
     __tablename__ = "multazim_requirements"
 

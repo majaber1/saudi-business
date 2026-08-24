@@ -24,7 +24,6 @@ export function Footer() {
       links: [
         { href: "/tools/opportunities", label: ar ? "الفرص الاستثمارية" : "Opportunities" },
         { href: "/tools/franchise", label: ar ? "الامتياز التجاري" : "Franchise" },
-        { href: "/tools/auctions", label: ar ? "المزادات" : "Auctions" },
       ],
     },
     {

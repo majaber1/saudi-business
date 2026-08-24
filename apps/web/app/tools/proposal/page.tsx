@@ -7,7 +7,7 @@ import { ServiceHeader } from "@/components/ui/ServiceHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Stepper } from "@/components/ui/Stepper";
 import { Badge } from "@/components/ui/Badge";
-import { getToken, listProposals, createProposal, updateProposal, deleteProposal, type Proposal } from "@/lib/api";
+import { getToken, listProposals, createProposal, updateProposal, deleteProposal, exportProposal, type Proposal } from "@/lib/api";
 import { useProjectContext } from "@/lib/use-project-context";
 
 const proposalTypes = [
@@ -163,6 +163,13 @@ export default function ProposalBuilderPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  async function handleExport(proposal: Proposal, fmt: "pdf" | "docx") {
+    const token = getToken(); if (!token) return;
+    setError("");
+    try { await exportProposal(token, proposal.id, fmt, ar ? "ar" : "en"); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
   }
 
   if (!authChecked) {
@@ -374,6 +381,8 @@ export default function ProposalBuilderPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={p.status === "completed" ? "success" : p.status === "draft" ? "neutral" : "info"}>{p.status}</Badge>
+                    <button onClick={() => handleExport(p, "pdf")} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-ink-700 hover:bg-slate-50">PDF</button>
+                    <button onClick={() => handleExport(p, "docx")} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-ink-700 hover:bg-slate-50">Word</button>
                     <button onClick={() => handleEdit(p)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-brand-700 hover:bg-brand-50">{ar ? "تعديل" : "Edit"}</button>
                     <button onClick={() => handleDelete(p)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-50">{ar ? "حذف" : "Delete"}</button>
                   </div>

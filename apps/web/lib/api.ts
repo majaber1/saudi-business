@@ -237,6 +237,11 @@ export type FundingMatch = {
   score_percent: number;
   reasons: string[];
   missing: string[];
+  name_ar: string;
+  source_url: string;
+  eligibility_sample_ar: string[];
+  provider_role_ar: string;
+  verified_at: string;
 };
 
 export function matchFunding(payload: {
@@ -249,6 +254,30 @@ export function matchFunding(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export type FundingDocument = { id: number; project_id: number | null; name: string; content_type?: string | null; size_bytes?: number | null; created_at: string };
+
+export async function uploadFundingDocument(token: string, projectId: number, file: File) {
+  const form = new FormData(); form.append("project_id", String(projectId)); form.append("file", file);
+  const res = await fetch(API_BASE + "/documents/", { method: "POST", headers: { Authorization: "Bearer " + token }, body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(apiErrorMessage(data, res.statusText || "Upload failed"));
+  return data as FundingDocument;
+}
+
+export function listFundingDocuments(token: string, projectId: number) {
+  return authedRequest<FundingDocument[]>(`/documents/?project_id=${projectId}`, token);
+}
+
+export async function downloadProtectedFile(path: string, token: string, filename: string) {
+  const res = await fetch(API_BASE + path, { headers: { Authorization: "Bearer " + token } });
+  if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
+  const url = URL.createObjectURL(await res.blob()); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+export function exportProposal(token: string, proposalId: number, fmt: "pdf" | "docx", locale: "ar" | "en") {
+  return downloadProtectedFile(`/proposals/${proposalId}/export?fmt=${fmt}&locale=${locale}`, token, `proposal_${proposalId}_${locale}.${fmt}`);
 }
 
 // --- Investment opportunities (public, unauthenticated) ---------------------
@@ -431,25 +460,6 @@ export function listFranchises() {
   return request<Franchise[]>("/franchises/");
 }
 
-// --- Auctions (public, unauthenticated) -----------------------------------
-
-export type Auction = {
-  id: number;
-  title: string;
-  category: string;
-  description?: string | null;
-  asking_price?: number | null;
-  start_date?: string | null;
-  end_date?: string | null;
-  status: string;
-  source_url?: string | null;
-  is_active: boolean;
-};
-
-export function listAuctions() {
-  return request<Auction[]>("/auctions/");
-}
-
 // --- Business qualification & readiness -----------------------------------
 
 export type QualificationProfile = {
@@ -514,7 +524,6 @@ export type AdminStats = {
   studies: number;
   ideas: number;
   franchises: number;
-  auctions: number;
   reports: number;
   recent_activity: Array<{ id: number; action: string; entity?: string | null; entity_id?: number | null }>;
 };
