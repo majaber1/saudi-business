@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/components/LanguageProvider";
 import {
   computeStudy,
   createStudy,
+  getProject,
   getToken,
   matchFunding,
   reportDownloadUrl,
@@ -92,9 +93,20 @@ const copy = {
   },
 };
 
-function fmtSAR(n: number | null | undefined) {
+function fmtSAR(n: number | null | undefined, locale: "ar" | "en") {
   if (n === null || n === undefined) return "—";
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n) + " SAR";
+  return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-SA", {
+    style: "currency",
+    currency: "SAR",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function fmtMetric(n: number | null | undefined, locale: "ar" | "en", digits = 1) {
+  if (n === null || n === undefined) return "—";
+  return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-US", {
+    maximumFractionDigits: digits,
+  }).format(n);
 }
 
 export default function NewFeasibilityStudyPage() {
@@ -115,8 +127,25 @@ export default function NewFeasibilityStudyPage() {
 
   const [study, setStudy] = useState<Study | null>(null);
   const [funding, setFunding] = useState<FundingMatch[] | null>(null);
+  const [linkedProjectId, setLinkedProjectId] = useState<number | undefined>();
 
   const token = getToken();
+
+  useEffect(() => {
+    if (!token) return;
+    const rawId = new URLSearchParams(window.location.search).get("project_id");
+    const projectId = rawId ? Number(rawId) : NaN;
+    if (!Number.isInteger(projectId) || projectId <= 0) return;
+    void getProject(token, projectId)
+      .then((project) => {
+        setLinkedProjectId(project.id);
+        setName(project.name);
+        setIndustry(project.industry);
+        setInvestment(project.investment);
+        setStage(project.stage);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, [token]);
 
   async function onCreateStudy(e: React.FormEvent) {
     e.preventDefault();
@@ -124,7 +153,7 @@ export default function NewFeasibilityStudyPage() {
     setBusy(true);
     setError(null);
     try {
-      const created = await createStudy(token, { title: name, industry, investment, project_id: undefined, study_type: "general" });
+      const created = await createStudy(token, { title: name, industry, investment, project_id: linkedProjectId, study_type: "general" });
       setStudy(created);
       setStep(2);
     } catch (err) {
@@ -349,19 +378,19 @@ export default function NewFeasibilityStudyPage() {
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                 <p className="text-xs text-ink-500">{c.step3.npv}</p>
-                <p className="mt-1 font-mono text-sm font-semibold">{fmtSAR(result.npv)}</p>
+                <p className="mt-1 text-sm font-semibold">{fmtSAR(result.npv, locale)}</p>
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                 <p className="text-xs text-ink-500">{c.step3.irr}</p>
-                <p className="mt-1 font-mono text-sm font-semibold">{result.irr_percent ?? "—"}%</p>
+                <p className="mt-1 text-sm font-semibold">{fmtMetric(result.irr_percent, locale)}%</p>
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                 <p className="text-xs text-ink-500">{c.step3.payback}</p>
-                <p className="mt-1 font-mono text-sm font-semibold">{result.payback_years ?? "—"} yrs</p>
+                <p className="mt-1 text-sm font-semibold">{fmtMetric(result.payback_years, locale)} {locale === "ar" ? "سنة" : "years"}</p>
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                 <p className="text-xs text-ink-500">{c.step3.roi}</p>
-                <p className="mt-1 font-mono text-sm font-semibold">{result.roi_percent ?? "—"}%</p>
+                <p className="mt-1 text-sm font-semibold">{fmtMetric(result.roi_percent, locale)}%</p>
               </div>
             </div>
             <div className="mt-5 flex flex-wrap gap-3">

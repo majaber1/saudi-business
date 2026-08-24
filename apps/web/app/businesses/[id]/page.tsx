@@ -17,7 +17,7 @@ function money(value: number, locale: "ar" | "en") {
 }
 
 const toolLinks = (id: string, ar: boolean) => [
-  { href: `/tools/feasibility?business=${id}`, icon: "📊", label: ar ? "دراسة الجدوى" : "Feasibility Study" },
+  { href: `/feasibility/new?project_id=${id}`, icon: "📊", label: ar ? "دراسة الجدوى" : "Feasibility Study" },
   { href: `/tools/financial?business=${id}`, icon: "💰", label: ar ? "التحليل المالي" : "Financial Analysis" },
   { href: `/tools/proposal?business=${id}`, icon: "📝", label: ar ? "منشئ العروض" : "Proposal Builder" },
   { href: `/tools/funding?business=${id}`, icon: "🏦", label: ar ? "مطابقة التمويل" : "Funding Matcher" },
@@ -83,7 +83,7 @@ export default function BusinessDetailPage() {
         breadcrumb={[{ label: ar ? "أعمالي" : "My Businesses", href: "/businesses" }]}
         actions={
           <Link
-            href={`/tools/feasibility?business=${id}`}
+            href={`/feasibility/new?project_id=${id}`}
             className="rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white shadow-card hover:bg-brand-700"
           >
             {ar ? "دراسة جدوى جديدة" : "New feasibility study"}

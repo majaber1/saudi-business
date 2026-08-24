@@ -7,18 +7,38 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "/api/backend";
 
-export type ApiError = { detail?: string };
+export type ApiError = {
+  detail?: string | Array<{ msg?: string; loc?: Array<string | number> }>;
+  message?: string;
+};
+
+function apiErrorMessage(data: unknown, fallback: string): string {
+  if (!data || typeof data !== "object") return fallback;
+  const error = data as ApiError;
+  if (typeof error.detail === "string") return error.detail;
+  if (Array.isArray(error.detail)) {
+    const messages = error.detail
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const field = Array.isArray(item.loc) ? item.loc.at(-1) : null;
+        return item.msg ? `${field ? `${String(field)}: ` : ""}${item.msg}` : null;
+      })
+      .filter((item): item is string => Boolean(item));
+    if (messages.length) return messages.join("، ");
+  }
+  if (typeof error.message === "string") return error.message;
+  return fallback;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(API_BASE + path, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) {
-    const message =
-      (data as ApiError)?.detail || res.statusText || "Request failed";
+    const message = apiErrorMessage(data, res.statusText || "Request failed");
     throw new Error(message);
   }
   return data as T;
@@ -103,6 +123,10 @@ export type Project = {
 
 export function listProjects(token: string, includeArchived = false) {
   return authedRequest<Project[]>("/projects/" + (includeArchived ? "?include_archived=true" : ""), token);
+}
+
+export function getProject(token: string, projectId: number) {
+  return authedRequest<Project>(`/projects/${projectId}`, token);
 }
 
 export function createProject(token: string, payload: { name: string; industry: string; investment: number; stage?: string }) {
