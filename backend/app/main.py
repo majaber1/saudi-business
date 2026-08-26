@@ -28,16 +28,6 @@ app = FastAPI(
     title=settings.app_name,
     description="Saudi Business | سعودي بزنس — AI Operating System for Investment Decisions",
     version=settings.app_version,
-    # The Next.js frontend proxies through a rewrite whose catch-all route
-    # param strips trailing slashes when reconstructing the destination URL
-    # (a Next.js routing characteristic, not a bug in either app). With the
-    # default redirect_slashes=True, that mismatch produced a 307 pointing
-    # directly at this backend's raw origin -- a cross-origin redirect that
-    # both fetch() and curl correctly strip the Authorization header from,
-    # silently 401-ing every authenticated collection endpoint through the
-    # proxy. Disabling it means /x and /x/ are distinct routes with no
-    # redirect; call sites (apps/web/lib/api.ts) already use the canonical
-    # trailing-slash form that matches every router's @router.get("/").
     redirect_slashes=False,
 )
 
@@ -46,8 +36,7 @@ app = FastAPI(
 async def request_observability(request, call_next):
     return await observe_request(request, call_next)
 
-# CORS origins/credentials are resolved so a wildcard is never paired with
-# credentials and production never serves "*" (see app.core.config.resolve_cors).
+
 _cors_allow_origins, _cors_allow_credentials = settings.cors
 app.add_middleware(
     CORSMiddleware,
@@ -73,14 +62,6 @@ app.include_router(leads_router)
 app.include_router(proposals_router)
 app.include_router(entitlements_router)
 
-# Runs once per cold start (module import), not inside an ASGI lifespan
-# startup event -- Vercel's Python runtime wrapper does not reliably invoke
-# ASGI lifespan, but module-level code is guaranteed to run once when the
-# module is first imported into a fresh Lambda container. Genuinely inert
-# unless the account owner sets AUTO_MIGRATE_DB=true in Vercel -- see
-# app.db.ensure_migrations_applied for why this exists, the off-by-default
-# opt-in, and its safety guarantees (advisory-lock-guarded, idempotent,
-# never raises).
 from app.db import ensure_migrations_applied  # noqa: E402
 
 ensure_migrations_applied()
@@ -103,52 +84,36 @@ def _db_ping() -> bool:
 
 
 def _persistence_label(backend: str, connected: bool) -> str:
-    """Human-readable persistence descriptor derived from the *safe* backend
-    name (never a URL). It tells the truth about four distinct states:
-
-    1. Development demo file (sqlite:///./demo.db, DB_ENABLED=False):
-       "sqlite demo fallback (local file, non-production)"
-    2. In-memory sqlite (sqlite:///:memory:):
-       "sqlite demo fallback (in-memory, non-persistent)"
-    3. Production with NO engine/URL configured (engine is None):
-       "disabled (database unconfigured)"
-    4. A configured backend that fails the connectivity ping:
-       "<backend> (unreachable)"
-    5. A configured, reachable backend: the safe dialect name only.
-
-    We NEVER claim durable/production storage for a demo fallback, and we NEVER
-    say "in-memory" unless the engine URL is actually sqlite:///:memory:. No
-    host, credentials, port, database name, or query string is ever exposed.
-    """
+    """Return a safe persistence description without exposing connection data."""
     from app.db import DATABASE_URL as _DB_URL
 
-    # No persistence enabled from an explicit env var.
     if not DB_ENABLED:
         if not _DB_URL:
-            # No engine at all (production with neither Postgres URL present).
             return "disabled (database unconfigured)"
         if ":memory:" in _DB_URL:
             return "sqlite demo fallback (in-memory, non-persistent)"
-        # Auto-generated local file demo (development only).
         return "sqlite demo fallback (local file, non-production)"
 
-    # Persistence is configured from an env var.
     label = backend or "unknown"
     if not connected:
         return label + " (unreachable)"
     return label
 
 
+def _r2_configured() -> bool:
+    """Report configuration presence only; never expose Cloudflare credentials."""
+    return all(
+        os.getenv(name)
+        for name in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME")
+    )
+
+
 @app.get("/health")
 def health():
-    """Liveness + database observability contract.
-
-    Exposes only safe, non-sensitive fields. ``db_backend``/``persistence`` are
-    derived from the SQLAlchemy dialect name only and never include host,
-    credentials, port, database name, or query parameters.
-    """
+    """Liveness + dependency observability contract with safe fields only."""
     connected = _db_ping()
     backend = safe_backend()
+    r2 = _r2_configured()
     return {
         "status": "running",
         "service": settings.app_name,
@@ -158,6 +123,8 @@ def health():
         "db_backend": backend,
         "db_connected": connected,
         "persistence": _persistence_label(backend, connected),
+        "object_storage": "configured" if r2 else "not_configured",
+        "storage_provider": "cloudflare-r2" if r2 else "none",
     }
 
 
@@ -169,8 +136,6 @@ def _production_readiness(connected: bool) -> tuple[bool, list[str]]:
     secret = os.getenv("JWT_SECRET", "")
     if production and (len(secret) < 32 or secret in {"replace-this-before-production", "dev-only-insecure-secret-change-me"}):
         failures.append("jwt_secret_insecure")
-    # Keep readiness aligned with auth._verification_required(): verification
-    # is enabled explicitly, never merely because ENVIRONMENT=production.
     verification = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() in {"1", "true", "yes"}
     if production and verification and not (os.getenv("SMTP_HOST") and os.getenv("SMTP_FROM")):
         failures.append("email_delivery_unconfigured")
@@ -182,8 +147,14 @@ def readiness():
     """Deployment readiness gate with safe machine-readable failure codes."""
     connected = _db_ping()
     ready, failures = _production_readiness(connected)
-    payload = {"status": "ready" if ready else "not_ready", "version": settings.app_version,
-               "db_connected": connected, "checks": failures}
+    payload = {
+        "status": "ready" if ready else "not_ready",
+        "version": settings.app_version,
+        "db_connected": connected,
+        "checks": failures,
+        "object_storage": "configured" if _r2_configured() else "not_configured",
+        "storage_provider": "cloudflare-r2" if _r2_configured() else "none",
+    }
     return JSONResponse(payload, status_code=200 if ready else 503)
 
 
