@@ -223,6 +223,42 @@ export function reportDownloadUrl(studyId: number, fmt: "pdf" | "docx", locale: 
   return API_BASE + "/reports/study/" + studyId + "?fmt=" + fmt + "&locale=" + locale;
 }
 
+// --- Quick idea check (Entry 1: "لدي فكرة مشروع") -----------------------------
+
+export type QuickIdeaCheckStatus = "PROMISING" | "NEEDS_VALIDATION" | "INSUFFICIENT_DATA" | "HIGH_UNCERTAINTY";
+
+export type QuickIdeaCheckPayload = {
+  idea_text: string;
+  estimated_capital: number;
+  city?: string;
+  region?: string;
+  customer_segment?: string;
+  goal?: string;
+  is_existing_business?: boolean;
+  project_id?: number;
+};
+
+export type QuickIdeaCheckResult = {
+  project_id: number;
+  study_id: number;
+  status: QuickIdeaCheckStatus;
+  industry_guess: string | null;
+  regulatory_complexity_hint: string;
+  known_fields: string[];
+  missing_fields: string[];
+  evidence_coverage: number;
+  assumption_coverage: number;
+  main_uncertainties: string[];
+  recommended_next_step: string;
+};
+
+export function submitQuickIdeaCheck(token: string, payload: QuickIdeaCheckPayload) {
+  return authedRequest<QuickIdeaCheckResult>("/quick-idea-check/", token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 // --- Evidence (study provenance layer) ---------------------------------------
 
 export const SOURCE_TYPES = [
