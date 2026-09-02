@@ -33,6 +33,7 @@ function apiErrorMessage(data: unknown, fallback: string): string {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(API_BASE + path, {
     ...init,
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   const text = await res.text();
@@ -65,7 +66,9 @@ const TOKEN_KEY = "sb_token";
 
 export function saveToken(token: string) {
   if (typeof window !== "undefined") {
-    localStorage.setItem(TOKEN_KEY, token);
+    // Store only a non-secret UI hint. The real credential is an HTTP-only
+    // SameSite cookie issued by /api/session/login and cannot be read by JS.
+    localStorage.setItem(TOKEN_KEY, token === "session" ? "session" : token);
     window.dispatchEvent(new Event("sb-auth-change"));
   }
 }
@@ -76,14 +79,21 @@ export function getToken(): string | null {
 export function clearToken() {
   if (typeof window !== "undefined") {
     localStorage.removeItem(TOKEN_KEY);
+    void fetch("/api/session/logout", { method: "POST", credentials: "same-origin" });
     window.dispatchEvent(new Event("sb-auth-change"));
   }
 }
 
 export function login(email: string, password: string) {
-  return request<TokenResponse>("/auth/login", {
+  return fetch("/api/session/login", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
     body: JSON.stringify({ email, password }),
+  }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(apiErrorMessage(data, res.statusText || "Sign in failed"));
+    return data as TokenResponse;
   });
 }
 

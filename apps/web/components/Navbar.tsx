@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
 import { clearToken, getToken, me } from "@/lib/api";
+import { useRouter } from "next/navigation";
 
 export function Navbar() {
   const { t, locale, toggle } = useLanguage();
   const [signedIn, setSignedIn] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     async function refreshAuth() {
@@ -69,7 +71,7 @@ export function Navbar() {
                 {locale === "ar" ? "حسابي" : "My account"}
               </Link>
               <button
-                onClick={() => clearToken()}
+                onClick={() => { clearToken(); setSignedIn(false); router.push("/"); router.refresh(); }}
                 className="rounded-md bg-slate-100 px-4 py-1.5 text-sm font-medium text-ink-700 hover:bg-slate-200"
               >
                 {locale === "ar" ? "خروج" : "Log out"}
