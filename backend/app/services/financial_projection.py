@@ -16,6 +16,11 @@ from __future__ import annotations
 
 from typing import Optional
 
+# Bumped whenever the projection formula changes, so a scenario snapshot
+# computed under an older version is never silently reinterpreted as if it
+# came from the current logic (see app.api.scenarios).
+CALCULATION_VERSION = "financial_projection.v1"
+
 REQUIRED_ASSUMPTION_KEYS = ("capex", "revenue_year1")
 OPTIONAL_ASSUMPTION_DEFAULTS: dict[str, float] = {
     "opex_annual": 0.0,

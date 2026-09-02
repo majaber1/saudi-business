@@ -261,6 +261,38 @@ class CompanyFinancialPeriod(TimestampMixin, Base):
     study: Mapped["FeasibilityStudy"] = relationship()
 
 
+class ScenarioRun(TimestampMixin, Base):
+    """An immutable, deterministic scenario snapshot for a study.
+
+    Explicit assumption overrides layered on top of the study's active
+    assumptions at computation time -- never a blanket +/-% shock, and never
+    a mutation of the study's actual assumptions (Base assumptions are
+    untouched; see app.api.scenarios). source_assumption_values records the
+    full input set actually used (both from base assumptions and from
+    overrides) with enough detail to reproduce or explain the result later,
+    even after the underlying assumptions change. financial_result_snapshot
+    freezes the computed output; calculation_version records which formula
+    version produced it so a future engine change never silently
+    reinterprets an old snapshot.
+    """
+
+    __tablename__ = "scenario_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("feasibility_studies.id"), index=True, nullable=False)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+
+    scenario_type: Mapped[str] = mapped_column(String(20), nullable=False)  # CONSERVATIVE|BASE|OPTIMISTIC
+    scenario_name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    assumption_overrides: Mapped[dict] = mapped_column(JSON, default=dict)
+    source_assumption_values: Mapped[dict] = mapped_column(JSON, default=dict)
+    financial_result_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    calculation_version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    study: Mapped["FeasibilityStudy"] = relationship()
+
+
 class EvidenceItem(TimestampMixin, Base):
     """A single sourced fact attached to a study, with full provenance.
 
