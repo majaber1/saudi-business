@@ -293,6 +293,36 @@ class ScenarioRun(TimestampMixin, Base):
     study: Mapped["FeasibilityStudy"] = relationship()
 
 
+class StudyDecision(TimestampMixin, Base):
+    """An immutable, explainable decision snapshot for a study.
+
+    Derived deterministically (see app.services.decision_engine) from the
+    study's evidence count and its latest BASE/CONSERVATIVE ScenarioRun
+    snapshots -- never an arbitrary AI-generated success score. Each POST
+    creates a new record rather than overwriting the last one, so the
+    decision history (e.g. CONDITIONAL_GO -> GO after an assumption
+    improved) stays inspectable, matching the same immutable-snapshot
+    pattern as ScenarioRun.
+    """
+
+    __tablename__ = "study_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("feasibility_studies.id"), index=True, nullable=False)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+
+    decision: Mapped[str] = mapped_column(String(30), nullable=False)  # GO|CONDITIONAL_GO|NO_GO|INSUFFICIENT_EVIDENCE
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    conditions: Mapped[list] = mapped_column(JSON, default=list)
+    key_drivers: Mapped[list] = mapped_column(JSON, default=list)
+    key_risks: Mapped[list] = mapped_column(JSON, default=list)
+
+    evidence_references: Mapped[list] = mapped_column(JSON, default=list)
+    scenario_references: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    study: Mapped["FeasibilityStudy"] = relationship()
+
+
 class EvidenceItem(TimestampMixin, Base):
     """A single sourced fact attached to a study, with full provenance.
 
