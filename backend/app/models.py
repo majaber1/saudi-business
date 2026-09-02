@@ -211,6 +211,52 @@ class BusinessProfile(TimestampMixin, Base):
     study: Mapped["FeasibilityStudy"] = relationship(back_populates="business_profile")
 
 
+class CompanyFinancialPeriod(TimestampMixin, Base):
+    """One period (e.g. "FY2024") of an existing company's financial profile.
+
+    Every metric is nullable -- a metric the user/document doesn't provide
+    stays NULL, it is never defaulted to zero or estimated. `source`
+    classifies how trustworthy the whole period record is; `document_id`
+    optionally traces it to a specific uploaded document (see
+    ExtractedFinancialFact for line-item-level provenance when that level of
+    detail is needed). Distinct from BusinessProfile (qualitative facts) and
+    from FinancialAssumption/FinancialResult (the new-business feasibility
+    model) -- this is period financial-statement data for a business that
+    already exists.
+    """
+
+    __tablename__ = "company_financial_periods"
+    __table_args__ = (UniqueConstraint("study_id", "period", name="uq_company_financial_period"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("feasibility_studies.id"), index=True, nullable=False)
+    document_id: Mapped[Optional[int]] = mapped_column(ForeignKey("documents.id"))
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+
+    period: Mapped[str] = mapped_column(String(50), nullable=False)
+    # financial_statement|bank_statement|user_confirmed|audited_statement|management_account|unverified
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="unverified")
+
+    revenue: Mapped[Optional[float]] = mapped_column(Float)
+    gross_profit: Mapped[Optional[float]] = mapped_column(Float)
+    ebitda: Mapped[Optional[float]] = mapped_column(Float)
+    operating_profit: Mapped[Optional[float]] = mapped_column(Float)
+    net_profit: Mapped[Optional[float]] = mapped_column(Float)
+    cash: Mapped[Optional[float]] = mapped_column(Float)
+    current_assets: Mapped[Optional[float]] = mapped_column(Float)
+    current_liabilities: Mapped[Optional[float]] = mapped_column(Float)
+    total_assets: Mapped[Optional[float]] = mapped_column(Float)
+    total_liabilities: Mapped[Optional[float]] = mapped_column(Float)
+    equity: Mapped[Optional[float]] = mapped_column(Float)
+    existing_debt: Mapped[Optional[float]] = mapped_column(Float)
+    annual_debt_service: Mapped[Optional[float]] = mapped_column(Float)
+    accounts_receivable: Mapped[Optional[float]] = mapped_column(Float)
+    inventory: Mapped[Optional[float]] = mapped_column(Float)
+    capital_expenditure: Mapped[Optional[float]] = mapped_column(Float)
+
+    study: Mapped["FeasibilityStudy"] = relationship()
+
+
 class EvidenceItem(TimestampMixin, Base):
     """A single sourced fact attached to a study, with full provenance.
 
