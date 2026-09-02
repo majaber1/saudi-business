@@ -269,3 +269,70 @@ def compute(study_id: int, body: ComputeIn, user: UserOut = Depends(get_current_
         return _to_out(models, study, _latest_result(db, models, study.id))
     finally:
         db.close()
+
+
+@router.post("/{study_id}/compute-from-assumptions", response_model=StudyOut)
+def compute_from_assumptions(study_id: int, user: UserOut = Depends(get_current_user)):
+    """Compute the feasibility model from the study's recorded assumptions.
+
+    Requires at least capex and revenue_year1 as active StudyAssumption rows
+    (see app.services.financial_projection); returns 422 listing what's
+    missing rather than silently defaulting them. Reuses the same
+    deterministic calculator as POST /{study_id}/compute -- this endpoint
+    only changes where the inputs come from.
+    """
+    from app import models
+    from app.services.financial_projection import ALL_ASSUMPTION_KEYS, missing_required_keys, project_cash_flows
+
+    db = _require_db()
+    try:
+        study = _owned_study_or_error(db, models, study_id, user)
+        active = (
+            db.query(models.StudyAssumption)
+            .filter(
+                models.StudyAssumption.study_id == study_id,
+                models.StudyAssumption.is_active.is_(True),
+                models.StudyAssumption.key.in_(ALL_ASSUMPTION_KEYS),
+            )
+            .all()
+        )
+        values = {row.key: row.value_number for row in active}
+        missing = missing_required_keys(values)
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "missing_assumptions",
+                    "message": "Record these assumptions before computing: " + ", ".join(missing),
+                    "missing": missing,
+                },
+            )
+        investment, cash_flows, discount_rate = project_cash_flows(values)
+
+        res = evaluate_feasibility(investment, cash_flows, discount_rate)
+        sens = sensitivity_analysis(investment, cash_flows, discount_rate)
+
+        result = models.FinancialResult(
+            study_id=study.id,
+            roi=res.roi_percent,
+            npv=res.npv_value,
+            irr=res.irr_value,
+            payback_years=res.payback_years,
+            verdict=res.verdict,
+            detail={
+                "sensitivity": sens,
+                "discount_rate": discount_rate,
+                "annual_cash_flows": cash_flows,
+                "source": "assumptions",
+                "assumption_versions": {row.key: {"id": row.id, "version": row.version} for row in active},
+            },
+        )
+        db.add(result)
+        study.status = "completed"
+        study.current_step = max(study.current_step, 5)
+        db.add(study)
+        db.commit()
+        db.refresh(study)
+        return _to_out(models, study, _latest_result(db, models, study.id))
+    finally:
+        db.close()
