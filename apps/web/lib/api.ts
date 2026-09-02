@@ -223,6 +223,165 @@ export function reportDownloadUrl(studyId: number, fmt: "pdf" | "docx", locale: 
   return API_BASE + "/reports/study/" + studyId + "?fmt=" + fmt + "&locale=" + locale;
 }
 
+// --- Evidence (study provenance layer) ---------------------------------------
+
+export const SOURCE_TYPES = [
+  "official_statistic",
+  "regulation",
+  "funding_program",
+  "market_report",
+  "news",
+  "survey",
+  "user_document",
+  "ai_inference",
+  "other",
+] as const;
+export type SourceType = (typeof SOURCE_TYPES)[number];
+
+export const VERIFICATION_STATUSES = ["verified", "user_provided", "unverified"] as const;
+export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number];
+
+export const CONFIDENCE_LEVELS = ["low", "medium", "high"] as const;
+export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
+
+export type AuthorityLevel =
+  | "OFFICIAL_PRIMARY"
+  | "OFFICIAL_SECONDARY"
+  | "REGULATOR"
+  | "REPUTABLE_INSTITUTION"
+  | "COMMERCIAL_SOURCE"
+  | "USER_DOCUMENT"
+  | "AI_INFERENCE"
+  | "UNVERIFIED";
+
+export type EvidenceItem = {
+  id: number;
+  study_id: number;
+  source_type: SourceType;
+  source_name: string | null;
+  source_url: string | null;
+  publisher: string | null;
+  title: string;
+  claim: string;
+  value_number: number | null;
+  value_text: string | null;
+  unit: string | null;
+  geography: string | null;
+  sector: string | null;
+  published_at: string | null;
+  retrieved_at: string;
+  effective_from: string | null;
+  effective_to: string | null;
+  superseded_by_id: number | null;
+  confidence: ConfidenceLevel;
+  verification_status: VerificationStatus;
+  authority_level: AuthorityLevel;
+  snapshot_text: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EvidenceCreatePayload = {
+  source_type: SourceType;
+  title: string;
+  claim: string;
+  source_name?: string;
+  source_url?: string;
+  publisher?: string;
+  value_number?: number;
+  value_text?: string;
+  unit?: string;
+  geography?: string;
+  sector?: string;
+  confidence?: ConfidenceLevel;
+  verification_status?: VerificationStatus;
+};
+
+export function listEvidence(token: string, studyId: number) {
+  return authedRequest<EvidenceItem[]>(`/studies/${studyId}/evidence`, token);
+}
+
+export function createEvidence(token: string, studyId: number, payload: EvidenceCreatePayload) {
+  return authedRequest<EvidenceItem>(`/studies/${studyId}/evidence`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteEvidence(token: string, studyId: number, evidenceId: number) {
+  return authedRequest<void>(`/studies/${studyId}/evidence/${evidenceId}`, token, { method: "DELETE" });
+}
+
+export type SourceRegistryEntry = {
+  key: string;
+  name_en: string;
+  name_ar: string;
+  domain: string;
+  authority_level: AuthorityLevel;
+};
+
+export function getSourceRegistry(token: string) {
+  return authedRequest<{ authority_levels: AuthorityLevel[]; sources: SourceRegistryEntry[] }>(
+    "/sources/registry",
+    token,
+  );
+}
+
+// --- Study assumptions (versioned, provenance-tagged) -------------------------
+
+export const ASSUMPTION_ORIGINS = ["USER", "EVIDENCE_DERIVED", "AI_SUGGESTED", "DEFAULT"] as const;
+export type AssumptionOrigin = (typeof ASSUMPTION_ORIGINS)[number];
+
+export type StudyAssumption = {
+  id: number;
+  study_id: number;
+  key: string;
+  label_en: string;
+  label_ar: string;
+  value_number: number | null;
+  value_text: string | null;
+  unit: string | null;
+  origin: AssumptionOrigin;
+  reason: string | null;
+  confidence: ConfidenceLevel;
+  evidence_id: number | null;
+  version: number;
+  is_active: boolean;
+};
+
+export type AssumptionCreatePayload = {
+  key: string;
+  label_en: string;
+  label_ar: string;
+  origin: AssumptionOrigin;
+  value_number?: number;
+  value_text?: string;
+  unit?: string;
+  reason?: string;
+  confidence?: ConfidenceLevel;
+  evidence_id?: number;
+};
+
+export function listAssumptions(token: string, studyId: number, includeInactive = false) {
+  return authedRequest<StudyAssumption[]>(
+    `/studies/${studyId}/assumptions/${includeInactive ? "?include_inactive=true" : ""}`,
+    token,
+  );
+}
+
+export function createAssumption(token: string, studyId: number, payload: AssumptionCreatePayload) {
+  return authedRequest<StudyAssumption>(`/studies/${studyId}/assumptions/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function retireAssumption(token: string, studyId: number, assumptionId: number) {
+  return authedRequest<StudyAssumption>(`/studies/${studyId}/assumptions/${assumptionId}`, token, {
+    method: "DELETE",
+  });
+}
+
 // --- Financial & funding engines (public, unauthenticated) ------------------
 
 export type FeasibilityEvalResponse = {
