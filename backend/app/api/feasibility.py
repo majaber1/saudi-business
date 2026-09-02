@@ -76,6 +76,7 @@ class StudyCreate(BaseModel):
 class StepIn(BaseModel):
     step: int = Field(..., ge=1, le=6)
     data: dict = Field(default_factory=dict)
+    expected_revision: Optional[int] = Field(default=None, ge=1)
 
 
 class ComputeIn(BaseModel):
@@ -90,6 +91,7 @@ class StudyOut(BaseModel):
     study_type: str
     status: str
     current_step: int
+    revision: int
     payload: dict
     result: Optional[dict] = None
 
@@ -125,6 +127,7 @@ def _to_out(models, study, result: Optional[dict]) -> StudyOut:
         study_type=study.study_type,
         status=study.status,
         current_step=study.current_step,
+        revision=study.revision,
         payload=study.payload or {},
         result=result,
     )
@@ -157,6 +160,18 @@ def create_study(data: StudyCreate, user: UserOut = Depends(get_current_user)):
             # A study may only be attached to a project the caller owns.
             if not _can_access(user, project.owner_id):
                 raise HTTPException(status_code=403, detail="Not authorized for this project")
+
+            # A project is the persistent root aggregate and has one study.
+            # Returning the existing resource makes retries and double-clicks
+            # idempotent without creating duplicate customer records.
+            existing = (
+                db.query(models.FeasibilityStudy)
+                .filter(models.FeasibilityStudy.project_id == project_id)
+                .order_by(models.FeasibilityStudy.id.asc())
+                .first()
+            )
+            if existing is not None:
+                return _to_out(models, existing, _latest_result(db, models, existing.id))
 
         study = models.FeasibilityStudy(
             project_id=project_id,
@@ -214,10 +229,20 @@ def save_step(study_id: int, body: StepIn, user: UserOut = Depends(get_current_u
     db = _require_db()
     try:
         study = _owned_study_or_error(db, models, study_id, user)
+        if body.expected_revision is not None and study.revision != body.expected_revision:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "study_revision_conflict",
+                    "message": "The study changed in another session. Reload before saving.",
+                    "current_revision": study.revision,
+                },
+            )
         payload = dict(study.payload or {})
         payload[f"step_{body.step}"] = body.data
         study.payload = payload
         study.current_step = max(study.current_step, body.step)
+        study.revision += 1
         if study.status == "draft" and body.step >= 6:
             study.status = "in_review"
         db.add(study)

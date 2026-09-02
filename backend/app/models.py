@@ -118,6 +118,7 @@ class FeasibilityStudy(TimestampMixin, Base):
     study_type: Mapped[str] = mapped_column(String(50), default="general")
     status: Mapped[str] = mapped_column(String(30), default="draft")
     current_step: Mapped[int] = mapped_column(Integer, default=1)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
 
     project: Mapped["Project"] = relationship(back_populates="studies")

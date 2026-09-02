@@ -165,9 +165,12 @@ export type Study = {
   study_type: string;
   status: string;
   current_step: number;
+  revision: number;
   payload: Record<string, unknown>;
   result: FinancialResultOut | null;
 };
+
+export type StudySaveState = "idle" | "saving" | "saved" | "error";
 
 export function listStudies(token: string, projectId?: number) {
   const qs = projectId ? "?project_id=" + projectId : "";
@@ -188,10 +191,10 @@ export function createStudy(
   });
 }
 
-export function saveStudyStep(token: string, studyId: number, step: number, data: Record<string, unknown>) {
+export function saveStudyStep(token: string, studyId: number, step: number, data: Record<string, unknown>, expectedRevision?: number) {
   return authedRequest<Study>("/feasibility/" + studyId + "/step", token, {
     method: "PATCH",
-    body: JSON.stringify({ step, data }),
+    body: JSON.stringify({ step, data, expected_revision: expectedRevision }),
   });
 }
 
