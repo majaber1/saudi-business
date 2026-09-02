@@ -253,6 +253,10 @@ class CompanyFinancialPeriod(TimestampMixin, Base):
     accounts_receivable: Mapped[Optional[float]] = mapped_column(Float)
     inventory: Mapped[Optional[float]] = mapped_column(Float)
     capital_expenditure: Mapped[Optional[float]] = mapped_column(Float)
+    # Needed for Interest Coverage (operating_profit / interest_expense) in
+    # the Phase 11 financial health engine -- distinct from
+    # annual_debt_service (principal + interest, used for DSCR).
+    interest_expense: Mapped[Optional[float]] = mapped_column(Float)
 
     study: Mapped["FeasibilityStudy"] = relationship()
 

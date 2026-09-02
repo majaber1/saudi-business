@@ -67,6 +67,7 @@ class FinancialPeriodIn(BaseModel):
     accounts_receivable: Optional[float] = None
     inventory: Optional[float] = None
     capital_expenditure: Optional[float] = None
+    interest_expense: Optional[float] = None
 
     @model_validator(mode="after")
     def _validate(self):
@@ -97,6 +98,7 @@ class FinancialPeriodOut(BaseModel):
     accounts_receivable: Optional[float] = None
     inventory: Optional[float] = None
     capital_expenditure: Optional[float] = None
+    interest_expense: Optional[float] = None
 
     model_config = {"from_attributes": True}
 

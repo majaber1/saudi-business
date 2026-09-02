@@ -27,6 +27,7 @@ from app.api.quick_idea_check import router as quick_idea_check_router
 from app.api.business_profile import router as business_profile_router
 from app.api.extracted_facts import router as extracted_facts_router
 from app.api.company_financial_profile import router as company_financial_profile_router
+from app.api.financial_health import router as financial_health_router
 from app.api.auth import UserOut, require_roles
 from app.services.monitoring import metrics_snapshot, observe_request
 
@@ -73,6 +74,7 @@ app.include_router(quick_idea_check_router)
 app.include_router(business_profile_router)
 app.include_router(extracted_facts_router)
 app.include_router(company_financial_profile_router)
+app.include_router(financial_health_router)
 
 from app.db import ensure_migrations_applied  # noqa: E402
 
