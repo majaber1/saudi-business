@@ -129,6 +129,7 @@ class FeasibilityStudy(TimestampMixin, Base):
     study_assumptions: Mapped[list["StudyAssumption"]] = relationship(
         back_populates="study", foreign_keys="StudyAssumption.study_id"
     )
+    business_profile: Mapped[Optional["BusinessProfile"]] = relationship(back_populates="study", uselist=False)
 
 
 class FinancialAssumption(TimestampMixin, Base):
@@ -173,6 +174,41 @@ class SensitivityScenario(TimestampMixin, Base):
     irr: Mapped[Optional[float]] = mapped_column(Float)
 
     study: Mapped["FeasibilityStudy"] = relationship(back_populates="scenarios")
+
+
+class BusinessProfile(TimestampMixin, Base):
+    """Structured, reusable business facts for a Study (one profile per study).
+
+    Both the feasibility flow and the funding flow (Entry 3: "أبحث عن تمويل")
+    read/write this same row, so a user who already described their business
+    is never asked to re-enter it. Distinct from Project (name/industry/
+    investment/stage, the lightweight root record) and from the later
+    CompanyFinancialProfile (period financial statements for existing
+    businesses) -- this is the qualitative "what is this business" record.
+    """
+
+    __tablename__ = "business_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("feasibility_studies.id"), unique=True, index=True, nullable=False)
+
+    business_activity: Mapped[Optional[str]] = mapped_column(String(200))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    city: Mapped[Optional[str]] = mapped_column(String(100))
+    region: Mapped[Optional[str]] = mapped_column(String(100))
+    customer_segment: Mapped[Optional[str]] = mapped_column(String(200))
+
+    capacity_value: Mapped[Optional[float]] = mapped_column(Float)
+    capacity_unit: Mapped[Optional[str]] = mapped_column(String(50))
+
+    legal_entity_type: Mapped[Optional[str]] = mapped_column(String(50))
+    ownership_notes: Mapped[Optional[str]] = mapped_column(Text)
+
+    is_existing_business: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    company_age_years: Mapped[Optional[float]] = mapped_column(Float)
+    current_revenue: Mapped[Optional[float]] = mapped_column(Float)
+
+    study: Mapped["FeasibilityStudy"] = relationship(back_populates="business_profile")
 
 
 class EvidenceItem(TimestampMixin, Base):

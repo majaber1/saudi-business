@@ -24,6 +24,7 @@ from app.api.entitlements import router as entitlements_router
 from app.api.evidence import router as evidence_router
 from app.api.assumptions import router as assumptions_router
 from app.api.quick_idea_check import router as quick_idea_check_router
+from app.api.business_profile import router as business_profile_router
 from app.api.auth import UserOut, require_roles
 from app.services.monitoring import metrics_snapshot, observe_request
 
@@ -67,6 +68,7 @@ app.include_router(entitlements_router)
 app.include_router(evidence_router)
 app.include_router(assumptions_router)
 app.include_router(quick_idea_check_router)
+app.include_router(business_profile_router)
 
 from app.db import ensure_migrations_applied  # noqa: E402
 

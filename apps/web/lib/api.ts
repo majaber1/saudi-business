@@ -259,6 +259,44 @@ export function submitQuickIdeaCheck(token: string, payload: QuickIdeaCheckPaylo
   });
 }
 
+// --- Business profile (structured, reusable business facts) -----------------
+
+export type BusinessProfile = {
+  study_id: number;
+  business_activity: string | null;
+  description: string | null;
+  city: string | null;
+  region: string | null;
+  customer_segment: string | null;
+  capacity_value: number | null;
+  capacity_unit: string | null;
+  legal_entity_type: string | null;
+  ownership_notes: string | null;
+  is_existing_business: boolean;
+  company_age_years: number | null;
+  current_revenue: number | null;
+};
+
+export type BusinessProfileUpdate = Partial<Omit<BusinessProfile, "study_id">>;
+
+export async function getBusinessProfile(token: string, studyId: number): Promise<BusinessProfile | null> {
+  const res = await fetch(`${API_BASE}/studies/${studyId}/business-profile/`, {
+    credentials: "same-origin",
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (res.status === 404) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error(apiErrorMessage(data, res.statusText || "Request failed"));
+  return data as BusinessProfile;
+}
+
+export function saveBusinessProfile(token: string, studyId: number, payload: BusinessProfileUpdate) {
+  return authedRequest<BusinessProfile>(`/studies/${studyId}/business-profile/`, token, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 // --- Evidence (study provenance layer) ---------------------------------------
 
 export const SOURCE_TYPES = [
