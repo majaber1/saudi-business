@@ -427,10 +427,56 @@ class Document(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("projects.id"))
+    # Optional link into a specific study (e.g. an existing company's
+    # financial statements attached to a funding study). Nullable/additive so
+    # existing project-only documents (funding proposal uploads) are unaffected.
+    study_id: Mapped[Optional[int]] = mapped_column(ForeignKey("feasibility_studies.id"), index=True)
+    # financial_statement|bank_statement|cr_document|asset_schedule|
+    # debt_schedule|guarantee|project_proposal|other
+    document_type: Mapped[Optional[str]] = mapped_column(String(40))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[Optional[str]] = mapped_column(String(100))
     size_bytes: Mapped[Optional[int]] = mapped_column(Integer)
     storage_ref: Mapped[Optional[str]] = mapped_column(String(500))
+
+    extracted_facts: Mapped[list["ExtractedFinancialFact"]] = relationship(back_populates="document")
+
+
+class ExtractedFinancialFact(TimestampMixin, Base):
+    """A structured fact traced to a specific uploaded document.
+
+    There is currently no automated OCR/document-understanding integration
+    configured in this environment (see docs/architecture/CURRENT_STATE_AUDIT.md);
+    every row here is entered by a human who read the source document, which
+    is why extraction_status defaults to "user_entered" rather than an
+    automated-confidence tier. The schema is forward-compatible with an
+    automated pipeline (extraction_status/confidence are free strings, not a
+    DB enum) so that capability can be added later without a migration --
+    but nothing in this codebase currently claims to parse documents
+    automatically, and a low-confidence row must never be presented as a
+    verified financial fact (see review_status).
+    """
+
+    __tablename__ = "extracted_financial_facts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("feasibility_studies.id"), index=True, nullable=False)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True, nullable=False)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+
+    field_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    value_number: Mapped[Optional[float]] = mapped_column(Float)
+    value_text: Mapped[Optional[str]] = mapped_column(String(300))
+    unit: Mapped[Optional[str]] = mapped_column(String(50))
+    period: Mapped[Optional[str]] = mapped_column(String(50))
+    source_location: Mapped[Optional[str]] = mapped_column(String(200))
+
+    extraction_status: Mapped[str] = mapped_column(String(30), default="user_entered", nullable=False)
+    confidence: Mapped[str] = mapped_column(String(20), default="high", nullable=False)
+    review_status: Mapped[str] = mapped_column(String(20), default="confirmed", nullable=False)
+
+    document: Mapped["Document"] = relationship(back_populates="extracted_facts")
+    study: Mapped["FeasibilityStudy"] = relationship()
 
 
 class Report(TimestampMixin, Base):
