@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 from app.db import DB_ENABLED, SessionLocal
 from app.api.auth import UserOut, get_current_user
+from app.services.study_access import can_access_owner as _can_access, owned_study_or_error as _owned_study_or_error
 
 # financial-engine/ lives at the repo root, three levels above this file.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "financial-engine"))
@@ -38,31 +39,6 @@ def _require_db():
     if not DB_ENABLED:
         raise HTTPException(status_code=503, detail="Feasibility studies require persistence (database not configured).")
     return SessionLocal()
-
-
-def _project_owner_id(db, models, project_id) -> Optional[int]:
-    project = db.get(models.Project, project_id) if project_id is not None else None
-    return project.owner_id if project is not None else None
-
-
-def _can_access(user: UserOut, owner_id: Optional[int]) -> bool:
-    """Admins access anything; everyone else only their own resources."""
-    return user.role_key == "admin" or (owner_id is not None and owner_id == user.id)
-
-
-def _owned_study_or_error(db, models, study_id: int, user: UserOut):
-    """Fetch a study enforcing ownership via its project owner.
-
-    404 when the study does not exist; 403 when it exists but the caller is not
-    the owner (and not an admin). Never leaks another user's study contents.
-    """
-    study = db.get(models.FeasibilityStudy, study_id)
-    if study is None:
-        raise HTTPException(status_code=404, detail="Study not found")
-    owner_id = _project_owner_id(db, models, study.project_id)
-    if not _can_access(user, owner_id):
-        raise HTTPException(status_code=403, detail="Not authorized for this study")
-    return study
 
 
 class StudyCreate(BaseModel):

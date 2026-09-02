@@ -21,6 +21,8 @@ from app.api.opportunities import router as opportunities_router
 from app.api.leads import router as leads_router
 from app.api.proposals import router as proposals_router
 from app.api.entitlements import router as entitlements_router
+from app.api.evidence import router as evidence_router
+from app.api.assumptions import router as assumptions_router
 from app.api.auth import UserOut, require_roles
 from app.services.monitoring import metrics_snapshot, observe_request
 
@@ -61,6 +63,8 @@ app.include_router(opportunities_router)
 app.include_router(leads_router)
 app.include_router(proposals_router)
 app.include_router(entitlements_router)
+app.include_router(evidence_router)
+app.include_router(assumptions_router)
 
 from app.db import ensure_migrations_applied  # noqa: E402
 

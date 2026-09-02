@@ -125,6 +125,10 @@ class FeasibilityStudy(TimestampMixin, Base):
     assumptions: Mapped[list["FinancialAssumption"]] = relationship(back_populates="study")
     results: Mapped[list["FinancialResult"]] = relationship(back_populates="study")
     scenarios: Mapped[list["SensitivityScenario"]] = relationship(back_populates="study")
+    evidence_items: Mapped[list["EvidenceItem"]] = relationship(back_populates="study")
+    study_assumptions: Mapped[list["StudyAssumption"]] = relationship(
+        back_populates="study", foreign_keys="StudyAssumption.study_id"
+    )
 
 
 class FinancialAssumption(TimestampMixin, Base):
@@ -169,6 +173,99 @@ class SensitivityScenario(TimestampMixin, Base):
     irr: Mapped[Optional[float]] = mapped_column(Float)
 
     study: Mapped["FeasibilityStudy"] = relationship(back_populates="scenarios")
+
+
+class EvidenceItem(TimestampMixin, Base):
+    """A single sourced fact attached to a study, with full provenance.
+
+    Every factual claim a study's analysis, report, or AI advisor relies on
+    must trace back to a row here (or be recorded as an explicit
+    StudyAssumption). authority_level and source_type together let the UI/API
+    tell a VERIFIED_FACT apart from an UNVERIFIED claim; both are always
+    computed/validated server-side (see app.services.source_registry) so
+    client input can never self-certify as official evidence.
+    """
+
+    __tablename__ = "evidence_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("feasibility_studies.id"), index=True, nullable=False)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+
+    # official_statistic|regulation|funding_program|market_report|news|survey|user_document|ai_inference|other
+    source_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_name: Mapped[Optional[str]] = mapped_column(String(200))
+    source_url: Mapped[Optional[str]] = mapped_column(String(500))
+    publisher: Mapped[Optional[str]] = mapped_column(String(200))
+
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    claim: Mapped[str] = mapped_column(Text, nullable=False)
+    value_number: Mapped[Optional[float]] = mapped_column(Float)
+    value_text: Mapped[Optional[str]] = mapped_column(String(300))
+    unit: Mapped[Optional[str]] = mapped_column(String(50))
+
+    geography: Mapped[Optional[str]] = mapped_column(String(100))
+    sector: Mapped[Optional[str]] = mapped_column(String(100))
+
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    # Temporal validity: when this fact is/was actually in effect, distinct
+    # from when it was published or retrieved. superseded_by_id lets a newer
+    # snapshot supersede an older one without deleting audit history.
+    effective_from: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    effective_to: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    superseded_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("evidence_items.id"))
+
+    confidence: Mapped[str] = mapped_column(String(20), default="medium")  # low|medium|high
+    # verified|user_provided|unverified -- never "fact" without one of these.
+    verification_status: Mapped[str] = mapped_column(String(30), default="unverified", nullable=False)
+    # OFFICIAL_PRIMARY|OFFICIAL_SECONDARY|REGULATOR|REPUTABLE_INSTITUTION|
+    # COMMERCIAL_SOURCE|USER_DOCUMENT|AI_INFERENCE|UNVERIFIED
+    authority_level: Mapped[str] = mapped_column(String(30), default="UNVERIFIED", nullable=False)
+
+    # The actual retrieved text/quote the claim is based on, plus a checksum
+    # so later edits/staleness are detectable.
+    snapshot_text: Mapped[Optional[str]] = mapped_column(Text)
+    snapshot_hash: Mapped[Optional[str]] = mapped_column(String(64))
+
+    study: Mapped["FeasibilityStudy"] = relationship(back_populates="evidence_items")
+
+
+class StudyAssumption(TimestampMixin, Base):
+    """A versioned, provenance-tagged assumption used in a study's analysis.
+
+    Distinct from EvidenceItem: an assumption is a value the study *uses*
+    (rent, headcount, utilization...), which may or may not be derived from
+    evidence. Writing a new assumption for a key that already has an active
+    row retires the old row (is_active=False) and bumps version rather than
+    overwriting it, so the assumption's history stays inspectable.
+    """
+
+    __tablename__ = "study_assumptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("feasibility_studies.id"), index=True, nullable=False)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    evidence_id: Mapped[Optional[int]] = mapped_column(ForeignKey("evidence_items.id"))
+
+    key: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    label_en: Mapped[str] = mapped_column(String(200), nullable=False)
+    label_ar: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    value_number: Mapped[Optional[float]] = mapped_column(Float)
+    value_text: Mapped[Optional[str]] = mapped_column(String(300))
+    unit: Mapped[Optional[str]] = mapped_column(String(50))
+
+    # USER|EVIDENCE_DERIVED|AI_SUGGESTED|DEFAULT -- AI_SUGGESTED must never be
+    # silently treated as a verified market fact by any downstream consumer.
+    origin: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text)
+    confidence: Mapped[str] = mapped_column(String(20), default="medium")
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    study: Mapped["FeasibilityStudy"] = relationship(back_populates="study_assumptions", foreign_keys=[study_id])
+    evidence: Mapped[Optional["EvidenceItem"]] = relationship()
 
 
 class FundingProgram(TimestampMixin, Base):
