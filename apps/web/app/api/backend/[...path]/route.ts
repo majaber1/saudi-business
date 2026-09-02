@@ -3,10 +3,18 @@ import { backendUrl, isSafeBrowserMutation, SESSION_COOKIE } from "@/lib/server-
 
 const HOP_BY_HOP = new Set(["connection", "content-length", "host", "keep-alive", "transfer-encoding"]);
 
-async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+const PREFIX = "/api/backend/";
+
+async function proxy(request: NextRequest) {
   if (!isSafeBrowserMutation(request)) return NextResponse.json({ detail: "Invalid request origin" }, { status: 403 });
-  const { path } = await context.params;
-  const target = new URL(backendUrl(path.join("/")));
+  // Next's [...path] catch-all segments never include a trailing empty
+  // segment, so path.join("/") silently drops a trailing slash (e.g.
+  // "/api/backend/projects/" -> "projects"). FastAPI's collection routes are
+  // defined with a trailing slash and redirect_slashes=False, so that loss
+  // 404s every authenticated collection endpoint. Read the raw pathname
+  // instead so the trailing slash (or lack of one) survives verbatim.
+  const rest = request.nextUrl.pathname.slice(PREFIX.length);
+  const target = new URL(backendUrl(rest));
   request.nextUrl.searchParams.forEach((value, key) => target.searchParams.append(key, value));
   const headers = new Headers();
   request.headers.forEach((value, key) => { if (!HOP_BY_HOP.has(key.toLowerCase()) && key.toLowerCase() !== "cookie") headers.set(key, value); });
