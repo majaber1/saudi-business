@@ -1,9 +1,11 @@
-// Defaults to a same-origin path proxied to the backend by next.config.mjs's
-// rewrites() -- this avoids needing any CORS configuration on the backend
-// (see backend/app/core/config.py: production denies cross-origin requests
-// by default unless CORS_ORIGINS is explicitly set, which this deployment
-// does not require). Override with an absolute URL via
-// NEXT_PUBLIC_API_BASE_URL if you point this frontend at a different backend.
+// Defaults to a same-origin path proxied to the backend by the secure
+// cookie-authenticated route handler at
+// app/api/backend/[...path]/route.ts -- this avoids needing any CORS
+// configuration on the backend (see backend/app/core/config.py: production
+// denies cross-origin requests by default unless CORS_ORIGINS is
+// explicitly set, which this deployment does not require). Override with
+// an absolute URL via NEXT_PUBLIC_API_BASE_URL if you point this frontend
+// at a different backend.
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "/api/backend";
 
@@ -295,6 +297,123 @@ export function saveBusinessProfile(token: string, studyId: number, payload: Bus
     method: "PUT",
     body: JSON.stringify(payload),
   });
+}
+
+// --- Company financial profile (Wave 2: existing-business period statements) --
+
+export const FINANCIAL_PERIOD_SOURCES = [
+  "financial_statement", "bank_statement", "user_confirmed",
+  "audited_statement", "management_account", "unverified",
+] as const;
+export type FinancialPeriodSource = (typeof FINANCIAL_PERIOD_SOURCES)[number];
+
+export type CompanyFinancialPeriod = {
+  id: number;
+  study_id: number;
+  period: string;
+  source: FinancialPeriodSource;
+  document_id: number | null;
+  revenue: number | null;
+  gross_profit: number | null;
+  ebitda: number | null;
+  operating_profit: number | null;
+  net_profit: number | null;
+  cash: number | null;
+  current_assets: number | null;
+  current_liabilities: number | null;
+  total_assets: number | null;
+  total_liabilities: number | null;
+  equity: number | null;
+  existing_debt: number | null;
+  annual_debt_service: number | null;
+  accounts_receivable: number | null;
+  inventory: number | null;
+  capital_expenditure: number | null;
+  interest_expense: number | null;
+};
+
+export type FinancialPeriodUpdate = Partial<Omit<CompanyFinancialPeriod, "id" | "study_id" | "period" | "document_id">>;
+
+export function listFinancialPeriods(token: string, studyId: number) {
+  return authedRequest<CompanyFinancialPeriod[]>(`/studies/${studyId}/financial-periods/`, token);
+}
+
+export function saveFinancialPeriod(token: string, studyId: number, period: string, payload: FinancialPeriodUpdate) {
+  return authedRequest<CompanyFinancialPeriod>(`/studies/${studyId}/financial-periods/${encodeURIComponent(period)}`, token, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+// --- Financial health (Wave 2) -------------------------------------------------
+
+export type MetricStatus = "CALCULATED" | "MISSING_DATA" | "NOT_APPLICABLE";
+
+export type HealthMetric = { status: MetricStatus; value: number | null; unit: string | null };
+
+export type FinancialHealth = {
+  study_id: number;
+  period: string;
+  prior_period: string | null;
+  metrics: Record<string, HealthMetric>;
+  summary: Record<string, string>;
+};
+
+export async function getFinancialHealth(token: string, studyId: number): Promise<FinancialHealth | null> {
+  const res = await fetch(`${API_BASE}/studies/${studyId}/financial-health/`, {
+    credentials: "same-origin",
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (res.status === 404) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error(apiErrorMessage(data, res.statusText || "Request failed"));
+  return data as FinancialHealth;
+}
+
+// --- Funding gap (Wave 2) -------------------------------------------------------
+
+export type FundingGap = {
+  study_id: number;
+  total_project_requirement: number;
+  requirement_source: string;
+  owner_available_capital: number;
+  owner_available_capital_status: MetricStatus;
+  existing_available_facilities: number;
+  existing_available_facilities_status: MetricStatus;
+  funding_gap: number;
+  missing_inputs: string[];
+};
+
+export function getFundingGap(token: string, studyId: number) {
+  return authedRequest<FundingGap>(`/studies/${studyId}/funding-gap/`, token);
+}
+
+// --- Borrowing capacity (Wave 2) -------------------------------------------------
+
+export type BorrowingCapacity = {
+  study_id: number;
+  period: string;
+  status: "CALCULATED" | "INSUFFICIENT_DATA";
+  base_capacity: number | null;
+  stress_capacity: number | null;
+  primary_constraint: string | null;
+  secondary_constraint: string | null;
+  financial_support: string;
+  missing_inputs: string[];
+  missing_underwriting_inputs: string[];
+  assumptions_used: Record<string, number>;
+  disclaimer: string;
+};
+
+export async function getBorrowingCapacity(token: string, studyId: number): Promise<BorrowingCapacity | null> {
+  const res = await fetch(`${API_BASE}/studies/${studyId}/borrowing-capacity/`, {
+    credentials: "same-origin",
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (res.status === 404) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error(apiErrorMessage(data, res.statusText || "Request failed"));
+  return data as BorrowingCapacity;
 }
 
 // --- Evidence (study provenance layer) ---------------------------------------
