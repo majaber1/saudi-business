@@ -31,6 +31,7 @@ from app.api.financial_health import router as financial_health_router
 from app.api.scenarios import router as scenarios_router
 from app.api.decision import router as decision_router
 from app.api.funding_gap import router as funding_gap_router
+from app.api.borrowing_capacity import router as borrowing_capacity_router
 from app.api.auth import UserOut, require_roles
 from app.services.monitoring import metrics_snapshot, observe_request
 
@@ -81,6 +82,7 @@ app.include_router(financial_health_router)
 app.include_router(scenarios_router)
 app.include_router(decision_router)
 app.include_router(funding_gap_router)
+app.include_router(borrowing_capacity_router)
 
 from app.db import ensure_migrations_applied  # noqa: E402
 
