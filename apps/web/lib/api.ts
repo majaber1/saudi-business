@@ -1647,6 +1647,7 @@ export interface ValidationEvidenceItem {
   unit?: string | null;
   captured_at?: string | null;
   evidence_strength: string;
+  evidence_direction?: "SUPPORTING" | "REFUTING" | "NEUTRAL";
   is_simulated: boolean;
   structured_payload: Record<string, any>;
 }
@@ -1768,6 +1769,7 @@ export function recordValidationEvidence(
     raw_value?: number | null;
     unit?: string | null;
     evidence_strength?: string;
+    evidence_direction?: "SUPPORTING" | "REFUTING" | "NEUTRAL";
     is_simulated?: boolean;
     structured_payload?: Record<string, any>;
   }
@@ -1796,4 +1798,217 @@ export function recordValidationDecision(
 export function getValidationDecisions(token: string, workspaceId: number) {
   return authedRequest<ValidationDecisionItem[]>(`/api/v1/validation/workspaces/${workspaceId}/decisions`, token);
 }
+
+// ---------------------------------------------------------
+// WAVE 5: LAUNCH & ACTUALS OS TYPES AND CLIENT APIS
+// ---------------------------------------------------------
+
+export type LaunchMilestone = {
+  id: number;
+  category: string;
+  title: string;
+  description?: string | null;
+  target_date?: string | null;
+  completed_at?: string | null;
+  budget_allocated: number;
+  actual_cost: number;
+  status: string;
+  notes?: string | null;
+};
+
+export type LaunchBaselineSnapshot = {
+  id: number;
+  version: string;
+  is_frozen: boolean;
+  total_investment: number;
+  monthly_projections: Array<{
+    month: number;
+    period_label: string;
+    projected_revenue: number;
+    projected_capex: number;
+    projected_opex: number;
+    projected_net_cashflow: number;
+  }>;
+  frozen_at: string;
+};
+
+export type LaunchActualPeriod = {
+  id: number;
+  period_number: number;
+  period_label: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  actual_revenue: number;
+  actual_volume?: number | null;
+  actual_capex: number;
+  actual_opex: number;
+  opex_breakdown: Record<string, number>;
+  net_cashflow: number;
+  variance_notes?: string | null;
+  recorded_at: string;
+};
+
+export type LaunchVarianceReport = {
+  period_number: number;
+  period_label: string;
+  forecast_revenue: number;
+  actual_revenue: number;
+  revenue_variance: number;
+  revenue_variance_pct: number | null;
+  forecast_capex: number;
+  actual_capex: number;
+  capex_variance: number;
+  capex_variance_pct: number | null;
+  forecast_opex: number;
+  actual_opex: number;
+  opex_variance: number;
+  opex_variance_pct: number | null;
+  forecast_net_cashflow: number;
+  actual_net_cashflow: number;
+  cashflow_variance: number;
+  alert_level: "NORMAL" | "WATCH" | "MATERIAL_VARIANCE";
+  alert_message: string;
+};
+
+export type LaunchVarianceSummary = {
+  total_periods_recorded: number;
+  latest_period_label?: string | null;
+  cumulative_forecast_revenue: number;
+  cumulative_actual_revenue: number;
+  cumulative_revenue_variance: number;
+  cumulative_revenue_variance_pct: number | null;
+  cumulative_forecast_opex: number;
+  cumulative_actual_opex: number;
+  cumulative_opex_variance: number;
+  cumulative_opex_variance_pct: number | null;
+  cumulative_forecast_cashflow: number;
+  cumulative_actual_cashflow: number;
+  cumulative_cashflow_variance: number;
+  highest_alert_level: string;
+  periods: LaunchVarianceReport[];
+};
+
+export type LaunchReforecast = {
+  id: number;
+  version: string;
+  trigger_reason: string;
+  base_period_number: number;
+  revenue_growth_rate_adj: number;
+  cost_inflation_adj: number;
+  remaining_cash_balance: number;
+  monthly_burn_rate: number;
+  runway_months: number | null;
+  scenario_projections: Array<{
+    month: number;
+    period_label: string;
+    projected_revenue: number;
+    projected_opex: number;
+    projected_capex: number;
+    projected_net_cashflow: number;
+    projected_cash_balance: number;
+  }>;
+  created_at: string;
+};
+
+export type LaunchWorkspaceData = {
+  workspace: {
+    id: number;
+    study_id: number;
+    project_id: number;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  };
+  decision_gate: {
+    decision: string;
+    is_allowed: boolean;
+    reason: string;
+  };
+  baseline_snapshots: LaunchBaselineSnapshot[];
+  active_baseline: LaunchBaselineSnapshot | null;
+  milestones: LaunchMilestone[];
+  actual_periods: LaunchActualPeriod[];
+  latest_reforecast: LaunchReforecast | null;
+  variance_summary: LaunchVarianceSummary;
+};
+
+export function getLaunchWorkspace(token: string, studyId: number) {
+  return authedRequest<LaunchWorkspaceData>(`/api/v1/launch/workspaces/study/${studyId}`, token);
+}
+
+export function addLaunchMilestone(
+  token: string,
+  workspaceId: number,
+  data: {
+    category: string;
+    title: string;
+    description?: string;
+    target_date?: string;
+    budget_allocated?: number;
+  }
+) {
+  return authedRequest<LaunchMilestone>(`/api/v1/launch/workspaces/${workspaceId}/milestones`, token, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateLaunchMilestone(
+  token: string,
+  milestoneId: number,
+  data: {
+    status?: string;
+    actual_cost?: number;
+    notes?: string;
+  }
+) {
+  return authedRequest<LaunchMilestone>(`/api/v1/launch/milestones/${milestoneId}`, token, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function recordLaunchActuals(
+  token: string,
+  workspaceId: number,
+  data: {
+    period_number: number;
+    period_label: string;
+    start_date?: string;
+    end_date?: string;
+    actual_revenue: number;
+    actual_volume?: number;
+    actual_capex?: number;
+    actual_opex: number;
+    opex_breakdown?: Record<string, number>;
+    variance_notes?: string;
+  }
+) {
+  return authedRequest<LaunchActualPeriod>(`/api/v1/launch/workspaces/${workspaceId}/actuals`, token, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getLaunchVariances(token: string, workspaceId: number) {
+  return authedRequest<LaunchVarianceSummary>(`/api/v1/launch/workspaces/${workspaceId}/variances`, token);
+}
+
+export function createLaunchReforecast(
+  token: string,
+  workspaceId: number,
+  data: {
+    trigger_reason: string;
+    base_period_number: number;
+    revenue_growth_rate_adj?: number;
+    cost_inflation_adj?: number;
+    remaining_cash_balance: number;
+  }
+) {
+  return authedRequest<LaunchReforecast>(`/api/v1/launch/workspaces/${workspaceId}/reforecast`, token, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 

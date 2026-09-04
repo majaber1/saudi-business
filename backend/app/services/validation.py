@@ -44,6 +44,12 @@ DECISION_GO_WITH_CONDITIONS = "GO_WITH_CONDITIONS"
 DECISION_PIVOT = "PIVOT"
 DECISION_STOP = "STOP"
 
+# Evidence Directions
+DIRECTION_SUPPORTING = "SUPPORTING"
+DIRECTION_REFUTING = "REFUTING"
+DIRECTION_NEUTRAL = "NEUTRAL"
+VALID_DIRECTIONS = (DIRECTION_SUPPORTING, DIRECTION_REFUTING, DIRECTION_NEUTRAL)
+
 
 def get_or_create_validation_workspace(
     db: Session,
@@ -225,11 +231,24 @@ def update_hypothesis(
         raise PermissionError("Access denied to hypothesis")
 
     if status and status in (STATUS_SUPPORTED, STATUS_PARTIALLY_SUPPORTED):
-        # Strict evidence rule: verify at least one non-simulated evidence exists
-        real_evidence = [e for e in h.evidence if not e.is_simulated]
-        if not real_evidence:
+        # Strict evidence rule: verify at least one non-simulated SUPPORTING evidence exists
+        real_supporting = [
+            e for e in h.evidence
+            if not e.is_simulated and getattr(e, "evidence_direction", DIRECTION_SUPPORTING) == DIRECTION_SUPPORTING
+        ]
+        if not real_supporting:
             raise ValueError(
-                "لا يمكن تحويل الفرضية إلى مثبتة (SUPPORTED) دون تسجيل أدلة ميدانية حقيقية تدعمها أولاً."
+                "لا يمكن تحويل الفرضية إلى مثبتة (SUPPORTED) دون تسجيل أدلة ميدانية حقيقية تدعمها (SUPPORTING) أولاً."
+            )
+    elif status and status == STATUS_NOT_SUPPORTED:
+        # Strict evidence rule: verify at least one non-simulated REFUTING evidence exists
+        real_refuting = [
+            e for e in h.evidence
+            if not e.is_simulated and getattr(e, "evidence_direction", DIRECTION_SUPPORTING) == DIRECTION_REFUTING
+        ]
+        if not real_refuting:
+            raise ValueError(
+                "لا يمكن تحويل الفرضية إلى غير مثبتة (NOT_SUPPORTED) دون تسجيل أدلة ميدانية حقيقية تدحضها (REFUTING) أولاً."
             )
 
     if statement is not None:
@@ -272,9 +291,11 @@ def add_experiment(
         raise PermissionError("Access denied to validation workspace")
 
     if hypothesis_id:
-        h = db.query(models.ValidationHypothesis).filter_by(id=hypothesis_id, workspace_id=ws.id).first()
+        h = db.query(models.ValidationHypothesis).filter_by(id=hypothesis_id).first()
         if not h:
-            raise ValueError("Target hypothesis does not belong to this workspace")
+            raise ValueError("Target hypothesis not found")
+        if h.workspace_id != ws.id:
+            raise ValueError("لا يمكن ربط تجربة بفرضية تابعة لمساحة عمل أخرى (Cross-workspace linking is prohibited)")
         if h.status == STATUS_NOT_TESTED:
             h.status = STATUS_TESTING
 
@@ -334,6 +355,7 @@ def record_evidence(
     raw_value: Optional[float] = None,
     unit: Optional[str] = None,
     evidence_strength: str = "MODERATE",
+    evidence_direction: str = DIRECTION_SUPPORTING,
     is_simulated: bool = False,
     structured_payload: Optional[Dict[str, Any]] = None,
 ) -> models.ValidationEvidence:
@@ -342,14 +364,44 @@ def record_evidence(
     if not ws or ws.user_id != user.id:
         raise PermissionError("Access denied to validation workspace")
 
+    # Cross-workspace validation
+    if hypothesis_id:
+        h_check = db.query(models.ValidationHypothesis).filter_by(id=hypothesis_id).first()
+        if not h_check:
+            raise ValueError(f"Hypothesis {hypothesis_id} not found")
+        if h_check.workspace_id != ws.id:
+            raise ValueError("لا يمكن ربط دليل بفرضية تابعة لمساحة عمل أخرى (Cross-workspace linking is prohibited)")
+
+    if experiment_id:
+        exp_check = db.query(models.ValidationExperiment).filter_by(id=experiment_id).first()
+        if not exp_check:
+            raise ValueError(f"Experiment {experiment_id} not found")
+        if exp_check.workspace_id != ws.id:
+            raise ValueError("لا يمكن ربط دليل بتجربة تابعة لمساحة عمل أخرى (Cross-workspace linking is prohibited)")
+
+    # Direction validation
+    if not evidence_direction or evidence_direction not in VALID_DIRECTIONS:
+        raise ValueError(f"Invalid evidence_direction: '{evidence_direction}'. Must be one of {VALID_DIRECTIONS}")
+
     payload = dict(structured_payload or {})
 
-    # 1. Competitor URL requirement
-    if evidence_type == "URL_SOURCE" or source_type == "URL_SOURCE" or "competitor" in title.lower() or "competitor" in evidence_type.lower():
+    # Infer refuting direction if payload explicitly refutes
+    if payload.get("problem_confirmed") is False or payload.get("hypothesis_supported") is False:
+        evidence_direction = DIRECTION_REFUTING
+
+    # URL Source validation
+    if source_url is not None:
+        source_url = source_url.strip()
         if source_url and not (source_url.startswith("http://") or source_url.startswith("https://")):
             raise ValueError("رابط المصدر يجب أن يكون رابط ويب صحيحاً يبدأ بـ http:// أو https://")
+        if not source_url:
+            source_url = None
 
-    # 2. Survey validation: derive percentages ONLY if denominator > 0
+    if evidence_type == "URL_SOURCE" or source_type == "URL_SOURCE":
+        if not source_url:
+            raise ValueError("مصدر الرابط (URL_SOURCE) يتطلب توفير رابط ويب صحيح.")
+
+    # Survey validation: derive percentages ONLY if denominator > 0
     if evidence_type in ("SURVEY", "SURVEY_RESULT"):
         responses_count = payload.get("responses_count")
         if responses_count is not None and int(responses_count) > 0:
@@ -358,7 +410,7 @@ def record_evidence(
         else:
             payload["derived_agreement_rate"] = None  # Never fabricate percentage from 0 or unknown responses
 
-    # 3. Demand signal validation: derive conversion ONLY if sample_size > 0
+    # Demand signal validation: derive conversion ONLY if sample_size > 0
     if evidence_type in ("WAITLIST", "PREORDER", "ANALYTICS", "DEMAND_SIGNAL") or payload.get("signal_type"):
         sample_size = payload.get("sample_size")
         actions = payload.get("positive_actions") if payload.get("positive_actions") is not None else (payload.get("conversions") if payload.get("conversions") is not None else payload.get("leads_count"))
@@ -367,7 +419,7 @@ def record_evidence(
         else:
             payload["derived_conversion_rate"] = None  # Protected zero denominator
 
-    # 4. Pricing validation: separate assumed vs tested price
+    # Pricing validation: separate assumed vs tested price
     if evidence_type in ("TRANSACTION", "PRICING_TEST") or "price" in title.lower():
         assumed = payload.get("assumed_price")
         tested = payload.get("tested_price") if payload.get("tested_price") is not None else payload.get("tested_willingness_price")
@@ -392,6 +444,7 @@ def record_evidence(
         unit=unit,
         captured_at=datetime.now(timezone.utc),
         evidence_strength=evidence_strength,
+        evidence_direction=evidence_direction,
         is_simulated=is_simulated,
         structured_payload=payload,
     )
@@ -399,19 +452,21 @@ def record_evidence(
     db.commit()
     db.refresh(ev)
 
-    # If linked to a hypothesis and NOT simulated, update hypothesis status if appropriate
+    # If linked to a hypothesis and NOT simulated, update hypothesis status deterministically
     if hypothesis_id and not is_simulated:
         h = db.query(models.ValidationHypothesis).filter_by(id=hypothesis_id).first()
         if h:
-            if evidence_strength == "STRONG" and h.status in (STATUS_NOT_TESTED, STATUS_TESTING):
-                # Check if evidence confirms or refutes
-                is_refuting = payload.get("problem_confirmed") is False or payload.get("hypothesis_supported") is False
-                if is_refuting:
+            if evidence_direction == DIRECTION_REFUTING:
+                if evidence_strength in ("STRONG", "MODERATE"):
                     h.status = STATUS_NOT_SUPPORTED
-                else:
+            elif evidence_direction == DIRECTION_SUPPORTING:
+                if evidence_strength == "STRONG" and h.status in (STATUS_NOT_TESTED, STATUS_TESTING):
                     h.status = STATUS_SUPPORTED
-            elif evidence_strength == "MODERATE" and h.status == STATUS_NOT_TESTED:
-                h.status = STATUS_TESTING
+                elif evidence_strength == "MODERATE" and h.status == STATUS_NOT_TESTED:
+                    h.status = STATUS_TESTING
+            elif evidence_direction == DIRECTION_NEUTRAL:
+                if h.status == STATUS_NOT_TESTED:
+                    h.status = STATUS_TESTING
             db.commit()
 
     # Recalculate workspace health
@@ -438,12 +493,46 @@ def record_validation_decision(
     if decision not in (DECISION_GO, DECISION_GO_WITH_CONDITIONS, DECISION_PIVOT, DECISION_STOP):
         raise ValueError(f"Invalid decision state: {decision}")
 
-    conditions_list = conditions or []
-    if decision == DECISION_GO_WITH_CONDITIONS and not conditions_list:
-        raise ValueError("القرار المشروط (GO_WITH_CONDITIONS) يتطلب تحديد شرط واحد على الأقل.")
-
-    # Build frozen evidence snapshot
+    conditions_list = [c.strip() for c in (conditions or []) if c and c.strip()]
     eval_res = evaluate_workspace_status(ws)
+    critical_total = eval_res["critical_total"]
+    critical_untested = eval_res["critical_untested"]
+    critical_not_supported = eval_res["critical_not_supported"]
+    critical_supported = eval_res["critical_supported"]
+
+    # Gate 1: DECISION_GO GATE
+    if decision == DECISION_GO:
+        if critical_total == 0:
+            raise ValueError("لا يمكن اتخاذ قرار انطلاق (GO) دون وجود فرضيات حرجة محددة للمشروع.")
+        if critical_untested > 0:
+            raise ValueError(f"لا يمكن اتخاذ قرار انطلاق (GO) مع وجود {critical_untested} فرضيات حرجة لم تُختبر بعد.")
+        if critical_not_supported > 0:
+            raise ValueError(f"لا يمكن اتخاذ قرار انطلاق (GO) مع وجود {critical_not_supported} فرضيات حرجة غير مثبتة أو مدحوضة.")
+        if critical_supported < critical_total:
+            raise ValueError("لا يمكن اتخاذ قرار انطلاق (GO) قبل إثبات كافة الفرضيات الحرجة بالأدلة الميدانية.")
+
+        # Real evidence check: every critical hypothesis must have real (non-simulated) supporting evidence
+        for h in ws.hypotheses:
+            if h.importance == "CRITICAL":
+                real_supporting = [
+                    e for e in h.evidence
+                    if not e.is_simulated and getattr(e, "evidence_direction", DIRECTION_SUPPORTING) == DIRECTION_SUPPORTING
+                ]
+                if not real_supporting:
+                    raise ValueError(
+                        f"الفرضية الحرجة '{h.statement}' غير مدعومة بأدلة ميدانية حقيقية (لا تُقبل أدلة المحاكاة AI)."
+                    )
+
+    # Gate 2: GO_WITH_CONDITIONS GATE
+    elif decision == DECISION_GO_WITH_CONDITIONS:
+        if not conditions_list:
+            raise ValueError("القرار المشروط (GO_WITH_CONDITIONS) يتطلب تحديد شرط واضح واحد على الأقل.")
+        if critical_not_supported > 0 and len(conditions_list) < critical_not_supported:
+            raise ValueError(
+                "لا يمكن المضي بقرار مشروط مع وجود فرضيات حرجة مدحوضة دون تقديم شروط معالجة صريحة لكل فرضية مدحوضة."
+            )
+
+    # Comprehensive immutable snapshot
     hypotheses_snapshot = [
         {
             "id": h.id,
@@ -452,13 +541,47 @@ def record_validation_decision(
             "importance": h.importance,
             "status": h.status,
             "evidence_count": len(h.evidence),
+            "real_evidence_count": len([e for e in h.evidence if not e.is_simulated]),
         }
         for h in ws.hypotheses
+    ]
+    experiments_snapshot = [
+        {
+            "id": exp.id,
+            "hypothesis_id": exp.hypothesis_id,
+            "experiment_type": exp.experiment_type,
+            "title": exp.title,
+            "status": exp.status,
+            "planned_sample_size": exp.planned_sample_size,
+            "success_criteria": exp.success_criteria,
+            "result_summary": exp.result_summary,
+        }
+        for exp in ws.experiments
+    ]
+    evidence_snapshot_items = [
+        {
+            "id": ev.id,
+            "hypothesis_id": ev.hypothesis_id,
+            "experiment_id": ev.experiment_id,
+            "evidence_type": ev.evidence_type,
+            "title": ev.title,
+            "source_type": ev.source_type,
+            "source_url": ev.source_url,
+            "source_owner": ev.source_owner,
+            "evidence_strength": ev.evidence_strength,
+            "evidence_direction": getattr(ev, "evidence_direction", DIRECTION_SUPPORTING),
+            "is_simulated": ev.is_simulated,
+            "captured_at": ev.captured_at.isoformat() if ev.captured_at else None,
+        }
+        for ev in ws.evidence
     ]
     evidence_snapshot = {
         "evaluation_summary": eval_res,
         "hypotheses": hypotheses_snapshot,
+        "experiments": experiments_snapshot,
+        "evidence": evidence_snapshot_items,
         "total_evidence_records": len(ws.evidence),
+        "real_evidence_records": len([e for e in ws.evidence if not e.is_simulated]),
         "supported_hypotheses": [h["statement"] for h in hypotheses_snapshot if h["status"] == STATUS_SUPPORTED],
         "contradicting_hypotheses": [h["statement"] for h in hypotheses_snapshot if h["status"] == STATUS_NOT_SUPPORTED],
         "missing_hypotheses": [h["statement"] for h in hypotheses_snapshot if h["status"] in (STATUS_NOT_TESTED, STATUS_INCONCLUSIVE)],

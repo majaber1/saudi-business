@@ -40,6 +40,7 @@ from app.api.financing_structure import router as financing_structure_router
 from app.api.verified_opportunities import router as verified_opportunities_router
 from app.api.opportunity_matching import router as opportunity_matching_router
 from app.api.validation import router as validation_router
+from app.api.launch import router as launch_router
 from app.api.auth import UserOut, require_roles
 from app.services.monitoring import metrics_snapshot, observe_request
 
@@ -99,10 +100,13 @@ app.include_router(financing_structure_router)
 app.include_router(opportunity_matching_router)
 app.include_router(verified_opportunities_router)
 app.include_router(validation_router)
+app.include_router(launch_router)
 
-from app.db import ensure_migrations_applied  # noqa: E402
+from app.db import ensure_migrations_applied, init_db  # noqa: E402
 
 ensure_migrations_applied()
+if (settings.environment or "").strip().lower() not in {"production", "prod"}:
+    init_db()
 
 
 def _db_ping() -> bool:

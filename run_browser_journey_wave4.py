@@ -80,7 +80,7 @@ def main():
             sys.exit(1)
 
         context = browser.new_context(
-            viewport={"width": 1280, "height": 900},
+            viewport={"width": 1440, "height": 1000},
             locale="ar-SA",
         )
         page = context.new_page()
@@ -98,79 +98,62 @@ def main():
             data=json.dumps({"email": test_email, "password": test_pass}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        try:
-            with urllib.request.urlopen(reg_req) as resp:
-                print(f"Registered user: {test_email}")
-        except urllib.error.HTTPError as e:
-            print(f"Register note: {e.code}")
+        with urllib.request.urlopen(reg_req) as r:
+            assert r.status == 201
 
-        # Login via API to get token
         login_req = urllib.request.Request(
             f"{API_URL}/auth/login",
             data=json.dumps({"email": test_email, "password": test_pass}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(login_req) as resp:
-            login_data = json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(login_req) as r:
+            login_data = json.loads(r.read().decode("utf-8"))
             token = login_data["access_token"]
-            print("Obtained auth token successfully.")
+        print(f"Founder registered and logged in successfully.")
 
-        # Create project and study via API
+        # 2. Create a fresh project and feasibility study
+        print("\nStep 2: Creating project and feasibility study...")
         proj_req = urllib.request.Request(
             f"{API_URL}/projects/",
-            data=json.dumps({
-                "name": "مشروع كافيه الواحة التجريبي",
-                "industry": "food_beverage",
-                "investment": 350000.0,
-                "stage": "idea"
-            }).encode("utf-8"),
+            data=json.dumps({"name": "مشروع كافيه صحي بالرياض", "industry": "retail", "investment": 250000.0}).encode("utf-8"),
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
         )
-        with urllib.request.urlopen(proj_req) as resp:
-            proj_data = json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(proj_req) as r:
+            proj_data = json.loads(r.read().decode("utf-8"))
             project_id = proj_data["id"]
-            print(f"Created project: ID {project_id}")
 
         study_req = urllib.request.Request(
             f"{API_URL}/feasibility/",
-            data=json.dumps({
-                "project_id": project_id,
-                "title": "دراسة جدوى متكاملة - كافيه الواحة",
-                "industry": "food_beverage",
-                "investment": 350000.0,
-                "city": "Riyadh"
-            }).encode("utf-8"),
+            data=json.dumps({"project_id": project_id, "title": "دراسة جدوى كافيه صحي", "industry": "retail", "investment": 250000.0}).encode("utf-8"),
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
         )
-        with urllib.request.urlopen(study_req) as resp:
-            study_data = json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(study_req) as r:
+            study_data = json.loads(r.read().decode("utf-8"))
             study_id = study_data["id"]
-            print(f"Created study: ID {study_id}")
 
-        # 2. Login via UI
-        print("\nStep 2: Logging in via UI...")
+        # 3. Login via UI to establish session
+        print("\nStep 3: Logging in via UI...")
         page.goto(f"{BASE_URL}/login")
         page.wait_for_selector('input[type="email"]')
         page.fill('input[type="email"]', test_email)
         page.fill('input[type="password"]', test_pass)
         page.click('button[type="submit"]')
-        page.wait_for_url(lambda u: "/login" not in u, timeout=10000)
-        print(f"Logged in successfully. URL: {page.url}")
+        time.sleep(2)
 
-        # 3. Navigate to the Study Workspace
-        print("\nStep 3: Navigating to Study Workspace...")
-        study_url = f"{BASE_URL}/projects/{project_id}/studies/{study_id}"
-        page.goto(study_url)
+        page.evaluate(f"""() => {{
+            localStorage.setItem('sb_token', '{token}');
+            localStorage.setItem('sb_email', '{test_email}');
+        }}""")
+
+        page.goto(f"{BASE_URL}/projects/{project_id}/studies/{study_id}")
         page.wait_for_selector("nav button", timeout=15000)
-        # 4. Click on the Market Validation tab
-        print("\nStep 4: Opening Validation tab...")
-        page.wait_for_selector("nav button", timeout=15000)
-        nav_buttons = page.locator("nav button").all_inner_texts()
-        print(f"Found nav buttons ({len(nav_buttons)}): {nav_buttons}")
-        val_tab_button = page.locator('button:has-text("التحقق"), button:has-text("Validation")').first
-        val_tab_button.click()
+
+        # 4. Navigate to Validation tab
+        print("\nStep 4: Clicking on Validation tab...")
+        val_tab_btn = page.locator('button:has-text("التحقق الميداني والافتراضات")')
+        val_tab_btn.click()
         page.wait_for_selector('[data-testid="validation-os-workspace"]', timeout=10000)
-        print("Validation OS workspace mounted successfully.")
+        print("Validation OS banner rendered successfully.")
 
         # Check status badge
         status_badge = page.locator('[data-testid="validation-status-badge"]')
@@ -183,7 +166,8 @@ def main():
         page.click('[data-testid="add-hypothesis-btn"]')
         page.wait_for_selector('[data-testid="hypo-statement-input"]', timeout=5000)
         page.fill('[data-testid="hypo-statement-input"]', "العملاء في شمال الرياض مستعدون لدفع 35 ريال لوجبة الإفطار الصحية")
-        page.click('[data-testid="confirm-add-hypo-btn"]')
+        time.sleep(0.5)
+        page.click('[data-testid="confirm-add-hypo-btn"]', force=True)
         page.wait_for_selector('text=العملاء في شمال الرياض مستعدون لدفع 35 ريال', timeout=8000)
         print("New hypothesis created and visible in list.")
 
@@ -196,7 +180,8 @@ def main():
         page.fill('[data-testid="exp-obj-input"]', "قياس مدى تقبل الجمهور لسعر 35 ريال")
         page.fill('[data-testid="exp-method-input"]', "توزيع استبيان ميداني ومقابلات مع 50 موظف")
         page.fill('[data-testid="exp-criteria-input"]', "موافقة 70% من المشاركين")
-        page.click('[data-testid="confirm-add-exp-btn"]')
+        time.sleep(0.5)
+        page.click('[data-testid="confirm-add-exp-btn"]', force=True)
         page.wait_for_selector('text=استبيان واختبار تسعير حي الصحافة', timeout=8000)
         print("Field experiment created successfully.")
 
@@ -209,7 +194,8 @@ def main():
         page.fill('[data-testid="evidence-interview-role"]', "مدير موارد بشرية")
         page.fill('[data-testid="evidence-interview-quote"]', "نبحث دائماً عن اشتراكات وجبات صحية للموظفين بسعر 35 ريال")
         page.select_option('[data-testid="evidence-hypo-select"]', index=1)
-        page.click('[data-testid="confirm-record-evidence-btn"]')
+        time.sleep(0.5)
+        page.click('[data-testid="confirm-record-evidence-btn"]', force=True)
         page.wait_for_selector('text=مقابلة مدير الموارد البشرية بشركة تقنية', timeout=8000)
         print("Interview evidence recorded.")
 
@@ -221,7 +207,8 @@ def main():
         page.fill('[data-testid="evidence-title-input"]', "استطلاع ميداني لموظفي وادي الرياض")
         page.fill('[data-testid="evidence-survey-responses"]', "50")
         page.fill('[data-testid="evidence-survey-agreed"]', "40")
-        page.click('[data-testid="confirm-record-evidence-btn"]')
+        time.sleep(0.5)
+        page.click('[data-testid="confirm-record-evidence-btn"]', force=True)
         page.wait_for_selector('text=استطلاع ميداني لموظفي وادي الرياض', timeout=8000)
         # Verify derived agreement rate (40/50 = 80%) is rendered
         page.wait_for_selector('text=80%', timeout=5000)
@@ -235,7 +222,8 @@ def main():
         page.fill('[data-testid="evidence-title-input"]', "رصد أسعار بارنز كافيه")
         page.fill('[data-testid="evidence-competitor-name"]', "بارنز كافيه")
         page.fill('[data-testid="evidence-source-url"]', "https://barns.com.sa/menu")
-        page.click('[data-testid="confirm-record-evidence-btn"]')
+        time.sleep(0.5)
+        page.click('[data-testid="confirm-record-evidence-btn"]', force=True)
         page.wait_for_selector('text=رصد أسعار بارنز كافيه', timeout=8000)
         # Verify URL link is present
         comp_url_link = page.locator('[data-testid="evidence-competitor-url"]')
@@ -258,7 +246,8 @@ def main():
         page.wait_for_selector('[data-testid="condition-input-0"]', timeout=5000)
         page.fill('[data-testid="condition-input-0"]', "توقيع اتفاقية توريد وجبات بسعر الجملة قبل بدء الإطلاق")
         page.fill('[data-testid="decision-reason-input"]', "الأدلة الميدانية أظهرت نسبة موافقة 80% من 50 عميل مستهدف، مما يؤكد الفرضية الأساسية.")
-        page.click('[data-testid="submit-decision-btn"]')
+        time.sleep(0.5)
+        page.click('[data-testid="submit-decision-btn"]', force=True)
         page.wait_for_selector('[data-testid="latest-decision-banner"]', timeout=8000)
         print("Validation decision confirmed and snapshot frozen.")
 

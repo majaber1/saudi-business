@@ -424,7 +424,37 @@ def test_immutable_validation_decisions_and_snapshot():
     assert d1["decision_version"] == 1
     assert "evidence_snapshot" in d1
 
-    # 3. Later record definitive GO decision (version 2)
+    # 3. Attempting GO before critical hypotheses are supported -> 400 blocked!
+    r_dec_blocked = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={
+            "decision": DECISION_GO,
+            "decision_reason": "محاولة اتخاذ قرار GO دون دعم الفرضيات الحرجة بالأدلة",
+        },
+        headers=headers,
+    )
+    assert r_dec_blocked.status_code == 400
+    assert "فرضيات حرجة" in r_dec_blocked.text or "critical" in r_dec_blocked.text.lower()
+
+    # Provide real supporting evidence for the critical hypotheses
+    crit_hypos = [h for h in ws["hypotheses"] if h["importance"] == "CRITICAL"]
+    for ch in crit_hypos:
+        r_ev = client.post(
+            f"/api/v1/validation/workspaces/{ws_id}/evidence",
+            json={
+                "evidence_type": "INTERVIEW",
+                "title": f"دليل إثبات الفرضية الحرجة {ch['id']}",
+                "hypothesis_id": ch["id"],
+                "evidence_strength": "STRONG",
+                "evidence_direction": "SUPPORTING",
+                "is_simulated": False,
+                "structured_payload": {"problem_confirmed": True},
+            },
+            headers=headers,
+        )
+        assert r_ev.status_code == 201
+
+    # Now record definitive GO decision (version 2)
     r_dec2 = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/decision",
         json={
@@ -445,3 +475,376 @@ def test_immutable_validation_decisions_and_snapshot():
     assert len(hist) == 2
     assert hist[0]["decision_version"] == 2
     assert hist[1]["decision_version"] == 1
+
+
+# ==============================================================================
+# WAVE 4 HARDENED GATES DEDICATED TESTS
+# ==============================================================================
+
+def test_evidence_direction_validation_and_rejection():
+    """Gate 1: Test evidence_direction defaults to SUPPORTING, accepts REFUTING/NEUTRAL, rejects invalid."""
+    _, tok = _register_and_login("direction_test")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع اختبار اتجاه الأدلة")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # 1. Default direction is SUPPORTING
+    r_def = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "مقابلة افتراضية بالاتجاه التلقائي",
+            "source_type": "USER_RECORDED",
+        },
+        headers=headers,
+    )
+    assert r_def.status_code == 201
+    assert r_def.json()["evidence_direction"] == "SUPPORTING"
+
+    # 2. Explicit REFUTING
+    r_ref = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "مقابلة تثبت عدم رغبة العملاء بالمنتج",
+            "evidence_direction": "REFUTING",
+            "source_type": "USER_RECORDED",
+        },
+        headers=headers,
+    )
+    assert r_ref.status_code == 201
+    assert r_ref.json()["evidence_direction"] == "REFUTING"
+
+    # 3. Explicit NEUTRAL
+    r_neu = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "مقابلة محايدة غير حاسمة",
+            "evidence_direction": "NEUTRAL",
+            "source_type": "USER_RECORDED",
+        },
+        headers=headers,
+    )
+    assert r_neu.status_code == 201
+    assert r_neu.json()["evidence_direction"] == "NEUTRAL"
+
+    # 4. Invalid direction -> rejected
+    r_inv = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "دليل باتجاه غير معروف",
+            "evidence_direction": "UNKNOWN_DIRECTION",
+            "source_type": "USER_RECORDED",
+        },
+        headers=headers,
+    )
+    assert r_inv.status_code in (400, 422)
+
+
+def test_hypothesis_transition_gate_refuting_and_supporting():
+    """Gate 2: Test hypothesis status transitions require matching evidence direction."""
+    _, tok = _register_and_login("trans_gate")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع بوابة الفرضيات")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+    h1 = ws["hypotheses"][0]
+
+    # Cannot transition to SUPPORTED without SUPPORTING evidence
+    r_bad_sup = client.patch(f"/api/v1/validation/hypotheses/{h1['id']}", json={"status": STATUS_SUPPORTED}, headers=headers)
+    assert r_bad_sup.status_code == 422
+
+    # Cannot transition to NOT_SUPPORTED without REFUTING evidence
+    r_bad_not = client.patch(f"/api/v1/validation/hypotheses/{h1['id']}", json={"status": STATUS_NOT_SUPPORTED}, headers=headers)
+    assert r_bad_not.status_code == 422
+
+    # Add REFUTING evidence -> allows transition to NOT_SUPPORTED
+    client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "دليل يدحض الفرضية الأولى",
+            "hypothesis_id": h1["id"],
+            "evidence_direction": "REFUTING",
+            "evidence_strength": "STRONG",
+            "is_simulated": False,
+        },
+        headers=headers,
+    )
+    ws_after_ref = client.get(f"/api/v1/validation/workspaces/{ws_id}", headers=headers).json()
+    h1_ref = next(h for h in ws_after_ref["hypotheses"] if h["id"] == h1["id"])
+    assert h1_ref["status"] == STATUS_NOT_SUPPORTED
+
+
+def test_cross_workspace_ownership_rejection():
+    """Gate 3: Cross-workspace linking of hypothesis, experiment, or evidence is strictly rejected."""
+    _, tok = _register_and_login("cross_ws")
+    headers = _auth(tok)
+    _, study_id_1 = _create_project_and_study(tok, "مشروع مساحة 1")
+    _, study_id_2 = _create_project_and_study(tok, "مشروع مساحة 2")
+
+    ws1 = client.get(f"/api/v1/validation/study/{study_id_1}", headers=headers).json()
+    ws2 = client.get(f"/api/v1/validation/study/{study_id_2}", headers=headers).json()
+    h_ws1 = ws1["hypotheses"][0]["id"]
+
+    # 1. Attempt to add evidence in WS2 linking to hypothesis in WS1 -> 400 rejected
+    r_ev_cross = client.post(
+        f"/api/v1/validation/workspaces/{ws2['id']}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "دليل عابر لمساحة العمل",
+            "hypothesis_id": h_ws1,
+            "source_type": "USER_RECORDED",
+        },
+        headers=headers,
+    )
+    assert r_ev_cross.status_code in (400, 422)
+    assert "مساحة عمل أخرى" in r_ev_cross.text or "prohibited" in r_ev_cross.text.lower()
+
+    # 2. Attempt to add experiment in WS2 linking to hypothesis in WS1 -> 400 rejected
+    r_exp_cross = client.post(
+        f"/api/v1/validation/workspaces/{ws2['id']}/experiments",
+        json={
+            "experiment_type": "CUSTOMER_INTERVIEW",
+            "title": "تجربة عابرة للمساحات",
+            "objective": "اختبار الهدف",
+            "method": "مقابلات",
+            "success_criteria": "موافقة 80%",
+            "hypothesis_id": h_ws1,
+        },
+        headers=headers,
+    )
+    assert r_exp_cross.status_code in (400, 422)
+
+
+def test_cross_user_ownership_rejection():
+    """Gate 4: Cross-user mutation and retrieval attempts are strictly forbidden (403)."""
+    _, tok1 = _register_and_login("owner_user")
+    _, tok2 = _register_and_login("intruder_user")
+
+    _, study_id = _create_project_and_study(tok1, "مشروع المالك الأصلي")
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=_auth(tok1)).json()
+    ws_id = ws["id"]
+    h_id = ws["hypotheses"][0]["id"]
+
+    # Intruder tries GET workspace
+    assert client.get(f"/api/v1/validation/workspaces/{ws_id}", headers=_auth(tok2)).status_code == 403
+
+    # Intruder tries POST hypothesis
+    assert client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/hypotheses",
+        json={"hypothesis_type": "DEMAND", "statement": "فرضية من مستخدم غريب"},
+        headers=_auth(tok2),
+    ).status_code == 403
+
+    # Intruder tries PATCH hypothesis
+    assert client.patch(
+        f"/api/v1/validation/hypotheses/{h_id}",
+        json={"statement": "تعديل غير مصرح به"},
+        headers=_auth(tok2),
+    ).status_code == 403
+
+    # Intruder tries POST evidence
+    assert client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={"evidence_type": "INTERVIEW", "title": "دليل من مستخدم غريب"},
+        headers=_auth(tok2),
+    ).status_code == 403
+
+    # Intruder tries POST decision
+    assert client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={"decision": "STOP", "decision_reason": "محاولة إيقاف غير مصرح بها"},
+        headers=_auth(tok2),
+    ).status_code == 403
+
+
+def test_url_source_validation_rejections():
+    """Gate 5: Non-http/https source URLs are rejected, and URL_SOURCE requires valid URL."""
+    _, tok = _register_and_login("url_rules")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع فحص الروابط")
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # 1. Any evidence with invalid source_url format is rejected
+    r_bad = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "مقابلة برابط غير صالح",
+            "source_url": "ftp://files.example.com/record.mp3",
+        },
+        headers=headers,
+    )
+    assert r_bad.status_code == 400
+
+    # 2. URL_SOURCE without source_url is rejected
+    r_empty = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "URL_SOURCE",
+            "title": "دليل رابط دون إرفاق الرابط",
+            "source_url": "",
+        },
+        headers=headers,
+    )
+    assert r_empty.status_code == 400
+
+
+def test_decision_go_gate_and_simulated_evidence_isolation():
+    """Gate 6 & 8: GO decision requires real evidence backing for all critical hypotheses; simulated rejected."""
+    _, tok = _register_and_login("go_gate")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع اختبار بوابة الانطلاق GO")
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+    crit_hypos = [h for h in ws["hypotheses"] if h["importance"] == "CRITICAL"]
+    assert len(crit_hypos) >= 2
+
+    # 1. Attempt GO with untested critical hypotheses -> 400
+    r_fail1 = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={"decision": DECISION_GO, "decision_reason": "محاولة اتخاذ قرار GO دون اختبار الفرضيات الحرجة"},
+        headers=headers,
+    )
+    assert r_fail1.status_code == 400
+
+    # 2. Add SIMULATED evidence for critical hypotheses and try GO -> still 400!
+    for ch in crit_hypos:
+        client.post(
+            f"/api/v1/validation/workspaces/{ws_id}/evidence",
+            json={
+                "evidence_type": "INTERVIEW",
+                "title": f"دليل محاكاة ذكاء اصطناعي {ch['id']}",
+                "hypothesis_id": ch["id"],
+                "evidence_strength": "STRONG",
+                "evidence_direction": "SUPPORTING",
+                "is_simulated": True,  # SIMULATED
+            },
+            headers=headers,
+        )
+    r_fail_sim = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={"decision": DECISION_GO, "decision_reason": "محاولة اتخاذ قرار GO بأدلة محاكاة فقط"},
+        headers=headers,
+    )
+    assert r_fail_sim.status_code == 400
+
+    # 3. Add REAL (non-simulated) SUPPORTING evidence for all critical hypotheses
+    for ch in crit_hypos:
+        client.post(
+            f"/api/v1/validation/workspaces/{ws_id}/evidence",
+            json={
+                "evidence_type": "INTERVIEW",
+                "title": f"دليل ميداني حقيقي موثق {ch['id']}",
+                "hypothesis_id": ch["id"],
+                "evidence_strength": "STRONG",
+                "evidence_direction": "SUPPORTING",
+                "is_simulated": False,  # REAL
+                "structured_payload": {"problem_confirmed": True},
+            },
+            headers=headers,
+        )
+
+    # 4. Now GO succeeds!
+    r_go = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={"decision": DECISION_GO, "decision_reason": "تم التحقق الكامل من كافة الفرضيات الحرجة بأدلة واقعية موثقة"},
+        headers=headers,
+    )
+    assert r_go.status_code == 201
+    assert r_go.json()["decision"] == DECISION_GO
+
+
+def test_go_with_conditions_gate_with_refuted_assumptions():
+    """Gate 7: GO_WITH_CONDITIONS requires conditions and mitigations for refuted critical hypotheses."""
+    _, tok = _register_and_login("cond_gate")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع الموافقة المشروطة")
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+    crit_h = ws["hypotheses"][0]
+
+    # Refute the first critical hypothesis with real evidence
+    client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "مقابلة تدحض الفرضية الحرجة الأولى",
+            "hypothesis_id": crit_h["id"],
+            "evidence_strength": "STRONG",
+            "evidence_direction": "REFUTING",
+            "is_simulated": False,
+        },
+        headers=headers,
+    )
+
+    # 1. Attempt GO_WITH_CONDITIONS with empty conditions -> 400
+    r_bad = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={"decision": DECISION_GO_WITH_CONDITIONS, "decision_reason": "موافقة مشروطة بدون شروط", "conditions": []},
+        headers=headers,
+    )
+    assert r_bad.status_code == 400
+
+    # 2. Attempt GO_WITH_CONDITIONS with explicit condition mitigating the refuted hypothesis -> 201
+    r_ok = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={
+            "decision": DECISION_GO_WITH_CONDITIONS,
+            "decision_reason": "موافقة مشروطة شريطة تقديم نموذج تسعير بديل يعالج رفض العملاء",
+            "conditions": ["تعديل باقة التسعير وإعادة اختبارها مع 20 عميل جديد"],
+        },
+        headers=headers,
+    )
+    assert r_ok.status_code == 201
+    assert r_ok.json()["decision"] == DECISION_GO_WITH_CONDITIONS
+
+
+def test_decision_snapshot_immutability():
+    """Gate 9: Decision snapshot captures complete frozen state of hypotheses, experiments, and evidence."""
+    _, tok = _register_and_login("snap_gate")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع التحقق من تجميد اللقطة")
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # Record experiment
+    r_exp = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/experiments",
+        json={
+            "experiment_type": "SURVEY",
+            "title": "استبيان الرضا",
+            "objective": "قياس الرضا",
+            "method": "نماذج إلكترونية",
+            "success_criteria": "موافقة 70%",
+        },
+        headers=headers,
+    )
+    assert r_exp.status_code == 201
+
+    # Record decision
+    r_dec = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={
+            "decision": DECISION_PIVOT,
+            "decision_reason": "ضرورة تغيير الشريحة المستهدفة بناء على مراجعة السوق",
+        },
+        headers=headers,
+    )
+    assert r_dec.status_code == 201
+    snap = r_dec.json()["evidence_snapshot"]
+    assert "evaluation_summary" in snap
+    assert "hypotheses" in snap
+    assert "experiments" in snap
+    assert "evidence" in snap
+    assert "frozen_at" in snap
+    assert len(snap["experiments"]) == 1
+    assert snap["experiments"][0]["title"] == "استبيان الرضا"
+

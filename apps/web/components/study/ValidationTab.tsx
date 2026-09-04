@@ -120,6 +120,7 @@ export default function ValidationTab({
   const [newEvHypoId, setNewEvHypoId] = useState<number | undefined>(undefined);
   const [newEvExpId, setNewEvExpId] = useState<number | undefined>(undefined);
   const [newEvStrength, setNewEvStrength] = useState("STRONG");
+  const [newEvDirection, setNewEvDirection] = useState<"SUPPORTING" | "REFUTING" | "NEUTRAL">("SUPPORTING");
   const [newEvSimulated, setNewEvSimulated] = useState(false);
   const [newEvNotes, setNewEvNotes] = useState("");
   const [evInterviewRole, setEvInterviewRole] = useState("");
@@ -255,6 +256,7 @@ export default function ValidationTab({
         hypothesis_id: newEvHypoId || null,
         experiment_id: newEvExpId || null,
         evidence_strength: newEvStrength,
+        evidence_direction: newEvDirection,
         is_simulated: newEvSimulated,
         source_url: newEvType === "COMPETITOR_BENCHMARK" ? evCompetitorUrl : null,
         notes: newEvNotes,

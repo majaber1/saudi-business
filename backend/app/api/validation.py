@@ -70,6 +70,7 @@ class EvidenceCreateIn(BaseModel):
     raw_value: Optional[float] = None
     unit: Optional[str] = None
     evidence_strength: str = "MODERATE"
+    evidence_direction: str = Field("SUPPORTING", description="SUPPORTING, REFUTING, NEUTRAL")
     is_simulated: bool = False
     structured_payload: Dict[str, Any] = Field(default_factory=dict)
 
@@ -136,6 +137,7 @@ def _serialize_workspace(ws: models.ValidationWorkspace, db_session: Session) ->
                 "unit": ev.unit,
                 "captured_at": ev.captured_at.isoformat() if ev.captured_at else None,
                 "evidence_strength": ev.evidence_strength,
+                "evidence_direction": getattr(ev, "evidence_direction", "SUPPORTING"),
                 "is_simulated": ev.is_simulated,
                 "structured_payload": ev.structured_payload or {},
             }
@@ -229,6 +231,11 @@ def modify_hypothesis(
     db_session: Session = Depends(db.get_db),
 ):
     """Updates a hypothesis. Enforces that SUPPORTED status cannot be set without real evidence."""
+    h_item = db_session.query(models.ValidationHypothesis).filter_by(id=hypothesis_id).first()
+    if not h_item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="الفرضية غير موجودة")
+    if h_item.workspace.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="غير مصرح بالوصول إلى هذه الفرضية")
     try:
         h = update_hypothesis(
             db=db_session,
@@ -261,6 +268,11 @@ def create_experiment(
     db_session: Session = Depends(db.get_db),
 ):
     """Creates a validation experiment."""
+    ws = db_session.query(models.ValidationWorkspace).filter_by(id=workspace_id).first()
+    if not ws:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مساحة التحقق غير موجودة")
+    if ws.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="غير مصرح بالوصول إلى هذه المساحة")
     try:
         exp = add_experiment(
             db=db_session,
@@ -300,6 +312,11 @@ def modify_experiment(
     db_session: Session = Depends(db.get_db),
 ):
     """Updates status or results summary of an experiment."""
+    exp_item = db_session.query(models.ValidationExperiment).filter_by(id=experiment_id).first()
+    if not exp_item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="التجربة غير موجودة")
+    if exp_item.workspace.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="غير مصرح بالوصول إلى هذه التجربة")
     try:
         exp = update_experiment(
             db=db_session,
@@ -327,6 +344,11 @@ def create_evidence(
     db_session: Session = Depends(db.get_db),
 ):
     """Records verifiable empirical evidence."""
+    ws = db_session.query(models.ValidationWorkspace).filter_by(id=workspace_id).first()
+    if not ws:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مساحة التحقق غير موجودة")
+    if ws.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="غير مصرح بالوصول إلى هذه المساحة")
     try:
         ev = record_evidence(
             db=db_session,
@@ -343,6 +365,7 @@ def create_evidence(
             raw_value=data.raw_value,
             unit=data.unit,
             evidence_strength=data.evidence_strength,
+            evidence_direction=data.evidence_direction,
             is_simulated=data.is_simulated,
             structured_payload=data.structured_payload,
         )
@@ -357,6 +380,7 @@ def create_evidence(
             "raw_value": ev.raw_value,
             "unit": ev.unit,
             "evidence_strength": ev.evidence_strength,
+            "evidence_direction": getattr(ev, "evidence_direction", "SUPPORTING"),
             "is_simulated": ev.is_simulated,
             "structured_payload": ev.structured_payload,
             "captured_at": ev.captured_at.isoformat() if ev.captured_at else None,
@@ -375,6 +399,11 @@ def create_decision(
     db_session: Session = Depends(db.get_db),
 ):
     """Records an immutable validation decision."""
+    ws = db_session.query(models.ValidationWorkspace).filter_by(id=workspace_id).first()
+    if not ws:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مساحة التحقق غير موجودة")
+    if ws.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="غير مصرح بالوصول إلى هذه المساحة")
     try:
         dec = record_validation_decision(
             db=db_session,

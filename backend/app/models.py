@@ -1198,6 +1198,8 @@ class ValidationEvidence(TimestampMixin, Base):
     occurred_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     # STRONG | MODERATE | WEAK
     evidence_strength: Mapped[str] = mapped_column(String(20), default="MODERATE", nullable=False)
+    # SUPPORTING | REFUTING | NEUTRAL
+    evidence_direction: Mapped[str] = mapped_column(String(20), default="SUPPORTING", nullable=False)
     # If simulated (e.g. AI personas/drafts), flagged true and excluded from validation proof
     is_simulated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Detailed factual payload (interview responses, survey samples/numerators, conversion counts, quotes)
@@ -1228,6 +1230,141 @@ class ValidationDecision(TimestampMixin, Base):
     decided_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     workspace: Mapped["ValidationWorkspace"] = relationship(back_populates="decisions")
+
+
+# =============================================================================
+# Wave 5: Launch & Actuals Execution OS Models
+# =============================================================================
+
+class LaunchWorkspace(TimestampMixin, Base):
+    """Execution and actuals management workspace for a launched venture."""
+
+    __tablename__ = "launch_workspaces"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(
+        ForeignKey("feasibility_studies.id", ondelete="CASCADE"), unique=True, index=True, nullable=False
+    )
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # PRE_LAUNCH | LAUNCHING | LAUNCHED | POST_LAUNCH
+    status: Mapped[str] = mapped_column(String(50), default="PRE_LAUNCH", nullable=False)
+    target_launch_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    actual_launch_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    milestones: Mapped[list["LaunchMilestone"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="LaunchMilestone.id"
+    )
+    baseline_snapshots: Mapped[list["LaunchBaselineSnapshot"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="LaunchBaselineSnapshot.id.desc()"
+    )
+    actual_periods: Mapped[list["LaunchActualPeriod"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="LaunchActualPeriod.period_order"
+    )
+    reforecasts: Mapped[list["LaunchReforecast"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="LaunchReforecast.version_number.desc()"
+    )
+
+
+class LaunchMilestone(TimestampMixin, Base):
+    """Pre-launch and launch execution milestone with budget and actual tracking."""
+
+    __tablename__ = "launch_milestones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("launch_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # REGULATORY | LOCATION | EQUIPMENT | TEAM | MARKETING | OPERATIONS
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    due_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    completed_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # PENDING | IN_PROGRESS | COMPLETED | DELAYED
+    status: Mapped[str] = mapped_column(String(50), default="PENDING", nullable=False)
+    budget_allocated: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    actual_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    workspace: Mapped["LaunchWorkspace"] = relationship(back_populates="milestones")
+
+
+class LaunchBaselineSnapshot(TimestampMixin, Base):
+    """Immutable snapshot of the feasibility study's financial projections frozen at launch."""
+
+    __tablename__ = "launch_baseline_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("launch_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    snapshot_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    total_investment: Mapped[float] = mapped_column(Float, nullable=False)
+    monthly_projections: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    frozen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    source_study_revision: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    workspace: Mapped["LaunchWorkspace"] = relationship(back_populates="baseline_snapshots")
+
+
+class LaunchActualPeriod(TimestampMixin, Base):
+    """Actual performance figures recorded for a specific operational period (e.g. Month 1, Month 2)."""
+
+    __tablename__ = "launch_actual_periods"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("launch_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    period_label: Mapped[str] = mapped_column(String(50), nullable=False)  # "M01", "2026-M01"
+    period_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    actual_revenue: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    transactions_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    average_ticket_size: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    actual_capex: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_opex_salaries: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_opex_rent: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_opex_utilities: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_opex_marketing: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_opex_cogs: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_opex_other: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    total_actual_opex: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    net_cashflow: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    closing_cash_balance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    recorded_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    workspace: Mapped["LaunchWorkspace"] = relationship(back_populates="actual_periods")
+
+
+class LaunchReforecast(TimestampMixin, Base):
+    """Dynamic scenario reforecast combining historical actuals with adjusted forward assumptions."""
+
+    __tablename__ = "launch_reforecasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("launch_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    version_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    reforecast_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    adjustment_rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    growth_rate_adjustment_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    opex_adjustment_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    monthly_burn_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    remaining_runway_months: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    revised_break_even_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reforecast_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    workspace: Mapped["LaunchWorkspace"] = relationship(back_populates="reforecasts")
+
 
 
 
