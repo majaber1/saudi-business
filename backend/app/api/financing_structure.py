@@ -135,6 +135,8 @@ class FinancingStructureOut(BaseModel):
     total_confirmed_sources: Optional[float] = None
     confirmed_sources: Optional[ConfirmedSourcesOut] = None
     initial_funding_gap: Optional[float] = None
+    confirmed_funding_gap: Optional[float] = None
+    potential_residual_gap: Optional[float] = None
     potential_program_capacity: Optional[float] = None
     allocated_program_debt: float
     internal_screening_debt_capacity: Optional[float] = None

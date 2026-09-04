@@ -144,28 +144,28 @@ export default function FinancingStructureSection({ token, studyId, period, refr
             </div>
 
             <div className="p-3.5 rounded-lg border border-border bg-muted/20">
-              <span className="text-xs text-muted-foreground block">طاقة البرامج المحتملة (استرشادي)</span>
+              <span className="text-xs text-muted-foreground block">فجوة التمويل المؤكدة (Confirmed Gap)</span>
               <span className="text-lg font-bold text-foreground mt-0.5 block">
-                {formatCurrency(data.allocated_program_debt)}
+                {formatCurrency(data.confirmed_funding_gap ?? (data.total_project_requirement - (data.total_confirmed_sources ?? data.owner_equity)))}
               </span>
               <span className="text-[10px] text-muted-foreground">
-                خيارات تمويل محتملة (غير مؤكدة)
+                الاحتياج ناقص المصادر المؤكدة
               </span>
             </div>
 
             <div className={`p-3.5 rounded-lg border ${
-              data.residual_gap > 0
+              (data.potential_residual_gap ?? data.residual_gap) > 0
                 ? "border-rose-500/40 bg-rose-50/40 dark:bg-rose-950/20"
                 : "border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/20"
             }`}>
-              <span className={`text-xs block ${data.residual_gap > 0 ? "text-rose-800 dark:text-rose-300" : "text-emerald-800 dark:text-emerald-300"}`}>
-                الفجوة التمويلية المتبقية
+              <span className={`text-xs block ${(data.potential_residual_gap ?? data.residual_gap) > 0 ? "text-rose-800 dark:text-rose-300" : "text-emerald-800 dark:text-emerald-300"}`}>
+                الفجوة المتبقية المحتملة (Potential Residual)
               </span>
-              <span className={`text-lg font-bold mt-0.5 block ${data.residual_gap > 0 ? "text-rose-700 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-300"}`}>
-                {formatCurrency(data.residual_gap)}
+              <span className={`text-lg font-bold mt-0.5 block ${(data.potential_residual_gap ?? data.residual_gap) > 0 ? "text-rose-700 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-300"}`}>
+                {formatCurrency(data.potential_residual_gap ?? data.residual_gap)}
               </span>
               <span className="text-[10px] text-muted-foreground">
-                {data.residual_gap > 0 ? "غير مغطاة حالياً" : "تمت تغطية كامل الاحتياج"}
+                {(data.potential_residual_gap ?? data.residual_gap) > 0 ? "غير مغطاة بعد الفحص الاسترشادي" : "تمت تغطية كامل الاحتياج"}
               </span>
             </div>
           </div>
@@ -356,6 +356,8 @@ export default function FinancingStructureSection({ token, studyId, period, refr
                         <span className="font-bold text-primary text-xs">
                           {pa.allocation_status === "CREDIT_ENHANCEMENT_ONLY"
                             ? "تعزيز ائتماني (0 ر.س نقد)"
+                            : pa.allocation_status === "CAPACITY_NOT_EVALUATED"
+                            ? "غير محدد (لم تُحسب الطاقة الاستيعابية)"
                             : pa.allocated_amount !== null && pa.allocated_amount !== undefined
                             ? formatCurrency(pa.allocated_amount)
                             : "غير محدد (يتطلب مراجعة الحد)"}

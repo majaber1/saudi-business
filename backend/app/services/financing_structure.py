@@ -74,14 +74,25 @@ def compute_financing_structure(
     capacity_status = "NO_DATA"
     annual_revenue = None
     if financial_period_dict:
-        annual_revenue = float(financial_period_dict.get("revenue") or 0.0)
-        ebitda = float(financial_period_dict.get("ebitda") or 0.0)
-        tot_debt = float(financial_period_dict.get("total_debt") or financial_period_dict.get("long_term_debt") or 0.0)
-        debt_service = float(financial_period_dict.get("debt_service") or 0.0)
+        rev_val = financial_period_dict.get("revenue")
+        annual_revenue = float(rev_val) if rev_val is not None else None
+
+        ebitda_val = financial_period_dict.get("ebitda")
+        ebitda = float(ebitda_val) if ebitda_val is not None else None
+
+        existing_debt_val = financial_period_dict.get("existing_debt")
+        fp_existing_debt = float(existing_debt_val) if existing_debt_val is not None else None
+
+        annual_debt_service_val = financial_period_dict.get("annual_debt_service")
+        annual_debt_service = float(annual_debt_service_val) if annual_debt_service_val is not None else None
+
+        # Canonical inputs matching Funding Readiness and Borrowing Capacity services
+        resolved_debt = fp_existing_debt if fp_existing_debt is not None else (existing_debt if existing_debt > 0 else None)
+
         cap_eval = estimate_borrowing_capacity(
-            ebitda=ebitda if ebitda else None,
-            existing_debt=tot_debt if tot_debt else None,
-            annual_debt_service=debt_service if debt_service else None,
+            ebitda=ebitda,
+            existing_debt=resolved_debt,
+            annual_debt_service=annual_debt_service,
         )
         capacity_status = cap_eval.get("status", "INSUFFICIENT_DATA")
         if capacity_status == "CALCULATED":
@@ -114,12 +125,13 @@ def compute_financing_structure(
     allocated_program_debt = 0.0
     remaining_gap_to_fund = initial_gap
 
-    # Calculate remaining safe borrowing capacity available for new screening debt
+    # Rule 2: DO NOT ALLOCATE DEBT WHEN BORROWING CAPACITY IS UNKNOWN
+    # If borrowing capacity cannot be calculated, available safe debt capacity is strictly 0.
+    # Never invent monetary debt capacity when capacity is unknown.
     if capacity_status == "CALCULATED":
-        available_safe_debt_cap = max(0.0, safe_debt_capacity - existing_debt)
+        available_safe_debt_cap = safe_debt_capacity
     else:
-        # If borrowing capacity is unassessed (e.g. startup pre-revenue), cap by remaining gap
-        available_safe_debt_cap = remaining_gap_to_fund
+        available_safe_debt_cap = 0.0
 
     for prog in matched_programs:
         p_type = prog.get("program_type", "").upper()
@@ -168,7 +180,6 @@ def compute_financing_structure(
             })
             continue
 
-        # Direct cash debt program (LOAN, WORKING_CAPITAL, CO_FINANCING)
         raw_max = prog.get("financing_max")
         # Semantic Rule 3: Do NOT invent allocation if financing_max is unknown
         if raw_max is None or float(raw_max) <= 0:
@@ -189,8 +200,29 @@ def compute_financing_structure(
             })
             continue
 
+        # Direct cash debt program (LOAN, WORKING_CAPITAL, CO_FINANCING)
+        # When borrowing capacity is unknown/uncalculated, program appears as potential option
+        # with allocated_amount = None and allocation_status = CAPACITY_NOT_EVALUATED.
+        if capacity_status != "CALCULATED":
+            program_allocations.append({
+                "program_id": prog["program_id"],
+                "program_slug": prog["program_slug"],
+                "provider": prog["provider"],
+                "provider_ar": prog["provider_ar"],
+                "program_name_ar": prog["program_name_ar"],
+                "program_name_en": prog["program_name_en"],
+                "program_type": prog["program_type"],
+                "match_status": "MATCH",
+                "allocated_amount": None,
+                "allocation_status": "CAPACITY_NOT_EVALUATED",
+                "term_months": prog.get("term_months"),
+                "grace_period_months": prog.get("grace_period_months"),
+                "official_source_url": prog.get("official_source_url"),
+            })
+            continue
+
         p_max = float(raw_max)
-        # Semantic Rule 4: Constrain screening debt by remaining gap and borrowing capacity
+        # Constrain screening debt by remaining gap and safe borrowing capacity
         remaining_capacity = max(0.0, available_safe_debt_cap - allocated_program_debt)
         allocation = min(remaining_gap_to_fund, p_max, remaining_capacity)
 
@@ -250,7 +282,13 @@ def compute_financing_structure(
 
     # Total Identified Sources (Confirmed Equity + Confirmed Facilities + Indicative Screening Program Debt)
     total_identified_sources = round(owner_equity + existing_debt + allocated_program_debt, 2)
-    residual_gap = max(0.0, round(total_requirement - total_identified_sources, 2))
+
+    # Clarified Gap Metrics (Requirement 4):
+    # confirmed_funding_gap = project requirement - confirmed sources
+    # potential_residual_gap = remaining gap after indicative matched-program screening capacity
+    confirmed_funding_gap = max(0.0, round(total_requirement - total_confirmed_sources, 2))
+    potential_residual_gap = max(0.0, round(total_requirement - total_identified_sources, 2))
+    residual_gap = potential_residual_gap
     surplus = max(0.0, round(total_identified_sources - total_requirement, 2))
 
     # Structure Metrics & Ratios
@@ -424,7 +462,9 @@ def compute_financing_structure(
             "total_confirmed": total_confirmed_sources,
             "coverage_percentage": round((total_confirmed_sources / total_requirement) * 100, 1) if total_requirement > 0 else 0.0,
         },
-        "initial_funding_gap": initial_gap,
+        "initial_funding_gap": confirmed_funding_gap,
+        "confirmed_funding_gap": confirmed_funding_gap,
+        "potential_residual_gap": potential_residual_gap,
         "potential_program_capacity": allocated_program_debt,
         "allocated_program_debt": allocated_program_debt,
         "internal_screening_debt_capacity": safe_debt_capacity,

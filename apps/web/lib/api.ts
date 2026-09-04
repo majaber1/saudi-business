@@ -811,6 +811,8 @@ export type FinancingStructure = {
   total_confirmed_sources?: number;
   confirmed_sources?: ConfirmedSourcesData;
   initial_funding_gap?: number;
+  confirmed_funding_gap?: number;
+  potential_residual_gap?: number;
   potential_program_capacity?: number;
   allocated_program_debt: number;
   internal_screening_debt_capacity?: number;

@@ -4,6 +4,14 @@ Tests for Phase 20: Financing Structure (Wave 2 — Funding Intelligence Capston
 Validates deterministic Sources & Uses synthesis, capital structure metrics,
 warnings, and next actions.
 """
+import os
+import tempfile
+
+if not os.environ.get("DATABASE_URL"):
+    handle = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    handle.close()
+    os.environ["DATABASE_URL"] = "sqlite:///" + handle.name
+
 import pytest
 from app.services.financing_structure import (
     compute_financing_structure,
@@ -114,8 +122,8 @@ class TestFinancingStructure:
         financial_period = {
             "revenue": 1_000_000,
             "ebitda": 100_000,
-            "total_debt": 0,
-            "debt_service": 20_000,
+            "existing_debt": 0,
+            "annual_debt_service": 20_000,
         }
 
         res = compute_financing_structure(
@@ -346,6 +354,15 @@ class TestFinancingStructure:
         project = _FakeProject(investment=2_000_000, industry="technology", stage="startup")
         study = _FakeStudy()
 
+        # Provide complete canonical financial period so capacity_status == CALCULATED
+        # EBITDA 1M, annual debt service 100k => headroom 700k * 4.5 = 3.15M safe capacity
+        financial_period = {
+            "revenue": 5_000_000,
+            "ebitda": 1_000_000,
+            "existing_debt": 200_000,
+            "annual_debt_service": 100_000,
+        }
+
         res = compute_financing_structure(
             db,
             study=study,
@@ -353,15 +370,59 @@ class TestFinancingStructure:
             owner_contribution=600_000,
             capex_assumption=2_000_000,
             existing_facilities=200_000,
+            financial_period_dict=financial_period,
         )
 
+        assert res["capacity_status"] == "CALCULATED"
         # Confirmed sources must strictly equal owner equity (600k) + existing facilities (200k) = 800k
         assert res["total_confirmed_sources"] == 800_000.0
         assert res["confirmed_sources"]["total_confirmed"] == 800_000.0
+        assert res["confirmed_funding_gap"] == 1_200_000.0
         assert res["potential_program_capacity"] == 1_200_000.0
+        assert res["potential_residual_gap"] == 0.0
         # Confirmed sources does NOT include the 1.2M potential loan!
         assert res["total_confirmed_sources"] != res["total_identified_sources"]
         assert res["total_identified_sources"] == 2_000_000.0
+
+    def test_unknown_borrowing_capacity_never_allocates_debt(self):
+        """Rule 2: When borrowing capacity is unknown/uncalculated, matched debt programs must NOT be allocated money."""
+        from tests.test_funding_matching import _FakeProgram
+        loan_prog = _FakeProgram(
+            id=55,
+            slug="direct-loan-unassessed",
+            program_type="DIRECT_LOAN",
+            financing_min=100_000,
+            financing_max=1_500_000,
+            target_business_stage="ALL",
+            target_sectors=["all"],
+            collateral_rule={"required": False},
+            revenue_rule=None,
+        )
+        db = _MockSession([loan_prog])
+        project = _FakeProject(investment=2_000_000, industry="technology", stage="startup")
+        study = _FakeStudy()
+
+        # No financial period provided -> capacity_status is NO_DATA
+        res = compute_financing_structure(
+            db,
+            study=study,
+            project=project,
+            owner_contribution=600_000,
+            capex_assumption=2_000_000,
+            existing_facilities=0,
+            financial_period_dict=None,
+        )
+
+        assert res["capacity_status"] == "NO_DATA"
+        assert res["allocated_program_debt"] == 0.0
+        assert res["potential_program_capacity"] == 0.0
+        assert res["confirmed_funding_gap"] == 1_400_000.0
+        assert res["potential_residual_gap"] == 1_400_000.0
+
+        pa = res["program_allocations"][0]
+        assert pa["match_status"] == "MATCH"
+        assert pa["allocated_amount"] is None
+        assert pa["allocation_status"] == "CAPACITY_NOT_EVALUATED"
 
     def test_screening_debt_does_not_exceed_borrowing_capacity(self):
         """Rule 4B: Screening debt allocation is strictly constrained by calculated safe borrowing capacity."""
@@ -381,11 +442,12 @@ class TestFinancingStructure:
         project = _FakeProject(investment=5_000_000, industry="technology", stage="startup")
         study = _FakeStudy()
 
+        # Canonical fields: existing_debt and annual_debt_service
         financial_period = {
             "revenue": 1_000_000,
             "ebitda": 200_000,
-            "total_debt": 0,
-            "debt_service": 50_000,
+            "existing_debt": 100_000,
+            "annual_debt_service": 50_000,
         }
 
         res = compute_financing_structure(
@@ -398,10 +460,11 @@ class TestFinancingStructure:
             financial_period_dict=financial_period,
         )
 
+        assert res["capacity_status"] == "CALCULATED"
         safe_cap = res["safe_debt_capacity"]
         assert safe_cap > 0
-        # Program debt must NOT exceed safe_debt_capacity - existing_facilities
-        assert res["allocated_program_debt"] <= max(0.0, safe_cap - 100_000)
+        # Program debt must NOT exceed safe_debt_capacity
+        assert res["allocated_program_debt"] <= safe_cap
 
     def test_twenty_percent_assumption_not_represented_as_verified_external_rule(self):
         """Rule 5: 20% equity benchmark must be explicitly labeled as internal screening assumption."""
@@ -460,4 +523,111 @@ class TestFinancingStructure:
         assert act_4["status"] != "APPROVED"
         assert "موافق" not in act_4["description_ar"]
         assert "approved" not in act_4["description_en"].lower()
+
+    def test_real_api_integration_canonical_financial_period(self):
+        """Requirement 3: Real integration test creating a CompanyFinancialPeriod with canonical fields:
+        revenue, ebitda, existing_debt, annual_debt_service.
+        Calls the real GET /studies/{study_id}/financing-structure API.
+        Verifies:
+        - financing structure reads those exact canonical fields
+        - capacity_status = CALCULATED when inputs are complete
+        - safe_debt_capacity equals the real Borrowing Capacity service result
+        - program screening allocation never exceeds available safe debt capacity
+        """
+        import uuid
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app import db as app_db
+        from app.services.borrowing_capacity import estimate_borrowing_capacity
+
+        app_db.init_db()
+        client = TestClient(app)
+
+        # 1. Register fresh test user
+        email = f"real_api_test_{uuid.uuid4().hex[:8]}@example.com"
+        password = "Password123!"
+        reg = client.post("/auth/register", json={"email": email, "password": password})
+        assert reg.status_code in (200, 201), reg.text
+        tok = client.post("/auth/login", json={"email": email, "password": password}).json()["access_token"]
+        headers = {"Authorization": f"Bearer {tok}"}
+
+        # 2. Create Project and Study
+        proj = client.post("/projects/", headers=headers, json={
+            "name": "شركة التقنية المتقدمة المتكاملة",
+            "industry": "technology",
+            "investment": 3_000_000,
+        }).json()
+        study = client.post("/feasibility/", headers=headers, json={
+            "project_id": proj["id"],
+            "title": "دراسة هيكلة التمويل الحقيقية",
+            "industry": "technology",
+            "investment": 3_000_000,
+        }).json()
+        study_id = study["id"]
+
+        # 3. Add study assumptions for capex and owner_contribution
+        client.post("/assumptions/", headers=headers, json={
+            "study_id": study_id,
+            "key": "capex",
+            "label_en": "Capex",
+            "label_ar": "النفقات الرأسمالية",
+            "value_number": 3_000_000,
+            "unit": "SAR",
+            "origin": "USER",
+        })
+        client.post("/assumptions/", headers=headers, json={
+            "study_id": study_id,
+            "key": "owner_contribution",
+            "label_en": "Owner contribution",
+            "label_ar": "المساهمة الذاتية",
+            "value_number": 1_000_000,
+            "unit": "SAR",
+            "origin": "USER",
+        })
+
+        # 4. Create CompanyFinancialPeriod using EXACT canonical production schema fields
+        canonical_revenue = 3_500_000.0
+        canonical_ebitda = 600_000.0
+        canonical_existing_debt = 200_000.0
+        canonical_annual_debt_service = 80_000.0
+
+        fp_res = client.put(
+            f"/studies/{study_id}/financial-periods/FY2025",
+            headers=headers,
+            json={
+                "source": "audited_statement",
+                "revenue": canonical_revenue,
+                "ebitda": canonical_ebitda,
+                "existing_debt": canonical_existing_debt,
+                "annual_debt_service": canonical_annual_debt_service,
+            },
+        )
+        assert fp_res.status_code == 200, fp_res.text
+
+        # 5. Call real financing structure API endpoint
+        resp = client.get(f"/studies/{study_id}/financing-structure", headers=headers)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        # Expected real Borrowing Capacity service result for exact same inputs
+        expected_borrowing = estimate_borrowing_capacity(
+            ebitda=canonical_ebitda,
+            existing_debt=canonical_existing_debt,
+            annual_debt_service=canonical_annual_debt_service,
+        )
+
+        # Verification:
+        # - financing structure reads those exact fields
+        assert data["capacity_status"] == "CALCULATED"
+        # - safe_debt_capacity equals the real Borrowing Capacity service result
+        assert data["safe_debt_capacity"] == expected_borrowing["base_capacity"]
+        # - program screening allocation never exceeds available safe debt capacity
+        assert data["allocated_program_debt"] <= data["safe_debt_capacity"]
+        # - confirmed funding gap = total requirement - total confirmed sources
+        expected_confirmed_gap = round(3_000_000 - data["total_confirmed_sources"], 2)
+        assert data["confirmed_funding_gap"] == expected_confirmed_gap
+        # - potential residual gap = total requirement - total identified sources
+        expected_residual_gap = max(0.0, round(3_000_000 - data["total_identified_sources"], 2))
+        assert data["potential_residual_gap"] == expected_residual_gap
+        assert data["residual_gap"] == expected_residual_gap
 
