@@ -198,10 +198,7 @@ export default function FundingTab({ token, studyId, locale }: Props) {
   }
 
   async function onSetAssumption(kind: "owner" | "facilities") {
-    const fallbackVal = typeof document !== "undefined"
-      ? (document.querySelectorAll<HTMLInputElement>('#funding-gap input[type="number"]')[kind === "owner" ? 0 : 1]?.value ?? "")
-      : "";
-    const value = (kind === "owner" ? ownerInput : facilitiesInput) || fallbackVal;
+    const value = kind === "owner" ? ownerInput : facilitiesInput;
     if (!value) return;
     setAssumptionBusy(kind);
     setError(null);
