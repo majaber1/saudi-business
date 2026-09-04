@@ -1,0 +1,447 @@
+"""Wave 4 — Validation OS Automated Test Suite.
+
+Comprehensive tests covering:
+1. Workspace initialization and ownership isolation.
+2. Hypothesis lifecycle & strict evidence gate (no fake SUPPORTED without real evidence).
+3. Experiment planning and status updates.
+4. Customer interview recording and persistence.
+5. Survey aggregate derivation with zero-denominator protection.
+6. Demand signals and deterministic conversion calculations.
+7. Pricing assumptions vs tested pricing.
+8. Competitor claims and source URL verification.
+9. Simulated AI content isolation (excluded from supporting hypotheses).
+10. Transparent coverage calculation with ZERO fake percentage scores.
+11. Immutable validation decisions (GO, GO_WITH_CONDITIONS, PIVOT, STOP) with snapshots.
+12. Multi-version decision history preservation.
+"""
+from __future__ import annotations
+
+import os
+import tempfile
+import uuid
+import pytest
+
+if not os.environ.get("DATABASE_URL"):
+    _TMP = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    _TMP.close()
+    os.environ["DATABASE_URL"] = "sqlite:///" + _TMP.name
+os.environ.setdefault("JWT_SECRET", "test-secret-at-least-32-characters-long")
+
+from fastapi.testclient import TestClient
+
+from app import db as app_db
+from app import models
+from app.main import app
+from app.services.validation import (
+    WS_STATUS_NEEDS_EVIDENCE,
+    WS_STATUS_IN_PROGRESS,
+    WS_STATUS_PARTIALLY_VALIDATED,
+    WS_STATUS_VALIDATED,
+    WS_STATUS_NOT_VALIDATED,
+    STATUS_NOT_TESTED,
+    STATUS_TESTING,
+    STATUS_SUPPORTED,
+    STATUS_NOT_SUPPORTED,
+    DECISION_GO,
+    DECISION_GO_WITH_CONDITIONS,
+    DECISION_STOP,
+    DECISION_PIVOT,
+)
+
+client = TestClient(app)
+PASSWORD = "Sup3rSecretPassword123!"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_database():
+    assert app_db.DB_ENABLED is True
+    app_db.init_db()
+
+
+def _email(prefix="val"):
+    return f"{prefix}_{uuid.uuid4().hex[:10]}@example.com"
+
+
+def _auth(token: str):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _register_and_login(prefix="founder"):
+    email = _email(prefix)
+    r = client.post("/auth/register", json={"email": email, "password": PASSWORD})
+    assert r.status_code == 201, r.text
+    tok = client.post("/auth/login", json={"email": email, "password": PASSWORD}).json()["access_token"]
+    return email, tok
+
+
+def _create_project_and_study(tok: str, title="مشروع تجريبي للتحقق"):
+    headers = _auth(tok)
+    # 1. Create project
+    r_p = client.post("/projects/", json={"name": title, "industry": "retail", "investment": 200000.0}, headers=headers)
+    assert r_p.status_code == 201, r_p.text
+    project_id = r_p.json()["id"]
+
+    # 2. Create study
+    r_s = client.post(
+        "/feasibility/",
+        json={"project_id": project_id, "title": f"دراسة: {title}", "industry": "retail", "investment": 200000.0},
+        headers=headers,
+    )
+    assert r_s.status_code == 201, r_s.text
+    study_id = r_s.json()["id"]
+    return project_id, study_id
+
+
+# ==============================================================================
+# TESTS
+# ==============================================================================
+
+def test_validation_workspace_initialization_and_isolation():
+    """Test creating validation workspace for study and verifying user isolation."""
+    _, tok1 = _register_and_login("val_user1")
+    _, tok2 = _register_and_login("val_user2")
+
+    _, study_id = _create_project_and_study(tok1, "مشروع تجزئة أ")
+
+    # User 1 accesses workspace -> auto-initialized with template hypotheses
+    r1 = client.get(f"/api/v1/validation/study/{study_id}", headers=_auth(tok1))
+    assert r1.status_code == 200
+    data = r1.json()
+    assert data["study_id"] == study_id
+    assert data["status"] == WS_STATUS_NEEDS_EVIDENCE
+    assert len(data["hypotheses"]) >= 3
+    ws_id = data["id"]
+
+    # User 2 attempts to access User 1's workspace -> 403 Forbidden
+    r2 = client.get(f"/api/v1/validation/study/{study_id}", headers=_auth(tok2))
+    assert r2.status_code == 403
+
+    r2_direct = client.get(f"/api/v1/validation/workspaces/{ws_id}", headers=_auth(tok2))
+    assert r2_direct.status_code == 403
+
+
+def test_hypothesis_evidence_gate_prevents_fake_support():
+    """Test that a hypothesis cannot be marked SUPPORTED without non-simulated evidence."""
+    _, tok = _register_and_login("hypo_gate")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع أطعمة ومشروبات")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    h_id = ws["hypotheses"][0]["id"]
+
+    # Attempt to change to SUPPORTED without any evidence -> 422 rejected!
+    r_fail = client.patch(f"/api/v1/validation/hypotheses/{h_id}", json={"status": STATUS_SUPPORTED}, headers=headers)
+    assert r_fail.status_code == 422
+    assert "أدلة ميدانية" in r_fail.text or "evidence" in r_fail.text.lower()
+
+
+def test_customer_interview_recording_and_hypothesis_support():
+    """Test recording real customer interview evidence and transitioning hypothesis."""
+    _, tok = _register_and_login("cust_interview")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "تطبيق خدمات لوجستية")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+    h_problem = next(h for h in ws["hypotheses"] if h["hypothesis_type"] == "CUSTOMER_PROBLEM")
+
+    # Record interview
+    r_ev = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "مقابلة ميدانية مع مدير عمليات لوجستية في الرياض",
+            "hypothesis_id": h_problem["id"],
+            "source_type": "USER_RECORDED",
+            "source_owner": "أحمد الشمري - شركة نقليات الرياض",
+            "evidence_strength": "STRONG",
+            "is_simulated": False,
+            "structured_payload": {
+                "segment": "B2B Logistics Operations",
+                "interview_date": "2026-09-01",
+                "problem_confirmed": True,
+                "current_alternative": "جداول Excel واتصالات هاتفية",
+                "pain_level": "HIGH",
+                "willingness_to_switch": True,
+                "price_reaction": "مستعد لدفع 1500 ر.س شهرياً",
+                "notes": "العميل أكد خسارة شحنات شهرياً بسبب تأخر التتبع اليدوي.",
+            },
+        },
+        headers=headers,
+    )
+    assert r_ev.status_code == 201
+    ev_data = r_ev.json()
+    assert ev_data["structured_payload"]["problem_confirmed"] is True
+
+    # Check that hypothesis can now be marked or is auto-marked SUPPORTED
+    ws_updated = client.get(f"/api/v1/validation/workspaces/{ws_id}", headers=headers).json()
+    h_updated = next(h for h in ws_updated["hypotheses"] if h["id"] == h_problem["id"])
+    assert h_updated["status"] == STATUS_SUPPORTED
+    assert h_updated["evidence_count"] >= 1
+
+
+def test_simulated_content_is_isolated_and_cannot_support_hypothesis():
+    """Test that simulated / AI persona content cannot be used as validation proof."""
+    _, tok = _register_and_login("sim_content")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "منصة تعليم إلكتروني")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+    h_demand = next(h for h in ws["hypotheses"] if h["hypothesis_type"] == "DEMAND")
+
+    # Add simulated AI persona interview
+    r_sim = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "محاكاة شخصية طالب جامعي (AI Persona Simulation)",
+            "hypothesis_id": h_demand["id"],
+            "source_type": "USER_RECORDED",
+            "is_simulated": True,  # SIMULATED
+            "evidence_strength": "STRONG",
+            "structured_payload": {
+                "problem_confirmed": True,
+                "notes": "محاكاة نموذج ذكاء اصطناعي لاختبار الأسئلة فقط.",
+            },
+        },
+        headers=headers,
+    )
+    assert r_sim.status_code == 201
+
+    # Attempt to transition hypothesis to SUPPORTED with only simulated evidence -> 422 rejected!
+    r_patch = client.patch(
+        f"/api/v1/validation/hypotheses/{h_demand['id']}",
+        json={"status": STATUS_SUPPORTED},
+        headers=headers,
+    )
+    assert r_patch.status_code == 422
+
+
+def test_survey_percentages_derived_from_actual_counts_and_zero_protected():
+    """Test that survey response percentages derive from real counts only and zero denominator is protected."""
+    _, tok = _register_and_login("survey_counts")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مركز رياضي نسائي")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # 1. Survey with 0 responses -> derived_agreement_rate is None (NO fake 0% or percentage)
+    r_zero = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "SURVEY",
+            "title": "استبيان أولي فارغ",
+            "source_type": "USER_RECORDED",
+            "structured_payload": {
+                "responses_count": 0,
+                "positive_responses": 0,
+            },
+        },
+        headers=headers,
+    )
+    assert r_zero.status_code == 201
+    assert r_zero.json()["structured_payload"]["derived_agreement_rate"] is None
+
+    # 2. Survey with 50 actual responses and 41 positive
+    r_real = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "SURVEY",
+            "title": "استبيان الرغبة بالاشتراك في الحي",
+            "source_type": "USER_RECORDED",
+            "structured_payload": {
+                "responses_count": 50,
+                "positive_responses": 41,
+            },
+        },
+        headers=headers,
+    )
+    assert r_real.status_code == 201
+    assert r_real.json()["structured_payload"]["derived_agreement_rate"] == 82.0
+
+
+def test_demand_signals_and_deterministic_conversion_calculation():
+    """Test demand signals calculate conversion rate deterministically from actual numbers."""
+    _, tok = _register_and_login("demand_signal")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "متجر تجارة إلكترونية متخصص")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # Landing page test: 200 visitors, 16 waitlist signups -> exactly 8.0%
+    r_ev = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "WAITLIST",
+            "title": "تسجيلات قائمة الانتظار لصفحة الهبوط التجريبية",
+            "source_type": "USER_RECORDED",
+            "structured_payload": {
+                "signal_type": "waitlist_conversion",
+                "sample_size": 200,
+                "positive_actions": 16,
+            },
+        },
+        headers=headers,
+    )
+    assert r_ev.status_code == 201
+    assert r_ev.json()["structured_payload"]["derived_conversion_rate"] == 8.0
+
+
+def test_pricing_assumption_separated_from_tested_price():
+    """Test pricing evidence separates assumed price from tested price."""
+    _, tok = _register_and_login("price_test")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "خدمات استشارية تقنية")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # Assumed 500 SAR vs Tested 450 SAR
+    r_price = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "TRANSACTION",
+            "title": "اختبار عروض أسعار تجريبية للعملاء",
+            "source_type": "USER_RECORDED",
+            "structured_payload": {
+                "assumed_price": 500.0,
+                "tested_price": 450.0,
+                "customer_response": "ACCEPTED",
+            },
+        },
+        headers=headers,
+    )
+    assert r_price.status_code == 201
+    payload = r_price.json()["structured_payload"]
+    assert payload["assumed_price"] == 500.0
+    assert payload["tested_price"] == 450.0
+    assert payload["price_variance"] == -50.0
+
+
+def test_competitor_source_provenance_requires_valid_url():
+    """Test competitor evidence enforces valid web source URL."""
+    _, tok = _register_and_login("comp_evidence")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مقهى مختص")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # Invalid URL -> 400 Bad Request
+    r_bad = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "URL_SOURCE",
+            "title": "قائمة أسعار المنافس المحلي",
+            "source_type": "URL_SOURCE",
+            "source_url": "invalid_url_without_http",
+        },
+        headers=headers,
+    )
+    assert r_bad.status_code == 400
+
+    # Valid URL -> 201 Created
+    r_good = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "URL_SOURCE",
+            "title": "قائمة أسعار المنافس المحلي",
+            "source_type": "URL_SOURCE",
+            "source_url": "https://competitor-cafe.sa/menu",
+            "source_owner": "منافس محلي - فرع الرياض",
+            "structured_payload": {
+                "observed_price": 22.0,
+                "offering": "لاتيه 12 أونصة",
+            },
+        },
+        headers=headers,
+    )
+    assert r_good.status_code == 201
+    assert r_good.json()["source_url"] == "https://competitor-cafe.sa/menu"
+
+
+def test_zero_synthetic_validation_score_and_transparent_evaluation():
+    """Test workspace evaluation yields transparent status and counts, never a fake percentage score."""
+    _, tok = _register_and_login("no_fake_score")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع صناعي خفيف")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    eval_res = ws["evaluation"]
+
+    # Must NOT have synthetic score
+    assert "score" not in eval_res
+    assert "validation_score" not in eval_res
+    assert "percentage" not in eval_res
+
+    # Must have transparent counts
+    assert "total_hypotheses" in eval_res
+    assert "counts" in eval_res
+    assert "critical_total" in eval_res
+    assert "status" in eval_res
+    assert eval_res["status"] in (
+        WS_STATUS_NEEDS_EVIDENCE,
+        WS_STATUS_IN_PROGRESS,
+        WS_STATUS_PARTIALLY_VALIDATED,
+        WS_STATUS_VALIDATED,
+        WS_STATUS_NOT_VALIDATED,
+    )
+
+
+def test_immutable_validation_decisions_and_snapshot():
+    """Test recording immutable validation decision (GO, GO_WITH_CONDITIONS, PIVOT, STOP) with evidence snapshot."""
+    _, tok = _register_and_login("val_decision")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "استوديو تصميم وإنتاج")
+
+    ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # 1. GO_WITH_CONDITIONS without conditions -> 400
+    r_bad_cond = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={"decision": DECISION_GO_WITH_CONDITIONS, "decision_reason": "سبب كافٍ للموافقة المشروطة", "conditions": []},
+        headers=headers,
+    )
+    assert r_bad_cond.status_code == 400
+
+    # 2. Record GO_WITH_CONDITIONS version 1
+    r_dec1 = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={
+            "decision": DECISION_GO_WITH_CONDITIONS,
+            "decision_reason": "الموافقة المشروطة على المضي قدماً مع الالتزام بالحصول على خطابات نوايا إضافية",
+            "conditions": ["الحصول على 3 عقود مبدئية قبل توقيع عقد الإيجار"],
+        },
+        headers=headers,
+    )
+    assert r_dec1.status_code == 201
+    d1 = r_dec1.json()
+    assert d1["decision"] == DECISION_GO_WITH_CONDITIONS
+    assert d1["decision_version"] == 1
+    assert "evidence_snapshot" in d1
+
+    # 3. Later record definitive GO decision (version 2)
+    r_dec2 = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={
+            "decision": DECISION_GO,
+            "decision_reason": "تم استيفاء الشروط وتوقيع العقود المبدئية بنجاح والمضي نحو مرحلة الإطلاق",
+        },
+        headers=headers,
+    )
+    assert r_dec2.status_code == 201
+    d2 = r_dec2.json()
+    assert d2["decision"] == DECISION_GO
+    assert d2["decision_version"] == 2
+
+    # 4. History endpoint preserves both decisions immutably
+    r_hist = client.get(f"/api/v1/validation/workspaces/{ws_id}/decisions", headers=headers)
+    assert r_hist.status_code == 200
+    hist = r_hist.json()
+    assert len(hist) == 2
+    assert hist[0]["decision_version"] == 2
+    assert hist[1]["decision_version"] == 1

@@ -1069,3 +1069,165 @@ class OpportunityMatchResult(TimestampMixin, Base):
     opportunity: Mapped["VerifiedOpportunity"] = relationship()
 
 
+# ==============================================================================
+# WAVE 4 — VALIDATION OS MODELS
+# ==============================================================================
+
+class ValidationWorkspace(TimestampMixin, Base):
+    """Evidence-driven validation workspace for a business project/feasibility study (Wave 4)."""
+
+    __tablename__ = "validation_workspaces"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    study_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("feasibility_studies.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # NEEDS_EVIDENCE | IN_PROGRESS | PARTIALLY_VALIDATED | VALIDATED | NOT_VALIDATED
+    status: Mapped[str] = mapped_column(String(30), default="NEEDS_EVIDENCE", nullable=False)
+
+    project: Mapped["Project"] = relationship()
+    study: Mapped[Optional["FeasibilityStudy"]] = relationship()
+    user: Mapped["User"] = relationship()
+
+    hypotheses: Mapped[list["ValidationHypothesis"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="ValidationHypothesis.id.asc()"
+    )
+    experiments: Mapped[list["ValidationExperiment"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="ValidationExperiment.id.asc()"
+    )
+    evidence: Mapped[list["ValidationEvidence"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="ValidationEvidence.id.desc()"
+    )
+    decisions: Mapped[list["ValidationDecision"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="ValidationDecision.id.desc()"
+    )
+
+
+class ValidationHypothesis(TimestampMixin, Base):
+    """Core hypothesis tested during market validation."""
+
+    __tablename__ = "validation_hypotheses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("validation_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # CUSTOMER_PROBLEM | CUSTOMER_SEGMENT | VALUE_PROPOSITION | DEMAND | WILLINGNESS_TO_PAY | PRICE | CHANNEL | COMPETITOR_POSITIONING | BUSINESS_MODEL
+    hypothesis_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    statement: Mapped[str] = mapped_column(Text, nullable=False)
+    # CRITICAL | HIGH | MEDIUM | LOW
+    importance: Mapped[str] = mapped_column(String(20), default="HIGH", nullable=False)
+    # NOT_TESTED | TESTING | SUPPORTED | PARTIALLY_SUPPORTED | NOT_SUPPORTED | INCONCLUSIVE
+    status: Mapped[str] = mapped_column(String(30), default="NOT_TESTED", nullable=False)
+    rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    workspace: Mapped["ValidationWorkspace"] = relationship(back_populates="hypotheses")
+    experiments: Mapped[list["ValidationExperiment"]] = relationship(
+        back_populates="hypothesis"
+    )
+    evidence: Mapped[list["ValidationEvidence"]] = relationship(
+        back_populates="hypothesis"
+    )
+
+
+class ValidationExperiment(TimestampMixin, Base):
+    """Structured validation test or experiment designed to produce evidence."""
+
+    __tablename__ = "validation_experiments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("validation_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    hypothesis_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("validation_hypotheses.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    # CUSTOMER_INTERVIEW | SURVEY | LANDING_PAGE | WAITLIST | PRE_ORDER | QUOTE_REQUEST | SALES_OUTREACH | PRICE_TEST | COMPETITOR_RESEARCH | MANUAL_MARKET_RESEARCH | OTHER
+    experiment_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    objective: Mapped[str] = mapped_column(Text, nullable=False)
+    method: Mapped[str] = mapped_column(Text, nullable=False)
+    planned_sample_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    success_criteria: Mapped[str] = mapped_column(Text, nullable=False)
+    # PLANNED | RUNNING | COMPLETED | CANCELLED
+    status: Mapped[str] = mapped_column(String(30), default="PLANNED", nullable=False)
+    start_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    end_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    workspace: Mapped["ValidationWorkspace"] = relationship(back_populates="experiments")
+    hypothesis: Mapped[Optional["ValidationHypothesis"]] = relationship(back_populates="experiments")
+    evidence: Mapped[list["ValidationEvidence"]] = relationship(
+        back_populates="experiment"
+    )
+
+
+class ValidationEvidence(TimestampMixin, Base):
+    """Traceable, grounded empirical proof supporting or rejecting a hypothesis."""
+
+    __tablename__ = "validation_evidence"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("validation_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    hypothesis_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("validation_hypotheses.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    experiment_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("validation_experiments.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    # USER_RECORDED | DOCUMENT | URL_SOURCE | SURVEY | INTERVIEW | TRANSACTION | PREORDER | WAITLIST | ANALYTICS | EXPERIMENT_RESULT | OFFICIAL_SOURCE
+    evidence_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # USER_RECORDED | DOCUMENT | URL_SOURCE | OFFICIAL_SOURCE | SYSTEM_TRACKED
+    source_type: Mapped[str] = mapped_column(String(50), default="USER_RECORDED", nullable=False)
+    source_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    source_owner: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    raw_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    unit: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    occurred_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # STRONG | MODERATE | WEAK
+    evidence_strength: Mapped[str] = mapped_column(String(20), default="MODERATE", nullable=False)
+    # If simulated (e.g. AI personas/drafts), flagged true and excluded from validation proof
+    is_simulated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Detailed factual payload (interview responses, survey samples/numerators, conversion counts, quotes)
+    structured_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    workspace: Mapped["ValidationWorkspace"] = relationship(back_populates="evidence")
+    hypothesis: Mapped[Optional["ValidationHypothesis"]] = relationship(back_populates="evidence")
+    experiment: Mapped[Optional["ValidationExperiment"]] = relationship(back_populates="evidence")
+
+
+class ValidationDecision(TimestampMixin, Base):
+    """Immutable record of an evidence-backed validation decision."""
+
+    __tablename__ = "validation_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("validation_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # GO | GO_WITH_CONDITIONS | PIVOT | STOP
+    decision: Mapped[str] = mapped_column(String(30), nullable=False)
+    decision_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    conditions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Immutable snapshot of supported, contradicting, and missing evidence at decision time
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    decision_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    decided_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    workspace: Mapped["ValidationWorkspace"] = relationship(back_populates="decisions")
+
+
+

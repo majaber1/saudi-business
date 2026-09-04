@@ -15,7 +15,7 @@ export function isSafeBrowserMutation(request: NextRequest) {
   const origin = request.headers.get("origin");
   if (!origin) return true;
   if (origin === request.nextUrl.origin) return true;
-  const isLoopback = (u: string) => u.includes("localhost") || u.includes("127.0.0.1");
+  const isLoopback = (u: string) => u.includes("localhost") || u.includes("127.0.0.1") || u.includes("0.0.0.0") || u.includes("::1");
   if (isLoopback(origin) && isLoopback(request.nextUrl.origin)) return true;
   return false;
 }

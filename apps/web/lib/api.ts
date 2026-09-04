@@ -1602,3 +1602,198 @@ export function getOpportunitySingleFitResult(token: string, oppId: number) {
   return authedRequest<any>(`/api/v1/opportunities/fit-results/${oppId}`, token);
 }
 
+// =============================================================================
+// Wave 4: Validation OS Interfaces & Functions
+// =============================================================================
+
+export interface ValidationHypothesis {
+  id: number;
+  hypothesis_type: string;
+  statement: string;
+  importance: string;
+  status: string;
+  rationale?: string | null;
+  created_at?: string | null;
+  evidence_count?: number;
+}
+
+export interface ValidationExperiment {
+  id: number;
+  hypothesis_id?: number | null;
+  experiment_type: string;
+  title: string;
+  objective: string;
+  method: string;
+  planned_sample_size?: number | null;
+  success_criteria: string;
+  status: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  result_summary?: string | null;
+  created_at?: string | null;
+}
+
+export interface ValidationEvidenceItem {
+  id: number;
+  hypothesis_id?: number | null;
+  experiment_id?: number | null;
+  evidence_type: string;
+  title: string;
+  notes?: string | null;
+  source_type: string;
+  source_url?: string | null;
+  source_owner?: string | null;
+  raw_value?: number | null;
+  unit?: string | null;
+  captured_at?: string | null;
+  evidence_strength: string;
+  is_simulated: boolean;
+  structured_payload: Record<string, any>;
+}
+
+export interface ValidationDecisionItem {
+  id: number;
+  decision: "GO" | "GO_WITH_CONDITIONS" | "PIVOT" | "STOP";
+  decision_reason: string;
+  conditions: string[];
+  evidence_snapshot: Record<string, any>;
+  decision_version: number;
+  decided_at: string;
+}
+
+export interface ValidationWorkspaceData {
+  id: number;
+  project_id: number;
+  study_id: number;
+  status: string;
+  evaluation: {
+    status: string;
+    total_hypotheses: number;
+    counts: Record<string, number>;
+    critical_total: number;
+    critical_supported: number;
+    critical_untested: number;
+    critical_not_supported: number;
+    summary_ar: string;
+  };
+  created_at?: string | null;
+  updated_at?: string | null;
+  hypotheses: ValidationHypothesis[];
+  experiments: ValidationExperiment[];
+  evidence: ValidationEvidenceItem[];
+  latest_decision?: ValidationDecisionItem | null;
+}
+
+export function getValidationWorkspace(token: string, studyId: number) {
+  return authedRequest<ValidationWorkspaceData>(`/api/v1/validation/study/${studyId}`, token);
+}
+
+export function addValidationHypothesis(
+  token: string,
+  workspaceId: number,
+  data: {
+    hypothesis_type: string;
+    statement: string;
+    importance: string;
+    rationale?: string;
+  }
+) {
+  return authedRequest<ValidationHypothesis>(`/api/v1/validation/workspaces/${workspaceId}/hypotheses`, token, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateValidationHypothesis(
+  token: string,
+  hypothesisId: number,
+  data: {
+    statement?: string;
+    importance?: string;
+    status?: string;
+    rationale?: string;
+  }
+) {
+  return authedRequest<ValidationHypothesis>(`/api/v1/validation/hypotheses/${hypothesisId}`, token, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function addValidationExperiment(
+  token: string,
+  workspaceId: number,
+  data: {
+    experiment_type: string;
+    title: string;
+    objective: string;
+    method: string;
+    success_criteria: string;
+    hypothesis_id?: number | null;
+    planned_sample_size?: number | null;
+  }
+) {
+  return authedRequest<ValidationExperiment>(`/api/v1/validation/workspaces/${workspaceId}/experiments`, token, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateValidationExperiment(
+  token: string,
+  experimentId: number,
+  data: {
+    status?: string;
+    result_summary?: string;
+  }
+) {
+  return authedRequest<ValidationExperiment>(`/api/v1/validation/experiments/${experimentId}`, token, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function recordValidationEvidence(
+  token: string,
+  workspaceId: number,
+  data: {
+    evidence_type: string;
+    title: string;
+    hypothesis_id?: number | null;
+    experiment_id?: number | null;
+    source_type?: string;
+    source_url?: string | null;
+    source_owner?: string | null;
+    notes?: string | null;
+    raw_value?: number | null;
+    unit?: string | null;
+    evidence_strength?: string;
+    is_simulated?: boolean;
+    structured_payload?: Record<string, any>;
+  }
+) {
+  return authedRequest<ValidationEvidenceItem>(`/api/v1/validation/workspaces/${workspaceId}/evidence`, token, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function recordValidationDecision(
+  token: string,
+  workspaceId: number,
+  data: {
+    decision: string;
+    decision_reason: string;
+    conditions?: string[];
+  }
+) {
+  return authedRequest<ValidationDecisionItem>(`/api/v1/validation/workspaces/${workspaceId}/decision`, token, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getValidationDecisions(token: string, workspaceId: number) {
+  return authedRequest<ValidationDecisionItem[]>(`/api/v1/validation/workspaces/${workspaceId}/decisions`, token);
+}
+

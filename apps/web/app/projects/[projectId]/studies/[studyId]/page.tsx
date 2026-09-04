@@ -8,6 +8,7 @@ import EvidenceTab from "@/components/study/EvidenceTab";
 import AssumptionsTab from "@/components/study/AssumptionsTab";
 import BusinessProfileTab from "@/components/study/BusinessProfileTab";
 import FundingTab from "@/components/study/FundingTab";
+import ValidationTab from "@/components/study/ValidationTab";
 
 const sections = [
   "overview",
@@ -19,6 +20,7 @@ const sections = [
   "scenarios",
   "risks",
   "funding",
+  "validation",
   "compliance",
   "report",
   "sources",
@@ -36,6 +38,7 @@ const labels = {
     "السيناريوهات",
     "المخاطر",
     "التمويل",
+    "التحقق الميداني والافتراضات",
     "الامتثال والتراخيص",
     "التقرير",
     "المصادر",
@@ -51,6 +54,7 @@ const labels = {
     "Scenarios",
     "Risks",
     "Funding",
+    "Market Validation",
     "Compliance & licensing",
     "Report",
     "Sources",
@@ -300,6 +304,8 @@ export default function StudyWorkspacePage({ params }: { params: Promise<{ proje
             <AssumptionsTab token={token} studyId={study.id} locale={locale} />
           ) : active === "funding" ? (
             <FundingTab token={token} studyId={study.id} locale={locale} />
+          ) : active === "validation" ? (
+            <ValidationTab token={token} studyId={study.id} locale={locale} />
           ) : active === "sources" && lineage ? (
             <div className="mt-5 space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
