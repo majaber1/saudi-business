@@ -230,6 +230,15 @@ def main():
 
         # Set capital to 500,000 SAR
         page.fill('[data-testid="capital-input"]', "500000")
+
+        # Verify capital constraint UI options strictly reflect implemented semantics
+        cap_strength_select = page.locator('[data-testid="capital-strength-select"]')
+        select_options_text = cap_strength_select.inner_text()
+        assert "قيد حتمي — لا أتجاوز رأس المال" in select_options_text
+        assert "تفضيل — يمكنني مراجعة خيارات أعلى من الميزانية" in select_options_text
+        assert "FLEXIBLE_10" not in select_options_text
+        assert "FLEXIBLE_20" not in select_options_text
+        print("Confirmed: Capital constraint options strictly reflect HARD and PREFERENCE.")
         
         # Click evaluate button
         print("Clicking Evaluate Fit button...")
@@ -329,7 +338,8 @@ def main():
         assert "جهة المصدر الرسمي" in table_text
         assert "حالة التوثيق" in table_text
         assert "حالة الملاءمة" in table_text
-        print("Verified factual side-by-side comparison table with deterministic fit state row.")
+        assert "VERIFIED_PARTIAL" in table_text or "موثق" in table_text, "Comparison table must preserve VERIFIED_PARTIAL status"
+        print("Verified factual side-by-side comparison table preserves VERIFIED_PARTIAL and displays deterministic fit state row.")
 
         # Return to My Fit tab
         page.click('[data-testid="my-fit-tab"]')
@@ -371,9 +381,57 @@ def main():
         assert "المصدر الرسمي" in banner_text
 
         # ----------------------------------------------------------------------
+        # 8b. Simulate Changed Source Version & Verify Match Freshness Protection
+        # ----------------------------------------------------------------------
+        print("\nStep 8b: Testing source version change freshness in UI and Study creation gate...")
+        page.goto(f"{BASE_URL}/opportunities")
+        page.wait_for_selector('[data-testid="my-fit-tab"]')
+        page.click('[data-testid="my-fit-tab"]')
+        page.wait_for_timeout(1000)
+
+        import sqlite3
+        conn = sqlite3.connect("backend/test.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, data_version FROM verified_opportunities WHERE slug = 'franchise-barns-cafe'")
+        row = cursor.fetchone()
+        assert row is not None
+        barns_db_id, orig_db_version = row[0], row[1]
+        try:
+            # Bump version in DB
+            cursor.execute("UPDATE verified_opportunities SET data_version = '2.0.0' WHERE id = ?", (barns_db_id,))
+            conn.commit()
+            print(f"Simulated source update: Bumped Barn's Cafe version in DB to 2.0.0 (was {orig_db_version})")
+
+            # Reload page and open My Fit
+            page.reload()
+            page.wait_for_selector('[data-testid="my-fit-tab"]')
+            page.click('[data-testid="my-fit-tab"]')
+            page.wait_for_timeout(1500)
+
+            # Check Barn's card shows NOT_EVALUATED
+            cards = page.locator('[data-testid="opportunity-card"]').all()
+            barns_stale_detected = False
+            for card in cards:
+                c_text = card.inner_text()
+                if "بارنز" in c_text:
+                    barns_stale_detected = True
+                    print(f"Barn's card text after version bump: {c_text[:100]}...")
+                    assert "غير خاضعة للتقييم" in c_text or "NOT_EVALUATED" in c_text or "إعادة" in c_text or "تغيرت" in c_text
+                    break
+            assert barns_stale_detected, "Barn's card not found after reload"
+            print("Verified: Old match result deterministically became NOT_EVALUATED upon source version bump.")
+        finally:
+            # Restore original version
+            cursor.execute("UPDATE verified_opportunities SET data_version = ? WHERE id = ?", (orig_db_version, barns_db_id))
+            conn.commit()
+            conn.close()
+
+        # ----------------------------------------------------------------------
         # 9. Refresh Browser & Verify Persistence
         # ----------------------------------------------------------------------
         print("\nStep 9: Refreshing browser to verify study and lineage persistence...")
+        page.goto(current_study_url)
+        page.wait_for_selector('[data-testid="opportunity-lineage-banner"]', timeout=10000)
         page.reload()
         page.wait_for_selector('[data-testid="opportunity-lineage-banner"]', timeout=10000)
         persisted_banner = page.locator('[data-testid="opportunity-lineage-banner"]')

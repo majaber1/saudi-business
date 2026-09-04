@@ -1514,8 +1514,8 @@ def compare_verified_opportunities(
             "source_owner": item.source_owner,
             "source_type": item.source_type,
             "official_source_url": item.official_source_url,
-        "verification_status": STATUS_UNVERIFIED,
-        "is_active": False,
+            "verification_status": item.verification_status,
+            "is_active": item.is_active,
             "data_version": item.data_version,
             "field_provenance": item.field_provenance or {},
             "last_verified_at": item.last_verified_at.isoformat() if item.last_verified_at else None,
@@ -1540,8 +1540,20 @@ def create_study_from_opportunity(
     opp = get_verified_opportunity(db, opportunity_id)
     if not opp:
         raise ValueError("Opportunity not found")
-    if not opp.is_active or opp.verification_status == STATUS_UNVERIFIED:
-        raise ValueError("Cannot create study from an unverified or non-actionable opportunity. Only verified opportunities with proven existence can be launched.")
+    if not opp.is_active:
+        raise ValueError("Cannot create study from an unverified or non-actionable opportunity (inactive).")
+    if opp.verification_status not in (STATUS_VERIFIED_PARTIAL, STATUS_VERIFIED_CURRENT):
+        raise ValueError(
+            f"Cannot create study from an unverified or non-actionable opportunity with status '{opp.verification_status}'. "
+            f"Only VERIFIED_PARTIAL or VERIFIED_CURRENT opportunities can be launched (rejected: UNVERIFIED, STALE, CHANGED, DISCONTINUED)."
+        )
+    existence_supported = bool(
+        opp.field_provenance
+        and isinstance(opp.field_provenance, dict)
+        and opp.field_provenance.get("opportunity_existence", {}).get("supported") is True
+    )
+    if not existence_supported:
+        raise ValueError("Cannot create study: opportunity existence is unsupported or lacks official source evidence.")
 
     # Determine investment amount strictly without fabrication
     if custom_budget is not None and custom_budget > 0:
@@ -1612,19 +1624,32 @@ def create_study_from_opportunity(
     # Optional Fit Snapshot from Wave 3B matching
     fit_snapshot = None
     if match_result_id is not None:
-        from app.services.opportunity_matching import build_fit_snapshot_for_study
         mr = (
             db.query(models.OpportunityMatchResult)
-            .join(models.OpportunityMatchRun)
-            .filter(
-                models.OpportunityMatchResult.id == match_result_id,
-                models.OpportunityMatchRun.user_id == user.id,
-                models.OpportunityMatchResult.opportunity_id == opp.id,
-            )
+            .filter(models.OpportunityMatchResult.id == match_result_id)
             .first()
         )
-        if mr:
-            fit_snapshot = build_fit_snapshot_for_study(mr)
+        if not mr:
+            raise ValueError("RE-EVALUATE FIT: Match result not found.")
+
+        # Check user isolation
+        match_run = mr.match_run
+        if not match_run or match_run.user_id != user.id:
+            raise ValueError("RE-EVALUATE FIT: Match result belongs to another user. Cannot attach snapshot.")
+
+        # Check opportunity match
+        if mr.opportunity_id != opp.id:
+            raise ValueError("RE-EVALUATE FIT: Match result does not correspond to this opportunity. Cannot attach snapshot.")
+
+        # Check freshness and actionable state
+        from app.services.opportunity_matching import resolve_current_match_state, build_fit_snapshot_for_study
+        curr_state, requires_re_eval, stale_reason = resolve_current_match_state(mr, opp)
+        if requires_re_eval or str(mr.opportunity_version) != str(opp.data_version) or curr_state == "NOT_EVALUATED":
+            raise ValueError(
+                f"RE-EVALUATE FIT: Match result is stale or opportunity has changed ({stale_reason or 'version mismatch'}). Please re-evaluate fit before creating a study."
+            )
+
+        fit_snapshot = build_fit_snapshot_for_study(mr)
 
     study_payload = {
         "industry": opp.sector,

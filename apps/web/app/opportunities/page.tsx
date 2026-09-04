@@ -607,12 +607,11 @@ export default function OpportunitiesPage() {
                   <select
                     data-testid="capital-strength-select"
                     value={fitProfile.capital_constraint_type ?? "HARD"}
-                    onChange={(e) => setFitProfile({ ...fitProfile, capital_constraint_type: e.target.value })}
+                    onChange={(e) => setFitProfile({ ...fitProfile, capital_constraint_type: e.target.value as "HARD" | "PREFERENCE" })}
                     className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs outline-none focus:border-brand-500"
                   >
-                    <option value="HARD">{ar ? "قيد حتمي صارم (HARD) - لا يتجاوز رأس المال" : "Strict (HARD) - No Overrun"}</option>
-                    <option value="FLEXIBLE_10">{ar ? "مرن حتى 10% إضافية (FLEXIBLE_10)" : "Flexible up to +10%"}</option>
-                    <option value="FLEXIBLE_20">{ar ? "مرن حتى 20% إضافية (FLEXIBLE_20)" : "Flexible up to +20%"}</option>
+                    <option value="HARD">{ar ? "قيد حتمي — لا أتجاوز رأس المال" : "Strict Hard Limit (No Overrun)"}</option>
+                    <option value="PREFERENCE">{ar ? "تفضيل — يمكنني مراجعة خيارات أعلى من الميزانية" : "Preference (Review Options Above Budget)"}</option>
                   </select>
                 </div>
 

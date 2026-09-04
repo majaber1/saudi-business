@@ -456,33 +456,44 @@ def test_stale_and_changed_source_transitions():
     _, admin_token = _register_and_login("admin_state_test", role_key="admin")
     items = client.get("/api/v1/opportunities/?type=FRANCHISE").json()
     target = items[0]
+    orig_status = target["verification_status"]
 
-    # 1. Transition to STALE
-    r_stale = client.patch(
-        f"/api/v1/opportunities/{target['id']}",
-        json={"verification_status": STATUS_STALE, "change_reason": "مرور أكثر من 180 يوماً على التحقق الدوري"},
-        headers=_auth(admin_token),
-    )
-    assert r_stale.status_code == 200
-    assert r_stale.json()["verification_status"] == STATUS_STALE
+    try:
+        # 1. Transition to STALE
+        r_stale = client.patch(
+            f"/api/v1/opportunities/{target['id']}",
+            json={"verification_status": STATUS_STALE, "change_reason": "مرور أكثر من 180 يوماً على التحقق الدوري"},
+            headers=_auth(admin_token),
+        )
+        assert r_stale.status_code == 200
+        assert r_stale.json()["verification_status"] == STATUS_STALE
 
-    # 2. Transition to CHANGED
-    r_changed = client.patch(
-        f"/api/v1/opportunities/{target['id']}",
-        json={"verification_status": STATUS_CHANGED, "change_reason": "تعديل في شروط المنح الرسمية"},
-        headers=_auth(admin_token),
-    )
-    assert r_changed.status_code == 200
-    assert r_changed.json()["verification_status"] == STATUS_CHANGED
+        # 2. Transition to CHANGED
+        r_changed = client.patch(
+            f"/api/v1/opportunities/{target['id']}",
+            json={"verification_status": STATUS_CHANGED, "change_reason": "تعديل في شروط المنح الرسمية"},
+            headers=_auth(admin_token),
+        )
+        assert r_changed.status_code == 200
+        assert r_changed.json()["verification_status"] == STATUS_CHANGED
 
-    # 3. Transition to DISCONTINUED
-    r_disc = client.patch(
-        f"/api/v1/opportunities/{target['id']}",
-        json={"verification_status": STATUS_DISCONTINUED, "change_reason": "إغلاق برنامج الامتياز رسمياً"},
-        headers=_auth(admin_token),
-    )
-    assert r_disc.status_code == 200
-    assert r_disc.json()["verification_status"] == STATUS_DISCONTINUED
+        # 3. Transition to DISCONTINUED
+        r_disc = client.patch(
+            f"/api/v1/opportunities/{target['id']}",
+            json={"verification_status": STATUS_DISCONTINUED, "change_reason": "إغلاق برنامج الامتياز رسمياً"},
+            headers=_auth(admin_token),
+        )
+        assert r_disc.status_code == 200
+        assert r_disc.json()["verification_status"] == STATUS_DISCONTINUED
+    finally:
+        db = app_db.SessionLocal()
+        try:
+            t = db.query(models.VerifiedOpportunity).filter_by(id=target["id"]).first()
+            if t:
+                t.verification_status = orig_status
+                db.commit()
+        finally:
+            db.close()
 
 
 def test_verified_field_has_provenance():

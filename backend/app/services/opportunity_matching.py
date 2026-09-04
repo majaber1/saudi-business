@@ -486,3 +486,63 @@ def build_fit_snapshot_for_study(match_result: models.OpportunityMatchResult) ->
         "opportunity_id": match_result.opportunity_id,
         "opportunity_version_at_eval": match_result.opportunity_version,
     }
+
+
+def resolve_current_match_state(
+    match_result: models.OpportunityMatchResult,
+    opportunity: models.VerifiedOpportunity,
+) -> Tuple[str, bool, Optional[str]]:
+    """Authoritatively resolves the current presentation match state for a match result.
+
+    Considers at minimum:
+    1. opportunity.data_version != match_result.opportunity_version
+    2. verification status changed to: UNVERIFIED, STALE, CHANGED, DISCONTINUED
+       (or not in VERIFIED_PARTIAL, VERIFIED_CURRENT)
+    3. opportunity inactive (not opportunity.is_active)
+    4. opportunity_existence no longer supported
+
+    Current presentation becomes:
+        NOT_EVALUATED
+    with:
+        requires_re_evaluation = True
+
+    Historical stored result remains immutable.
+
+    Returns:
+        (current_match_state, requires_re_evaluation, reason_if_stale)
+    """
+    existence_supported = bool(
+        opportunity.field_provenance
+        and isinstance(opportunity.field_provenance, dict)
+        and opportunity.field_provenance.get("opportunity_existence", {}).get("supported") is True
+    )
+
+    reasons = []
+
+    if str(opportunity.data_version) != str(match_result.opportunity_version):
+        reasons.append("تم تحديث بيانات الفرصة الرسمية (إصدار جديد متاح)")
+
+    if not opportunity.is_active:
+        reasons.append("أصبحت الفرصة غير نشطة حالياً")
+
+    if opportunity.verification_status not in (STATUS_VERIFIED_PARTIAL, STATUS_VERIFIED_CURRENT):
+        reasons.append(f"حالة التحقق للفرصة ({opportunity.verification_status}) غير مؤهلة أو تغيرت")
+
+    if not existence_supported:
+        reasons.append("توثيق وجود الفرصة بالمصدر الأولي لم يعد مدعوماً")
+
+    # If the opportunity was previously a valid evaluated match (not NOT_EVALUATED)
+    # and any condition triggered, it is stale and requires re-evaluation.
+    # If it was already NOT_EVALUATED at eval time, check if version or verification changed.
+    if match_result.match_state == STATE_NOT_EVALUATED:
+        if str(opportunity.data_version) != str(match_result.opportunity_version):
+            return STATE_NOT_EVALUATED, True, "تم تحديث بيانات الفرصة الرسمية - يلزم إعادة التقييم"
+        if opportunity.verification_status != match_result.verification_status_at_eval:
+            return STATE_NOT_EVALUATED, True, f"تغيرت حالة التحقق للفرصة إلى {opportunity.verification_status} - يلزم إعادة التقييم"
+        return STATE_NOT_EVALUATED, False, match_result.summary_reason
+
+    if reasons:
+        reason_str = "تغيرت بيانات المصدر أو أصبحت غير فعالة منذ آخر تقييم، ويتطلب إعادة التقييم: " + "، ".join(reasons)
+        return STATE_NOT_EVALUATED, True, reason_str
+
+    return match_result.match_state, False, None

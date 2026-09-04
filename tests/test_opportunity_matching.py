@@ -503,3 +503,410 @@ def test_study_creation_with_fit_snapshot():
         assert db_snap["fit_profile_snapshot"]["available_capital"] == 600000.0
     finally:
         db.close()
+
+
+# ==============================================================================
+# WAVE 3B FINAL SEMANTIC HARDENING: TESTS A THROUGH N
+# ==============================================================================
+
+def test_semantic_hardening_a_compare_verified_partial_remains_verified_partial():
+    """A. compare VERIFIED_PARTIAL remains VERIFIED_PARTIAL (Wave 3A comparison regression removed)."""
+    db = app_db.SessionLocal()
+    try:
+        from app.services.opportunities import compare_verified_opportunities
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        shawarmer = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-shawarmer").first()
+        assert barns is not None
+        assert shawarmer is not None
+        assert barns.verification_status == STATUS_VERIFIED_PARTIAL
+        assert shawarmer.verification_status == STATUS_VERIFIED_PARTIAL
+
+        # Service-level comparison
+        res = compare_verified_opportunities(db, [barns.id, shawarmer.id])
+        assert len(res) == 2
+        for item in res:
+            assert item["verification_status"] == STATUS_VERIFIED_PARTIAL
+            assert item["is_active"] is True
+
+        # API-level comparison endpoint
+        r = client.get(f"/api/v1/opportunities/compare?ids={barns.id},{shawarmer.id}")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert len(data) == 2
+        for item in data:
+            assert item["verification_status"] == STATUS_VERIFIED_PARTIAL
+            assert item["is_active"] is True
+    finally:
+        db.close()
+
+
+def test_semantic_hardening_b_changed_source_version_list_result_not_evaluated():
+    """B. changed source version: list result -> NOT_EVALUATED with requires_re_evaluation = True."""
+    _, tok = _register_and_login("version_stale_list")
+    headers = _auth(tok)
+
+    payload = {"available_capital": 600000.0, "preferred_sectors": ["food_beverage"]}
+    client.post("/api/v1/opportunities/fit-profile", json=payload, headers=headers)
+    r_eval = client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+    assert r_eval.status_code == 200
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        assert barns is not None
+        orig_version = barns.data_version
+
+        # Before change: active, valid match state
+        r_list_before = client.get("/api/v1/opportunities/fit-results", headers=headers).json()
+        b_item_before = next(i for i in r_list_before["results"] if i["opportunity_id"] == barns.id)
+        assert b_item_before["match_state"] == STATE_NEEDS_INFORMATION
+        assert b_item_before["is_version_stale"] is False
+        assert b_item_before["requires_re_evaluation"] is False
+
+        # Bump data_version
+        barns.data_version = f"{orig_version}.updated"
+        db.commit()
+
+        # After version bump: list endpoint reflects NOT_EVALUATED
+        r_list_after = client.get("/api/v1/opportunities/fit-results", headers=headers).json()
+        b_item_after = next(i for i in r_list_after["results"] if i["opportunity_id"] == barns.id)
+        assert b_item_after["match_state"] == STATE_NOT_EVALUATED
+        assert b_item_after["requires_re_evaluation"] is True
+        assert b_item_after["is_version_stale"] is True
+        assert b_item_after["original_match_state"] == STATE_NEEDS_INFORMATION
+    finally:
+        barns.data_version = orig_version
+        db.commit()
+        db.close()
+
+
+def test_semantic_hardening_c_changed_source_version_detail_result_not_evaluated():
+    """C. changed source version: detail result -> NOT_EVALUATED with requires_re_evaluation = True."""
+    _, tok = _register_and_login("version_stale_detail")
+    headers = _auth(tok)
+
+    payload = {"available_capital": 600000.0, "preferred_sectors": ["food_beverage"]}
+    client.post("/api/v1/opportunities/fit-profile", json=payload, headers=headers)
+    client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        orig_version = barns.data_version
+
+        # Bump data_version
+        barns.data_version = "99.0.0"
+        db.commit()
+
+        # Detail endpoint check
+        r_detail = client.get(f"/api/v1/opportunities/fit-results/{barns.id}", headers=headers)
+        assert r_detail.status_code == 200
+        detail = r_detail.json()
+        assert detail["match_state"] == STATE_NOT_EVALUATED
+        assert detail["requires_re_evaluation"] is True
+        assert detail["is_version_stale"] is True
+        assert detail["original_match_state"] == STATE_NEEDS_INFORMATION
+        assert detail["current_data_version"] == "99.0.0"
+    finally:
+        barns.data_version = orig_version
+        db.commit()
+        db.close()
+
+
+def test_semantic_hardening_d_stale_opportunity_current_result_not_evaluated():
+    """D. STALE opportunity -> current result NOT_EVALUATED."""
+    from app.services.opportunities import STATUS_STALE
+    _, tok = _register_and_login("stale_opp_eval")
+    headers = _auth(tok)
+
+    payload = {"available_capital": 600000.0, "preferred_sectors": ["food_beverage"]}
+    client.post("/api/v1/opportunities/fit-profile", json=payload, headers=headers)
+    client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        orig_status = barns.verification_status
+
+        # Transition status to STALE
+        barns.verification_status = STATUS_STALE
+        db.commit()
+
+        # List
+        r_list = client.get("/api/v1/opportunities/fit-results", headers=headers).json()
+        b_item = next(i for i in r_list["results"] if i["opportunity_id"] == barns.id)
+        assert b_item["match_state"] == STATE_NOT_EVALUATED
+        assert b_item["requires_re_evaluation"] is True
+
+        # Detail
+        r_detail = client.get(f"/api/v1/opportunities/fit-results/{barns.id}", headers=headers).json()
+        assert r_detail["match_state"] == STATE_NOT_EVALUATED
+        assert r_detail["requires_re_evaluation"] is True
+    finally:
+        barns.verification_status = orig_status
+        db.commit()
+        db.close()
+
+
+def test_semantic_hardening_e_changed_opportunity_current_result_not_evaluated():
+    """E. CHANGED opportunity -> current result NOT_EVALUATED."""
+    from app.services.opportunities import STATUS_CHANGED
+    _, tok = _register_and_login("changed_opp_eval")
+    headers = _auth(tok)
+
+    payload = {"available_capital": 600000.0, "preferred_sectors": ["food_beverage"]}
+    client.post("/api/v1/opportunities/fit-profile", json=payload, headers=headers)
+    client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        orig_status = barns.verification_status
+
+        # Transition status to CHANGED
+        barns.verification_status = STATUS_CHANGED
+        db.commit()
+
+        # List
+        r_list = client.get("/api/v1/opportunities/fit-results", headers=headers).json()
+        b_item = next(i for i in r_list["results"] if i["opportunity_id"] == barns.id)
+        assert b_item["match_state"] == STATE_NOT_EVALUATED
+        assert b_item["requires_re_evaluation"] is True
+
+        # Detail
+        r_detail = client.get(f"/api/v1/opportunities/fit-results/{barns.id}", headers=headers).json()
+        assert r_detail["match_state"] == STATE_NOT_EVALUATED
+        assert r_detail["requires_re_evaluation"] is True
+    finally:
+        barns.verification_status = orig_status
+        db.commit()
+        db.close()
+
+
+def test_semantic_hardening_f_discontinued_opportunity_current_result_not_evaluated():
+    """F. DISCONTINUED opportunity -> current result NOT_EVALUATED."""
+    from app.services.opportunities import STATUS_DISCONTINUED
+    _, tok = _register_and_login("disc_opp_eval")
+    headers = _auth(tok)
+
+    payload = {"available_capital": 600000.0, "preferred_sectors": ["food_beverage"]}
+    client.post("/api/v1/opportunities/fit-profile", json=payload, headers=headers)
+    client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        orig_status = barns.verification_status
+
+        # Transition status to DISCONTINUED
+        barns.verification_status = STATUS_DISCONTINUED
+        db.commit()
+
+        # List
+        r_list = client.get("/api/v1/opportunities/fit-results", headers=headers).json()
+        b_item = next(i for i in r_list["results"] if i["opportunity_id"] == barns.id)
+        assert b_item["match_state"] == STATE_NOT_EVALUATED
+        assert b_item["requires_re_evaluation"] is True
+
+        # Detail
+        r_detail = client.get(f"/api/v1/opportunities/fit-results/{barns.id}", headers=headers).json()
+        assert r_detail["match_state"] == STATE_NOT_EVALUATED
+        assert r_detail["requires_re_evaluation"] is True
+    finally:
+        barns.verification_status = orig_status
+        db.commit()
+        db.close()
+
+
+def test_semantic_hardening_g_stale_match_result_id_cannot_create_study():
+    """G. stale match_result_id cannot create Study (returns RE-EVALUATE FIT)."""
+    _, tok = _register_and_login("stale_match_study")
+    headers = _auth(tok)
+
+    payload = {"available_capital": 600000.0, "preferred_sectors": ["food_beverage"]}
+    client.post("/api/v1/opportunities/fit-profile", json=payload, headers=headers)
+    r_eval = client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+    run = r_eval.json()
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        barns_match = next(r for r in run["results"] if r["opportunity_id"] == barns.id)
+        orig_version = barns.data_version
+
+        # Bump opportunity version to make match stale
+        barns.data_version = "99.0.0"
+        db.commit()
+
+        # Attempt to create study with stale match_result_id
+        r_study = client.post(
+            f"/api/v1/opportunities/{barns.id}/create-study",
+            json={"custom_budget": 500000.0, "match_result_id": barns_match["result_id"]},
+            headers=headers,
+        )
+        assert r_study.status_code == 400
+        assert "RE-EVALUATE FIT" in r_study.text
+    finally:
+        barns.data_version = orig_version
+        db.commit()
+        db.close()
+
+
+def test_semantic_hardening_h_match_result_from_another_user_cannot_attach_snapshot():
+    """H. match_result from another user cannot attach snapshot."""
+    _, tok_a = _register_and_login("user_a")
+    headers_a = _auth(tok_a)
+    client.post("/api/v1/opportunities/fit-profile", json={"available_capital": 500000.0}, headers=headers_a)
+    r_eval_a = client.post("/api/v1/opportunities/fit-evaluate", headers=headers_a).json()
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        barns_match_a = next(r for r in r_eval_a["results"] if r["opportunity_id"] == barns.id)
+
+        # User B logs in and tries to use User A's match result id
+        _, tok_b = _register_and_login("user_b")
+        headers_b = _auth(tok_b)
+        r_study_b = client.post(
+            f"/api/v1/opportunities/{barns.id}/create-study",
+            json={"custom_budget": 500000.0, "match_result_id": barns_match_a["result_id"]},
+            headers=headers_b,
+        )
+        assert r_study_b.status_code == 400
+        assert "RE-EVALUATE FIT" in r_study_b.text or "another user" in r_study_b.text.lower()
+    finally:
+        db.close()
+
+
+def test_semantic_hardening_i_match_result_for_different_opportunity_cannot_attach_snapshot():
+    """I. match_result for different opportunity cannot attach snapshot."""
+    _, tok = _register_and_login("diff_opp_match")
+    headers = _auth(tok)
+    client.post("/api/v1/opportunities/fit-profile", json={"available_capital": 500000.0}, headers=headers)
+    r_eval = client.post("/api/v1/opportunities/fit-evaluate", headers=headers).json()
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        shawarmer = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-shawarmer").first()
+        barns_match = next(r for r in r_eval["results"] if r["opportunity_id"] == barns.id)
+
+        # Attempt to attach Barn's match to Shawarmer study
+        r_study = client.post(
+            f"/api/v1/opportunities/{shawarmer.id}/create-study",
+            json={"custom_budget": 500000.0, "match_result_id": barns_match["result_id"]},
+            headers=headers,
+        )
+        assert r_study.status_code == 400
+        assert "RE-EVALUATE FIT" in r_study.text or "different opportunity" in r_study.text.lower()
+    finally:
+        db.close()
+
+
+def test_semantic_hardening_j_direct_study_creation_rejects_stale_changed_discontinued():
+    """J. direct Study creation rejects STALE, CHANGED, DISCONTINUED, and UNVERIFIED."""
+    from app.services.opportunities import (
+        STATUS_STALE,
+        STATUS_CHANGED,
+        STATUS_DISCONTINUED,
+        STATUS_UNVERIFIED,
+    )
+    _, tok = _register_and_login("direct_study_gate")
+    headers = _auth(tok)
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        orig_status = barns.verification_status
+
+        for rejected_status in (STATUS_UNVERIFIED, STATUS_STALE, STATUS_CHANGED, STATUS_DISCONTINUED):
+            barns.verification_status = rejected_status
+            db.commit()
+
+            r = client.post(
+                f"/api/v1/opportunities/{barns.id}/create-study",
+                json={"custom_budget": 500000.0},
+                headers=headers,
+            )
+            assert r.status_code == 400, f"Expected 400 for {rejected_status}, got {r.status_code}: {r.text}"
+            assert (
+                "Cannot create study" in r.text
+                or rejected_status in r.text
+                or "rejected" in r.text.lower()
+            )
+    finally:
+        barns.verification_status = orig_status
+        db.commit()
+        db.close()
+
+
+def test_semantic_hardening_k_opportunity_existence_unsupported_study_blocked():
+    """K. opportunity_existence unsupported -> Study blocked."""
+    _, tok = _register_and_login("unsupported_exist_study")
+    headers = _auth(tok)
+
+    db = app_db.SessionLocal()
+    try:
+        barns = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-barns-cafe").first()
+        orig_prov = dict(barns.field_provenance) if barns.field_provenance else {}
+
+        # Set opportunity_existence supported = False
+        prov_copy = dict(orig_prov)
+        prov_copy["opportunity_existence"] = {"supported": False, "reason": "Link broken"}
+        barns.field_provenance = prov_copy
+        db.commit()
+
+        r = client.post(
+            f"/api/v1/opportunities/{barns.id}/create-study",
+            json={"custom_budget": 500000.0},
+            headers=headers,
+        )
+        assert r.status_code == 400
+        assert "existence" in r.text.lower() or "unsupported" in r.text.lower()
+    finally:
+        barns.field_provenance = orig_prov
+        db.commit()
+        db.close()
+
+
+def test_semantic_hardening_l_invalid_capital_constraint_type_422():
+    """L. invalid capital constraint type -> 422."""
+    _, tok = _register_and_login("invalid_cap_constraint")
+    headers = _auth(tok)
+
+    for invalid_val in ["FLEXIBLE_10", "FLEXIBLE_20", "INVALID_STRING", "random"]:
+        r = client.post(
+            "/api/v1/opportunities/fit-profile",
+            json={"capital_constraint_type": invalid_val},
+            headers=headers,
+        )
+        assert r.status_code == 422, f"Expected 422 for capital_constraint_type={invalid_val}, got {r.status_code}"
+
+
+def test_semantic_hardening_m_invalid_opportunity_type_constraint_422():
+    """M. invalid opportunity type constraint -> 422."""
+    _, tok = _register_and_login("invalid_opp_constraint")
+    headers = _auth(tok)
+
+    for invalid_val in ["FLEXIBLE_10", "NOT_AN_ENUM", "arbitrary_string"]:
+        r = client.post(
+            "/api/v1/opportunities/fit-profile",
+            json={"opportunity_type_constraint": invalid_val},
+            headers=headers,
+        )
+        assert r.status_code == 422, f"Expected 422 for opportunity_type_constraint={invalid_val}, got {r.status_code}"
+
+
+def test_semantic_hardening_n_negative_capital_422():
+    """N. negative capital -> 422."""
+    _, tok = _register_and_login("negative_capital")
+    headers = _auth(tok)
+
+    for neg_val in [-1.0, -100.0, -500000.0]:
+        r = client.post(
+            "/api/v1/opportunities/fit-profile",
+            json={"available_capital": neg_val},
+            headers=headers,
+        )
+        assert r.status_code == 422, f"Expected 422 for available_capital={neg_val}, got {r.status_code}"
+

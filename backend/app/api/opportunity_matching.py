@@ -9,9 +9,10 @@ Endpoints:
 """
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import db, models
@@ -19,6 +20,7 @@ from app.api.auth import get_current_user
 from app.services.opportunity_matching import (
     execute_match_run,
     get_latest_match_run,
+    resolve_current_match_state,
     STATE_NOT_EVALUATED,
 )
 from app.services.opportunities import (
@@ -29,13 +31,18 @@ from app.services.opportunities import (
 router = APIRouter(prefix="/api/v1/opportunities", tags=["Opportunity Fit & Matching"])
 
 
+class ConstraintStrength(str, Enum):
+    HARD = "HARD"
+    PREFERENCE = "PREFERENCE"
+
+
 class FitProfileIn(BaseModel):
-    available_capital: Optional[float] = None
-    capital_constraint_type: str = "HARD"
+    available_capital: Optional[float] = Field(None, ge=0)
+    capital_constraint_type: ConstraintStrength = ConstraintStrength.HARD
     preferred_sectors: List[str] = []
     excluded_sectors: List[str] = []
     preferred_opportunity_types: List[str] = []
-    opportunity_type_constraint: str = "PREFERENCE"
+    opportunity_type_constraint: ConstraintStrength = ConstraintStrength.PREFERENCE
     target_region: Optional[str] = None
     target_city: Optional[str] = None
     preferred_business_models: List[str] = []
@@ -59,11 +66,11 @@ def save_or_update_fit_profile(
 
     if profile:
         profile.available_capital = data.available_capital
-        profile.capital_constraint_type = data.capital_constraint_type
+        profile.capital_constraint_type = data.capital_constraint_type.value
         profile.preferred_sectors = data.preferred_sectors
         profile.excluded_sectors = data.excluded_sectors
         profile.preferred_opportunity_types = data.preferred_opportunity_types
-        profile.opportunity_type_constraint = data.opportunity_type_constraint
+        profile.opportunity_type_constraint = data.opportunity_type_constraint.value
         profile.target_region = data.target_region
         profile.target_city = data.target_city
         profile.preferred_business_models = data.preferred_business_models
@@ -75,11 +82,11 @@ def save_or_update_fit_profile(
         profile = models.OpportunityFitProfile(
             user_id=user.id,
             available_capital=data.available_capital,
-            capital_constraint_type=data.capital_constraint_type,
+            capital_constraint_type=data.capital_constraint_type.value,
             preferred_sectors=data.preferred_sectors,
             excluded_sectors=data.excluded_sectors,
             preferred_opportunity_types=data.preferred_opportunity_types,
-            opportunity_type_constraint=data.opportunity_type_constraint,
+            opportunity_type_constraint=data.opportunity_type_constraint.value,
             target_region=data.target_region,
             target_city=data.target_city,
             preferred_business_models=data.preferred_business_models,
@@ -232,6 +239,9 @@ def get_single_fit_result(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="لم يتم العثور على نتيجة تقييم لهذه الفرصة")
 
     opp = res.opportunity
+    current_state, requires_re_eval, stale_reason = resolve_current_match_state(res, opp)
+    summary_reason = stale_reason if requires_re_eval else res.summary_reason
+
     return {
         "result_id": res.id,
         "match_run_id": match_run.id,
@@ -242,8 +252,11 @@ def get_single_fit_result(
         "brand_name": opp.brand_name,
         "sector": opp.sector,
         "opportunity_type": opp.opportunity_type,
-        "match_state": res.match_state,
-        "summary_reason": res.summary_reason,
+        "match_state": current_state,
+        "original_match_state": res.match_state,
+        "is_version_stale": requires_re_eval,
+        "requires_re_evaluation": requires_re_eval,
+        "summary_reason": summary_reason,
         "missing_information": res.missing_information,
         "criteria_evaluations": res.criteria_evaluations,
         "opportunity_version_at_eval": res.opportunity_version,
@@ -258,18 +271,8 @@ def format_match_run_response(match_run: models.OpportunityMatchRun, db_session:
     results_out = []
     for r in match_run.results:
         opp = r.opportunity
-        # Check source version freshness
-        is_stale_eval = (
-            opp.data_version != r.opportunity_version
-            or opp.verification_status not in (STATUS_VERIFIED_PARTIAL, STATUS_VERIFIED_CURRENT)
-            or not opp.is_active
-        )
-        current_state = STATE_NOT_EVALUATED if is_stale_eval and r.match_state != STATE_NOT_EVALUATED else r.match_state
-        current_reason = (
-            "تغيرت بيانات المصدر أو أصبحت غير فعالة منذ آخر تقييم، ويتطلب إعادة تقييم."
-            if is_stale_eval and r.match_state != STATE_NOT_EVALUATED
-            else r.summary_reason
-        )
+        current_state, requires_re_eval, stale_reason = resolve_current_match_state(r, opp)
+        current_reason = stale_reason if requires_re_eval else r.summary_reason
 
         results_out.append({
             "result_id": r.id,
@@ -290,7 +293,8 @@ def format_match_run_response(match_run: models.OpportunityMatchRun, db_session:
             "is_active": opp.is_active,
             "match_state": current_state,
             "original_match_state": r.match_state,
-            "is_version_stale": is_stale_eval,
+            "is_version_stale": requires_re_eval,
+            "requires_re_evaluation": requires_re_eval,
             "summary_reason": current_reason,
             "missing_information": r.missing_information,
             "criteria_evaluations": r.criteria_evaluations,

@@ -1512,11 +1512,11 @@ export interface FitProfile {
   id?: number;
   user_id?: number;
   available_capital?: number | null;
-  capital_constraint_type?: string;
+  capital_constraint_type?: "HARD" | "PREFERENCE";
   preferred_sectors?: string[];
   excluded_sectors?: string[];
   preferred_opportunity_types?: string[];
-  opportunity_type_constraint?: string;
+  opportunity_type_constraint?: "HARD" | "PREFERENCE";
   target_region?: string | null;
   target_city?: string | null;
   preferred_business_models?: string[];
