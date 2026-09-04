@@ -409,7 +409,7 @@ export default function FinancingStructureSection({ token, studyId, period, refr
           )}
 
           {/* Sequential Next Actions Checklist */}
-          <div className="space-y-3">
+          <div id="next-actions-section" className="space-y-3 pt-4 border-t border-border">
             <h4 className="font-bold text-sm text-foreground">خطة الإجراءات والخطوات القادمة (Next Actions Roadmap)</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {data.next_actions.map((act: FinancingNextAction) => {
