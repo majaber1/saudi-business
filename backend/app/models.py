@@ -130,6 +130,12 @@ class FeasibilityStudy(TimestampMixin, Base):
         back_populates="study", foreign_keys="StudyAssumption.study_id"
     )
     business_profile: Mapped[Optional["BusinessProfile"]] = relationship(back_populates="study", uselist=False)
+    source_opportunity_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("verified_opportunities.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source_opportunity_version: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    source_opportunity_lineage: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    source_opportunity: Mapped[Optional["VerifiedOpportunity"]] = relationship(foreign_keys=[source_opportunity_id])
 
 
 class FinancialAssumption(TimestampMixin, Base):
@@ -894,3 +900,83 @@ class AnalyticsEvent(TimestampMixin, Base):
     entity: Mapped[Optional[str]] = mapped_column(String(100))
     entity_id: Mapped[Optional[int]] = mapped_column(Integer)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class VerifiedOpportunity(TimestampMixin, Base):
+    """Verified Opportunity & Franchise Registry (Wave 3).
+
+    Persists genuine Saudi business opportunities and franchise opportunities
+    with full provenance traceable to official authorities (Monsha'at, Furas /
+    Invest Saudi, Saudi Franchise Center, verified brand disclosures).
+    Never invents economics, demand, or investment amounts.
+    """
+
+    __tablename__ = "verified_opportunities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
+    title_ar: Mapped[str] = mapped_column(String(255), nullable=False)
+    title_en: Mapped[str] = mapped_column(String(255), nullable=False)
+    # BUSINESS_OPPORTUNITY | FRANCHISE
+    opportunity_type: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    sector: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    subsector: Mapped[Optional[str]] = mapped_column(String(150))
+    business_model: Mapped[Optional[str]] = mapped_column(String(100))
+    target_customer: Mapped[Optional[str]] = mapped_column(String(100))
+    geography: Mapped[str] = mapped_column(String(100), default="KSA_NATIONAL", nullable=False)
+    city: Mapped[Optional[str]] = mapped_column(String(100))
+    region: Mapped[Optional[str]] = mapped_column(String(100))
+
+    # Published financial limits (strictly nullable if not officially published)
+    investment_min: Mapped[Optional[float]] = mapped_column(Float)
+    investment_max: Mapped[Optional[float]] = mapped_column(Float)
+    franchise_fee: Mapped[Optional[float]] = mapped_column(Float)
+    royalty_model: Mapped[Optional[str]] = mapped_column(String(200))
+    required_space: Mapped[Optional[str]] = mapped_column(String(100))
+    business_stage: Mapped[Optional[str]] = mapped_column(String(50), default="STARTUP")
+
+    description_ar: Mapped[Optional[str]] = mapped_column(Text)
+    description_en: Mapped[Optional[str]] = mapped_column(Text)
+    brand_name: Mapped[Optional[str]] = mapped_column(String(200))
+
+    # Source & Provenance
+    official_source_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_owner: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), default="OFFICIAL_GOVERNMENT", nullable=False)
+    source_evidence: Mapped[Optional[dict]] = mapped_column(JSON)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    last_verified_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    effective_from: Mapped[Optional[str]] = mapped_column(String(50))
+    effective_to: Mapped[Optional[str]] = mapped_column(String(50))
+    source_last_modified: Mapped[Optional[str]] = mapped_column(String(50))
+
+    # VERIFIED_CURRENT | VERIFIED_PARTIAL | UNVERIFIED | STALE | CHANGED | DISCONTINUED
+    verification_status: Mapped[str] = mapped_column(String(30), default="VERIFIED_CURRENT", index=True, nullable=False)
+    data_version: Mapped[str] = mapped_column(String(20), default="1.0.0", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Structured facts classification: published, platform_normalized, unknown, user_assumptions_needed
+    facts_breakdown: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    version_history: Mapped[list["OpportunityVersionHistory"]] = relationship(
+        back_populates="opportunity", cascade="all, delete-orphan", order_by="OpportunityVersionHistory.id.desc()"
+    )
+
+
+class OpportunityVersionHistory(TimestampMixin, Base):
+    """Immutable revision history for verified opportunities."""
+
+    __tablename__ = "opportunity_version_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(
+        ForeignKey("verified_opportunities.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    data_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    changed_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    change_reason: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    opportunity: Mapped["VerifiedOpportunity"] = relationship(back_populates="version_history")
+

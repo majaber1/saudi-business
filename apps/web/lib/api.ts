@@ -1344,3 +1344,155 @@ export function createAdminUser(token: string, payload: {
     body: JSON.stringify(payload),
   });
 }
+
+// --- Wave 3: Verified Opportunity & Franchise Registry -----------------------
+
+export type FactsBreakdown = {
+  published_facts?: string[];
+  platform_normalized_facts?: string[];
+  unknowns?: string[];
+  user_assumptions_needed?: string[];
+};
+
+export type OpportunityVersionHistoryItem = {
+  id: number;
+  data_version: string;
+  snapshot: Record<string, unknown>;
+  changed_by?: number | null;
+  change_reason: string;
+  created_at: string;
+};
+
+export type VerifiedOpportunity = {
+  id: number;
+  slug: string;
+  title_ar: string;
+  title_en: string;
+  opportunity_type: "BUSINESS_OPPORTUNITY" | "FRANCHISE";
+  sector: string;
+  subsector?: string | null;
+  business_model?: string | null;
+  target_customer?: string | null;
+  geography: string;
+  city?: string | null;
+  region?: string | null;
+  investment_min: number | null;
+  investment_max: number | null;
+  franchise_fee?: number | null;
+  royalty_model?: string | null;
+  required_space?: string | null;
+  business_stage?: string | null;
+  description_ar?: string | null;
+  description_en?: string | null;
+  brand_name?: string | null;
+  official_source_url: string;
+  source_owner: string;
+  source_type: string;
+  source_evidence?: Record<string, unknown> | null;
+  first_seen_at: string;
+  last_checked_at: string;
+  last_verified_at: string;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  source_last_modified?: string | null;
+  verification_status: string;
+  data_version: string;
+  is_active: boolean;
+  facts_breakdown?: FactsBreakdown | null;
+  version_history?: OpportunityVersionHistoryItem[];
+};
+
+export type OpportunityComparisonItem = {
+  id: number;
+  title_ar: string;
+  title_en: string;
+  opportunity_type: string;
+  brand_name?: string | null;
+  sector: string;
+  subsector?: string | null;
+  business_model?: string | null;
+  geography: string;
+  city?: string | null;
+  region?: string | null;
+  investment_min: number | null;
+  investment_max: number | null;
+  franchise_fee?: number | null;
+  royalty_model?: string | null;
+  required_space?: string | null;
+  business_stage?: string | null;
+  source_owner: string;
+  source_type: string;
+  official_source_url: string;
+  verification_status: string;
+  data_version: string;
+  last_verified_at?: string | null;
+};
+
+export type CreateStudyFromOpportunityResponse = {
+  project_id: number;
+  study_id: number;
+  title: string;
+  opportunity_id: number;
+  lineage: {
+    source_opportunity_id: number;
+    source_opportunity_slug: string;
+    source_opportunity_title_ar: string;
+    source_opportunity_title_en: string;
+    opportunity_type: string;
+    brand_name?: string | null;
+    sector: string;
+    subsector?: string | null;
+    source_owner: string;
+    source_type: string;
+    official_source_url: string;
+    verification_status: string;
+    data_version: string;
+    transferred_at: string;
+    transferred_facts: Record<string, unknown>;
+  };
+};
+
+export function listVerifiedOpportunities(filters?: {
+  type?: string;
+  sector?: string;
+  max_budget?: number;
+  min_budget?: number;
+  geography?: string;
+  verification_status?: string;
+  search?: string;
+}) {
+  const params = new URLSearchParams();
+  if (filters?.type) params.set("type", filters.type);
+  if (filters?.sector) params.set("sector", filters.sector);
+  if (filters?.max_budget !== undefined && filters.max_budget > 0) params.set("max_budget", String(filters.max_budget));
+  if (filters?.min_budget !== undefined && filters.min_budget > 0) params.set("min_budget", String(filters.min_budget));
+  if (filters?.geography) params.set("geography", filters.geography);
+  if (filters?.verification_status) params.set("verification_status", filters.verification_status);
+  if (filters?.search) params.set("search", filters.search);
+  const qs = params.toString();
+  return request<VerifiedOpportunity[]>("/api/v1/opportunities/" + (qs ? "?" + qs : ""));
+}
+
+export function getVerifiedOpportunity(id: number) {
+  return request<VerifiedOpportunity>(`/api/v1/opportunities/${id}`);
+}
+
+export function compareVerifiedOpportunities(ids: number[]) {
+  return request<OpportunityComparisonItem[]>(`/api/v1/opportunities/compare?ids=${ids.join(",")}`);
+}
+
+export function createStudyFromOpportunity(
+  token: string,
+  opportunityId: number,
+  payload?: { custom_budget?: number; study_title?: string }
+) {
+  return authedRequest<CreateStudyFromOpportunityResponse>(
+    `/api/v1/opportunities/${opportunityId}/create-study`,
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify(payload ?? {}),
+    }
+  );
+}
+

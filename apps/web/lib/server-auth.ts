@@ -13,7 +13,11 @@ export function isSafeBrowserMutation(request: NextRequest) {
   const fetchSite = request.headers.get("sec-fetch-site");
   if (fetchSite === "cross-site") return false;
   const origin = request.headers.get("origin");
-  return !origin || origin === request.nextUrl.origin;
+  if (!origin) return true;
+  if (origin === request.nextUrl.origin) return true;
+  const isLoopback = (u: string) => u.includes("localhost") || u.includes("127.0.0.1");
+  if (isLoopback(origin) && isLoopback(request.nextUrl.origin)) return true;
+  return false;
 }
 
 export const sessionCookieOptions = {
