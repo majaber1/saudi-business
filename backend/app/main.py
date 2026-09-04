@@ -34,6 +34,7 @@ from app.api.funding_gap import router as funding_gap_router
 from app.api.borrowing_capacity import router as borrowing_capacity_router
 from app.api.collateral import router as collateral_router
 from app.api.funding_readiness import router as funding_readiness_router
+from app.api.funding_programs import router as funding_programs_router
 from app.api.auth import UserOut, require_roles
 from app.services.monitoring import metrics_snapshot, observe_request
 
@@ -87,6 +88,7 @@ app.include_router(funding_gap_router)
 app.include_router(borrowing_capacity_router)
 app.include_router(collateral_router)
 app.include_router(funding_readiness_router)
+app.include_router(funding_programs_router)
 
 from app.db import ensure_migrations_applied  # noqa: E402
 

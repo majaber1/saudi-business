@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import CollateralSection from "@/components/study/CollateralSection";
 import FundingReadinessSection from "@/components/study/FundingReadinessSection";
+import VerifiedFundingProgramsSection from "@/components/study/VerifiedFundingProgramsSection";
 
 const copy = {
   ar: {
@@ -375,6 +376,8 @@ export default function FundingTab({ token, studyId, locale }: Props) {
       </section>
 
       <CollateralSection token={token} studyId={studyId} locale={locale} onChanged={reload} />
+
+      <VerifiedFundingProgramsSection token={token} locale={locale} />
     </div>
   );
 }

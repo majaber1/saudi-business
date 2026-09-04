@@ -541,6 +541,106 @@ export function getFundingReadiness(token: string, studyId: number, period?: str
   return authedRequest<FundingReadiness>(`/studies/${studyId}/funding-readiness/${query}`, token);
 }
 
+// --- Verified Funding Programs Registry (Phase 18) --------------------------
+
+export type FundingProgramRule = {
+  id: number;
+  program_id: number;
+  rule_key: string;
+  rule_type: string;
+  structured_value: Record<string, unknown>;
+  description_ar?: string | null;
+  description_en?: string | null;
+  source_url: string;
+  source_reference?: string | null;
+  source_authority: string;
+  verified_at: string;
+  rule_version: string;
+  is_active: boolean;
+};
+
+export type FundingProgram = {
+  id: number;
+  slug: string;
+  provider: string;
+  provider_ar: string;
+  program_name_ar: string;
+  program_name_en: string;
+  description_ar?: string | null;
+  description_en?: string | null;
+  program_type: string;
+  target_business_stage: string;
+  target_sectors: string[];
+  financing_min?: number | null;
+  financing_max?: number | null;
+  currency: string;
+  term_months?: number | null;
+  grace_period_months?: number | null;
+  owner_contribution_rule?: Record<string, unknown> | null;
+  collateral_rule?: Record<string, unknown> | null;
+  guarantee_rule?: Record<string, unknown> | null;
+  revenue_rule?: Record<string, unknown> | null;
+  business_age_rule?: Record<string, unknown> | null;
+  other_eligibility_rules?: unknown[] | null;
+  official_source_url: string;
+  source_type: string;
+  source_owner: string;
+  first_seen_at: string;
+  last_checked_at: string;
+  last_verified_at: string;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  verification_status: string;
+  rule_version: string;
+  rules: FundingProgramRule[];
+};
+
+export type RegistrySummary = {
+  total_programs: number;
+  verified_current_count: number;
+  providers_breakdown: Record<string, number>;
+  program_types_breakdown: Record<string, number>;
+  all_providers: string[];
+};
+
+export function listFundingPrograms(
+  token?: string,
+  filters?: {
+    provider?: string;
+    program_type?: string;
+    verification_status?: string;
+    target_business_stage?: string;
+    sector?: string;
+  }
+) {
+  const params = new URLSearchParams();
+  if (filters?.provider) params.append("provider", filters.provider);
+  if (filters?.program_type) params.append("program_type", filters.program_type);
+  if (filters?.verification_status) params.append("verification_status", filters.verification_status);
+  if (filters?.target_business_stage) params.append("target_business_stage", filters.target_business_stage);
+  if (filters?.sector) params.append("sector", filters.sector);
+  const q = params.toString() ? `?${params.toString()}` : "";
+
+  if (token) {
+    return authedRequest<FundingProgram[]>(`/funding-programs/${q}`, token);
+  }
+  return request<FundingProgram[]>(`/funding-programs/${q}`);
+}
+
+export function getFundingProgram(programId: number, token?: string) {
+  if (token) {
+    return authedRequest<FundingProgram>(`/funding-programs/${programId}`, token);
+  }
+  return request<FundingProgram>(`/funding-programs/${programId}`);
+}
+
+export function getFundingProgramsSummary(token?: string) {
+  if (token) {
+    return authedRequest<RegistrySummary>("/funding-programs/summary", token);
+  }
+  return request<RegistrySummary>("/funding-programs/summary");
+}
+
 // --- Evidence (study provenance layer) ---------------------------------------
 
 export const SOURCE_TYPES = [

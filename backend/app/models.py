@@ -370,6 +370,98 @@ class CollateralItem(TimestampMixin, Base):
     study: Mapped["FeasibilityStudy"] = relationship()
 
 
+class FundingProgram(TimestampMixin, Base):
+    """A verified Saudi funding program (Wave 2: Funding Intelligence).
+
+    Represents genuine funding programs from official Saudi development finance
+    institutions (e.g. SDB, Kafalah, SME Bank, SIDF, TDF, ADF).
+    Every program record stores explicit limits, terms, and eligibility rules
+    with provenance links back to official sources (.gov.sa portals).
+    No limits or eligibility criteria are invented.
+    """
+
+    __tablename__ = "funding_programs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(150), index=True, nullable=False)
+    provider_ar: Mapped[str] = mapped_column(String(150), nullable=False)
+    program_name_ar: Mapped[str] = mapped_column(String(255), nullable=False)
+    program_name_en: Mapped[str] = mapped_column(String(255), nullable=False)
+    description_ar: Mapped[Optional[str]] = mapped_column(Text)
+    description_en: Mapped[Optional[str]] = mapped_column(Text)
+
+    # DIRECT_LOAN | GUARANTEE | CO_FINANCING | WORKING_CAPITAL | GRANT
+    program_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    # STARTUP | EXISTING | EXPANSION | ALL
+    target_business_stage: Mapped[str] = mapped_column(String(50), default="ALL", nullable=False)
+    target_sectors: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+    financing_min: Mapped[Optional[float]] = mapped_column(Float)
+    financing_max: Mapped[Optional[float]] = mapped_column(Float)
+    currency: Mapped[str] = mapped_column(String(10), default="SAR", nullable=False)
+    term_months: Mapped[Optional[int]] = mapped_column(Integer)
+    grace_period_months: Mapped[Optional[int]] = mapped_column(Integer)
+
+    # Structured rules
+    owner_contribution_rule: Mapped[Optional[dict]] = mapped_column(JSON)
+    collateral_rule: Mapped[Optional[dict]] = mapped_column(JSON)
+    guarantee_rule: Mapped[Optional[dict]] = mapped_column(JSON)
+    revenue_rule: Mapped[Optional[dict]] = mapped_column(JSON)
+    business_age_rule: Mapped[Optional[dict]] = mapped_column(JSON)
+    other_eligibility_rules: Mapped[Optional[list]] = mapped_column(JSON)
+
+    # Source & Provenance
+    official_source_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), default="OFFICIAL_PROVIDER", nullable=False)
+    source_owner: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    last_verified_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    effective_from: Mapped[Optional[str]] = mapped_column(String(50))
+    effective_to: Mapped[Optional[str]] = mapped_column(String(50))
+
+    # VERIFIED_CURRENT | VERIFIED_PARTIAL | UNVERIFIED | STALE | CHANGED | DISCONTINUED
+    verification_status: Mapped[str] = mapped_column(String(30), default="VERIFIED_CURRENT", index=True, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(20), default="1.0.0", nullable=False)
+
+    rules: Mapped[list["FundingProgramRule"]] = relationship(
+        back_populates="program", cascade="all, delete-orphan", order_by="FundingProgramRule.id"
+    )
+
+
+class FundingProgramRule(TimestampMixin, Base):
+    """Granular rule provenance record for a funding program rule.
+
+    Every important requirement (financing limit, owner equity, collateral,
+    term, revenue threshold, age) retains evidence linking it to the exact
+    section, article, or URL on the official source.
+    """
+
+    __tablename__ = "funding_program_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("funding_programs.id", ondelete="CASCADE"), index=True, nullable=False)
+    rule_key: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    rule_type: Mapped[str] = mapped_column(String(50), default="ELIGIBILITY", nullable=False)
+    structured_value: Mapped[dict] = mapped_column(JSON, nullable=False)
+    description_ar: Mapped[Optional[str]] = mapped_column(Text)
+    description_en: Mapped[Optional[str]] = mapped_column(Text)
+
+    source_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_reference: Mapped[Optional[str]] = mapped_column(String(255))
+    source_authority: Mapped[str] = mapped_column(String(100), default="OFFICIAL_PROVIDER", nullable=False)
+    verified_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    verified_by: Mapped[Optional[str]] = mapped_column(String(100), default="OFFICIAL_REGISTRY")
+    rule_version: Mapped[str] = mapped_column(String(20), default="1.0.0", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    program: Mapped["FundingProgram"] = relationship(back_populates="rules")
+
+
+
 class EvidenceItem(TimestampMixin, Base):
     """A single sourced fact attached to a study, with full provenance.
 
@@ -461,36 +553,6 @@ class StudyAssumption(TimestampMixin, Base):
 
     study: Mapped["FeasibilityStudy"] = relationship(back_populates="study_assumptions", foreign_keys=[study_id])
     evidence: Mapped[Optional["EvidenceItem"]] = relationship()
-
-
-class FundingProgram(TimestampMixin, Base):
-    __tablename__ = "funding_programs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    key: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
-    name_en: Mapped[str] = mapped_column(String(200), nullable=False)
-    name_ar: Mapped[str] = mapped_column(String(200), nullable=False)
-    organization: Mapped[Optional[str]] = mapped_column(String(150))
-    description_en: Mapped[Optional[str]] = mapped_column(Text)
-    description_ar: Mapped[Optional[str]] = mapped_column(Text)
-    funding_type: Mapped[Optional[str]] = mapped_column(String(80))
-    eligibility: Mapped[dict] = mapped_column(JSON, default=dict)
-    source_url: Mapped[Optional[str]] = mapped_column(String(500))
-    application_url: Mapped[Optional[str]] = mapped_column(String(500))
-    last_verified: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    verification_status: Mapped[str] = mapped_column(String(30), default="requires_verification")
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-
-
-class FundingMatch(TimestampMixin, Base):
-    __tablename__ = "funding_matches"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
-    program_key: Mapped[str] = mapped_column(String(50), ForeignKey("funding_programs.key"), nullable=False)
-    score: Mapped[float] = mapped_column(Float, default=0.0)
-    reasons: Mapped[list] = mapped_column(JSON, default=list)
-    missing: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class IdeaBankEntry(TimestampMixin, Base):
