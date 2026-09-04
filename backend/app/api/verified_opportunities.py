@@ -1,10 +1,11 @@
-"""Verified Opportunity & Franchise Registry API (Wave 3).
+"""Verified Opportunity & Franchise Registry API (Wave 3: Source Integrity Hardened).
 
 Endpoints:
   GET    /api/v1/opportunities/                     List with verified filters & provenance
   GET    /api/v1/opportunities/compare             Factual side-by-side comparison
   GET    /api/v1/opportunities/{id}                 Detail with facts breakdown & version history
   POST   /api/v1/opportunities/{id}/create-study   Create persistent Study with source lineage
+  POST   /api/v1/opportunities/admin/ingest        Explicit admin catalog ingestion/reconciliation
   POST   /api/v1/opportunities/                     Admin create verified opportunity
   PATCH  /api/v1/opportunities/{id}                 Admin update verified opportunity with versioning
 """
@@ -23,6 +24,9 @@ from app.services.opportunities import (
     get_verified_opportunity,
     list_verified_opportunities,
     seed_verified_opportunities,
+    validate_evidence_and_status,
+    STATUS_UNVERIFIED,
+    STATUS_VERIFIED_CURRENT,
 )
 from app import models
 
@@ -71,6 +75,7 @@ class VerifiedOpportunityOut(BaseModel):
     data_version: str
     is_active: bool
     facts_breakdown: Optional[Dict[str, Any]] = None
+    field_provenance: Optional[Dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
 
@@ -128,8 +133,12 @@ class OpportunityCreateIn(BaseModel):
     source_owner: str = Field(..., min_length=2, max_length=200)
     source_type: str = Field(default="OFFICIAL_GOVERNMENT")
     source_evidence: Optional[Dict[str, Any]] = None
-    verification_status: str = Field(default="VERIFIED_CURRENT")
+    verification_status: str = Field(
+        default=STATUS_UNVERIFIED,
+        pattern="^(UNVERIFIED|VERIFIED_PARTIAL|VERIFIED_CURRENT|STALE|CHANGED|DISCONTINUED)$",
+    )
     facts_breakdown: Optional[Dict[str, Any]] = None
+    field_provenance: Optional[Dict[str, Any]] = None
 
 
 class OpportunityUpdateIn(BaseModel):
@@ -154,6 +163,7 @@ class OpportunityUpdateIn(BaseModel):
     source_owner: Optional[str] = None
     verification_status: Optional[str] = None
     facts_breakdown: Optional[Dict[str, Any]] = None
+    field_provenance: Optional[Dict[str, Any]] = None
     change_reason: str = Field(..., min_length=3, max_length=255)
 
 
@@ -167,13 +177,12 @@ def list_opportunities(
     verification_status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
 ):
-    """List verified opportunities and franchises with genuine source provenance."""
+    """List verified opportunities and franchises with genuine source provenance.
+
+    Note: Read requests NEVER auto-seed or manufacture records. Ingestion is explicit.
+    """
     db = _db()
     try:
-        # Auto-seed verified registry on first call if empty
-        if db.query(models.VerifiedOpportunity).count() == 0:
-            seed_verified_opportunities(db)
-
         return list_verified_opportunities(
             db,
             opportunity_type=type,
@@ -250,26 +259,53 @@ def create_study(
         db.close()
 
 
+@router.post("/admin/ingest", status_code=200)
+def ingest_catalog(
+    force_refresh: bool = Query(False),
+    user: UserOut = Depends(require_roles("admin")),
+):
+    """Admin endpoint: explicitly bootstrap or reconcile the verified opportunities catalog."""
+    db = _db()
+    try:
+        count = seed_verified_opportunities(db, force_refresh=force_refresh)
+        return {"status": "success", "total_records": count, "force_refresh": force_refresh}
+    finally:
+        db.close()
+
+
 @router.post("/", response_model=VerifiedOpportunityOut, status_code=201)
 def create_opportunity(
     data: OpportunityCreateIn,
     user: UserOut = Depends(require_roles("admin", "consultant")),
 ):
-    """Admin endpoint: register a new verified opportunity with initial audit & version snapshot."""
+    """Admin endpoint: register a new verified opportunity with initial audit & version snapshot.
+
+    Enforces that new records start as UNVERIFIED unless validated evidence supports the status.
+    Cannot self-declare VERIFIED_CURRENT without evidence validation.
+    """
     db = _db()
     try:
         existing = db.query(models.VerifiedOpportunity).filter_by(slug=data.slug).first()
         if existing:
             raise HTTPException(status_code=409, detail="Opportunity with this slug already exists")
 
-        item = models.VerifiedOpportunity(**data.model_dump())
+        payload = data.model_dump()
+        if payload.get("field_provenance") is None:
+            payload["field_provenance"] = {}
+        try:
+            validated_status = validate_evidence_and_status(payload, data.verification_status)
+            payload["verification_status"] = validated_status
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        item = models.VerifiedOpportunity(**payload)
         db.add(item)
         db.flush()
 
         v_entry = models.OpportunityVersionHistory(
             opportunity_id=item.id,
             data_version=item.data_version,
-            snapshot=data.model_dump(),
+            snapshot=payload,
             changed_by=user.id,
             change_reason="Admin registry creation",
         )
@@ -280,7 +316,7 @@ def create_opportunity(
                 action="verified_opportunity.create",
                 entity="verified_opportunity",
                 entity_id=item.id,
-                meta={"slug": item.slug},
+                meta={"slug": item.slug, "status": item.verification_status},
             )
         )
         db.commit()
@@ -306,6 +342,28 @@ def update_opportunity(
         update_dict = data.model_dump(exclude_unset=True, exclude={"change_reason"})
         if not update_dict:
             return item
+
+        # Validate requested status change
+        if "verification_status" in update_dict:
+            merged = {
+                "opportunity_type": item.opportunity_type,
+                "investment_min": update_dict.get("investment_min", item.investment_min),
+                "investment_max": update_dict.get("investment_max", item.investment_max),
+                "franchise_fee": update_dict.get("franchise_fee", item.franchise_fee),
+                "royalty_model": update_dict.get("royalty_model", item.royalty_model),
+                "required_space": update_dict.get("required_space", item.required_space),
+                "geography": update_dict.get("geography", item.geography),
+                "sector": update_dict.get("sector", item.sector),
+                "official_source_url": update_dict.get("official_source_url", item.official_source_url),
+                "field_provenance": update_dict.get("field_provenance", item.field_provenance),
+                "last_checked_at": item.last_checked_at,
+                "is_active": item.is_active,
+            }
+            try:
+                validated_status = validate_evidence_and_status(merged, update_dict["verification_status"])
+                update_dict["verification_status"] = validated_status
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e))
 
         # Increment semantic data version: e.g. 1.0.0 -> 1.0.1
         parts = item.data_version.split(".")

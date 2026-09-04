@@ -129,16 +129,16 @@ def main():
         # 3. Browse opportunities and apply filters
         # ----------------------------------------------------------------------
         print("\nStep 3: Browsing opportunities and testing filters...")
-        page.wait_for_selector("h3")
-        cards = page.locator("h3").all_inner_texts()
+        page.wait_for_selector('[data-testid="opportunity-card"]', timeout=10000)
+        cards = page.locator('[data-testid="opportunity-card"]').all()
         print(f"Initial opportunities displayed: {len(cards)} items")
-        assert len(cards) >= 10
+        assert len(cards) == 11, f"Expected exactly 11 opportunity cards, got {len(cards)}"
 
         # Filter by sector: logistics
         print("Filtering by sector: logistics...")
         page.select_option("select:has-text('جميع القطاعات')", value="logistics")
         page.wait_for_timeout(1000)
-        filtered_cards = page.locator("h3").all_inner_texts()
+        filtered_cards = page.locator('[data-testid="opportunity-card-title"]').all_inner_texts()
         print(f"Filtered cards (logistics): {len(filtered_cards)} items")
         assert any("تخزين مبرد" in c for c in filtered_cards)
 
@@ -150,7 +150,7 @@ def main():
         print("Filtering by budget: 400,000 SAR...")
         page.fill('input[type="number"]', "400000")
         page.wait_for_timeout(1000)
-        budget_cards = page.locator("h3").all_inner_texts()
+        budget_cards = page.locator('[data-testid="opportunity-card"]').all()
         print(f"Filtered cards (budget <= 400k): {len(budget_cards)} items")
         assert len(budget_cards) >= 1
 
@@ -236,12 +236,18 @@ def main():
         # ----------------------------------------------------------------------
         # 7. Create Study from Opportunity
         # ----------------------------------------------------------------------
-        print("\nStep 7: Creating Feasibility Study from Opportunity...")
+        print("\nStep 7: Creating Feasibility Study from Opportunity (with user budget assumption)...")
         create_buttons = page.locator("button:has-text('إنشاء دراسة جدوى')")
         create_buttons.first.click()
         page.wait_for_selector('div[role="dialog"]')
         cs_dialog = page.locator('div[role="dialog"]')
         print("Create study confirmation modal opened.")
+
+        # Enter user budget assumption if required (investment_min is null in source)
+        budget_input = cs_dialog.locator('input[type="number"]')
+        if budget_input.count() > 0 and budget_input.first.is_visible():
+            budget_input.first.fill("450000")
+            print("Entered user budget assumption: 450,000 SAR (USER_ASSUMPTION)")
 
         # Confirm and launch
         cs_dialog.locator("button:has-text('تأكيد وبدء الدراسة')").click()

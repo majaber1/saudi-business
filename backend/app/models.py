@@ -951,13 +951,15 @@ class VerifiedOpportunity(TimestampMixin, Base):
     effective_to: Mapped[Optional[str]] = mapped_column(String(50))
     source_last_modified: Mapped[Optional[str]] = mapped_column(String(50))
 
-    # VERIFIED_CURRENT | VERIFIED_PARTIAL | UNVERIFIED | STALE | CHANGED | DISCONTINUED
-    verification_status: Mapped[str] = mapped_column(String(30), default="VERIFIED_CURRENT", index=True, nullable=False)
+    # UNVERIFIED | VERIFIED_PARTIAL | VERIFIED_CURRENT | STALE | CHANGED | DISCONTINUED
+    verification_status: Mapped[str] = mapped_column(String(30), default="UNVERIFIED", index=True, nullable=False)
     data_version: Mapped[str] = mapped_column(String(20), default="1.0.0", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Structured facts classification: published, platform_normalized, unknown, user_assumptions_needed
     facts_breakdown: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Field-level provenance: explicit mapping of material decision fields to source excerpts & status
+    field_provenance: Mapped[dict] = mapped_column(JSON, default=dict)
 
     version_history: Mapped[list["OpportunityVersionHistory"]] = relationship(
         back_populates="opportunity", cascade="all, delete-orphan", order_by="OpportunityVersionHistory.id.desc()"

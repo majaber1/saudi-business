@@ -50,10 +50,11 @@ def upgrade() -> None:
         sa.Column("effective_from", sa.String(length=50), nullable=True),
         sa.Column("effective_to", sa.String(length=50), nullable=True),
         sa.Column("source_last_modified", sa.String(length=50), nullable=True),
-        sa.Column("verification_status", sa.String(length=30), server_default="VERIFIED_CURRENT", nullable=False),
+        sa.Column("verification_status", sa.String(length=30), server_default="UNVERIFIED", nullable=False),
         sa.Column("data_version", sa.String(length=20), server_default="1.0.0", nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
         sa.Column("facts_breakdown", sa.JSON(), nullable=True),
+        sa.Column("field_provenance", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
     )

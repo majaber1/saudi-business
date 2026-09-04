@@ -1399,6 +1399,7 @@ export type VerifiedOpportunity = {
   data_version: string;
   is_active: boolean;
   facts_breakdown?: FactsBreakdown | null;
+  field_provenance?: Record<string, unknown> | null;
   version_history?: OpportunityVersionHistoryItem[];
 };
 
@@ -1425,6 +1426,7 @@ export type OpportunityComparisonItem = {
   official_source_url: string;
   verification_status: string;
   data_version: string;
+  field_provenance?: Record<string, unknown> | null;
   last_verified_at?: string | null;
 };
 
@@ -1448,6 +1450,10 @@ export type CreateStudyFromOpportunityResponse = {
     verification_status: string;
     data_version: string;
     transferred_at: string;
+    budget_type: string;
+    is_user_assumption: boolean;
+    budget_amount: number;
+    budget_notes?: string | null;
     transferred_facts: Record<string, unknown>;
   };
 };

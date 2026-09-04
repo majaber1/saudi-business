@@ -154,7 +154,8 @@ export default function OpportunitiesPage() {
     }
     setTargetForStudy(opp);
     setStudyTitle(ar ? (opp.brand_name ? `دراسة امتياز: ${opp.brand_name}` : `دراسة: ${opp.title_ar}`) : `Study: ${opp.title_en}`);
-    setCustomBudget(opp.investment_min ? String(opp.investment_min) : "250000");
+    // Never invent 250,000 SAR; if source minimum is absent, start empty and require user assumption
+    setCustomBudget(opp.investment_min ? String(opp.investment_min) : "");
     setCreateStudyError("");
   };
 
@@ -167,11 +168,20 @@ export default function OpportunitiesPage() {
       return;
     }
 
+    const parsedBudget = parseFloat(customBudget);
+    if (!targetForStudy.investment_min && (Number.isNaN(parsedBudget) || parsedBudget <= 0)) {
+      setCreateStudyError(
+        ar
+          ? "الميزانية الرأسمالية غير معلنة في المصدر الرسمي للفرصة. يرجى إدخال الميزانية المقترحة (كافتراض مستخدم صريح) لبدء الدراسة."
+          : "Investment budget is unannounced in the official source. Please specify a proposed budget as an explicit user assumption."
+      );
+      return;
+    }
+
     setCreatingStudy(true);
     setCreateStudyError("");
 
     try {
-      const parsedBudget = parseFloat(customBudget);
       const res = await createStudyFromOpportunity(token, targetForStudy.id, {
         study_title: studyTitle.trim() || undefined,
         custom_budget: !Number.isNaN(parsedBudget) && parsedBudget > 0 ? parsedBudget : undefined,
@@ -514,6 +524,7 @@ export default function OpportunitiesPage() {
                   return (
                     <div
                       key={opp.id}
+                      data-testid="opportunity-card"
                       className="flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                     >
                       <div>
@@ -532,7 +543,7 @@ export default function OpportunitiesPage() {
                         </div>
 
                         {/* Title & Brand */}
-                        <h3 className="mt-3 text-base font-bold text-slate-900">
+                        <h3 data-testid="opportunity-card-title" className="mt-3 text-base font-bold text-slate-900">
                           {ar ? opp.title_ar : opp.title_en}
                         </h3>
                         {opp.brand_name && (
@@ -554,23 +565,27 @@ export default function OpportunitiesPage() {
                             <span className="font-mono font-medium text-slate-900">
                               {opp.investment_min
                                 ? `${fmtSAR(opp.investment_min, locale)} – ${fmtSAR(opp.investment_max, locale)}`
-                                : (ar ? "غير معلن - يحدده المستثمر" : "Unspecified")}
+                                : (ar ? "غير معلن - يحدده المستثمر" : "Unannounced (Investor Assumption)")}
                             </span>
                           </div>
 
-                          {isFranchise && opp.franchise_fee !== null && (
+                          {isFranchise && (
                             <div className="flex items-center justify-between">
                               <span className="text-slate-500">{ar ? "رسوم الامتياز:" : "Franchise Fee:"}</span>
-                              <span className="font-mono font-medium text-slate-900">{fmtSAR(opp.franchise_fee, locale)}</span>
+                              <span className="font-mono font-medium text-slate-900">
+                                {opp.franchise_fee !== null && opp.franchise_fee !== undefined
+                                  ? fmtSAR(opp.franchise_fee, locale)
+                                  : (ar ? "غير معلن في البوابة العامة" : "Unannounced")}
+                              </span>
                             </div>
                           )}
 
-                          {opp.required_space && (
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-500">{ar ? "المساحة التشغيلية:" : "Space:"}</span>
-                              <span className="text-slate-800">{opp.required_space}</span>
-                            </div>
-                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">{ar ? "المساحة التشغيلية:" : "Space:"}</span>
+                            <span className="text-slate-800">
+                              {opp.required_space || (ar ? "غير معلن - حسب نموذج الموقع" : "Site-specific")}
+                            </span>
+                          </div>
 
                           <div className="flex items-center justify-between border-t border-slate-200/60 pt-1.5 text-[11px]">
                             <span className="text-slate-500">{ar ? "المصدر الرسمي:" : "Source:"}</span>
@@ -768,6 +783,45 @@ export default function OpportunitiesPage() {
                     </p>
                   </div>
                 )}
+
+                {/* Field-level Evidence Mapping */}
+                <div className="mt-4 rounded-xl border border-slate-200/80 bg-white p-3.5 text-xs">
+                  <h5 className="font-bold text-slate-800">
+                    {ar ? "توثيق الأدلة على مستوى الحقول (Field-Level Provenance):" : "Field-Level Provenance:"}
+                  </h5>
+                  <div className="mt-2.5 space-y-2">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                      <span className="text-slate-600">{ar ? "الاستثمار الرأسمالي (Capex Min/Max):" : "Investment Range:"}</span>
+                      <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                        {detailItem.investment_min
+                          ? (ar ? "موثق من المصدر" : "Source-verified")
+                          : (ar ? "غير معلن - يتطلب افتراض مستثمر" : "Unannounced (Requires Investor Assumption)")}
+                      </span>
+                    </div>
+                    {detailItem.opportunity_type === "FRANCHISE" && (
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-600">{ar ? "رسوم الامتياز (Franchise Fee):" : "Franchise Fee:"}</span>
+                        <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                          {detailItem.franchise_fee !== null && detailItem.franchise_fee !== undefined
+                            ? (ar ? "موثق من المصدر" : "Source-verified")
+                            : (ar ? "غير معلن في البوابة العامة" : "Unannounced in Public Portal")}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                      <span className="text-slate-600">{ar ? "تصنيف القطاع والنشاط:" : "Sector & Activity:"}</span>
+                      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                        {ar ? "موثق من المصدر الرسمي" : "Source-verified"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">{ar ? "النطاق الجغرافي والاشتراطات:" : "Geography & Rules:"}</span>
+                      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                        {ar ? "موثق من المصدر الرسمي" : "Source-verified"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Modal Actions */}
@@ -829,12 +883,13 @@ export default function OpportunitiesPage() {
                     <span className="mx-1 text-[11px] font-normal text-slate-500">
                       {targetForStudy.investment_min
                         ? (ar ? "(مأخوذ من المصدر الرسمي كحد أدنى)" : "(from verified source minimum)")
-                        : (ar ? "(افتراض مستخدم - لم يُنشر في المصدر)" : "(user assumption)")}
+                        : (ar ? "(افتراض مستخدم USER_ASSUMPTION - غير معلن في المصدر)" : "(user assumption)")}
                     </span>
                   </label>
                   <input
                     type="number"
                     min={10000}
+                    placeholder={ar ? "أدخل ميزانيتك المقترحة (مثال: 450,000)" : "Enter proposed budget (e.g. 450,000)"}
                     value={customBudget}
                     onChange={(e) => setCustomBudget(e.target.value)}
                     className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 font-mono text-xs outline-none focus:border-brand-500"

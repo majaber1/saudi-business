@@ -164,6 +164,10 @@ export default function StudyWorkspacePage({ params }: { params: Promise<{ proje
     verification_status?: string;
     data_version?: string;
     transferred_at?: string;
+    budget_type?: string;
+    is_user_assumption?: boolean;
+    budget_amount?: number;
+    budget_notes?: string | null;
     transferred_facts?: Record<string, unknown>;
   } | null;
 
@@ -237,7 +241,7 @@ export default function StudyWorkspacePage({ params }: { params: Promise<{ proje
                       </>
                     )}
                   </p>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3 text-xs">
+                  <div className="mt-4 grid gap-3 sm:grid-cols-4 text-xs">
                     <div className="rounded-xl bg-white/80 p-3">
                       <span className="text-slate-500">{ar ? "القطاع المنقول:" : "Transferred Sector:"}</span>
                       <p className="mt-1 font-semibold text-slate-800">{lineage.sector}</p>
@@ -249,7 +253,15 @@ export default function StudyWorkspacePage({ params }: { params: Promise<{ proje
                       </p>
                     </div>
                     <div className="rounded-xl bg-white/80 p-3">
-                      <span className="text-slate-500">{ar ? "تاريخ النقل والتوثيق:" : "Transferred At:"}</span>
+                      <span className="text-slate-500">{ar ? "طبيعة الميزانية:" : "Budget Source:"}</span>
+                      <p className="mt-1 font-semibold text-slate-800">
+                        {lineage.budget_type === "USER_ASSUMPTION"
+                          ? (ar ? "افتراض مستخدم (USER_ASSUMPTION)" : "User Assumption")
+                          : (ar ? "حد أدنى رسمي" : "Published Minimum")}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-white/80 p-3">
+                      <span className="text-slate-500">{ar ? "تاريخ التوثيق:" : "Transferred At:"}</span>
                       <p className="mt-1 font-mono text-slate-800">{lineage.transferred_at?.slice(0, 10) || "2026-09-04"}</p>
                     </div>
                   </div>
@@ -262,7 +274,14 @@ export default function StudyWorkspacePage({ params }: { params: Promise<{ proje
                   <p className="mt-1 font-semibold">{study.status}</p>
                 </article>
                 <article className="rounded-xl bg-slate-50 p-4">
-                  <p className="text-sm text-ink-500">{ar ? "الميزانية" : "Budget"}</p>
+                  <p className="text-sm text-ink-500">
+                    {ar ? "الميزانية" : "Budget"}
+                    {lineage?.budget_type === "USER_ASSUMPTION" && (
+                      <span className="mx-1 text-[11px] font-medium text-amber-700">
+                        {ar ? "(افتراض مستخدم USER_ASSUMPTION)" : "(User Assumption)"}
+                      </span>
+                    )}
+                  </p>
                   <p className="mt-1 font-semibold">
                     {new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-SA", { style: "currency", currency: "SAR", maximumFractionDigits: 0 }).format(project.investment)}
                   </p>
