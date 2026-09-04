@@ -15,6 +15,7 @@ import {
   type FundingGap,
   type HealthMetric,
 } from "@/lib/api";
+import CollateralSection from "@/components/study/CollateralSection";
 
 const copy = {
   ar: {
@@ -361,6 +362,8 @@ export default function FundingTab({ token, studyId, locale }: Props) {
           </div>
         )}
       </section>
+
+      <CollateralSection token={token} studyId={studyId} locale={locale} />
     </div>
   );
 }

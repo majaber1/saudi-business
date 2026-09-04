@@ -416,6 +416,90 @@ export async function getBorrowingCapacity(token: string, studyId: number): Prom
   return data as BorrowingCapacity;
 }
 
+// --- Collateral (Wave 2) ---------------------------------------------------------
+
+export const COLLATERAL_TYPES = ["PROPERTY", "EQUIPMENT", "CASH", "RECEIVABLES", "GUARANTEE", "OTHER"] as const;
+export type CollateralType = (typeof COLLATERAL_TYPES)[number];
+
+export const COLLATERAL_VERIFICATION_STATUSES = ["UNVERIFIED", "USER_REPORTED", "DOCUMENT_SUPPORTED", "VERIFIED"] as const;
+export type CollateralVerificationStatus = (typeof COLLATERAL_VERIFICATION_STATUSES)[number];
+
+export const ENCUMBRANCE_STATUSES = ["UNENCUMBERED", "PARTIALLY_ENCUMBERED", "FULLY_ENCUMBERED", "UNKNOWN"] as const;
+export type EncumbranceStatus = (typeof ENCUMBRANCE_STATUSES)[number];
+
+export type CollateralItem = {
+  id: number;
+  study_id: number;
+  collateral_type: CollateralType;
+  description: string;
+  reported_value: number;
+  verified_value: number | null;
+  currency: string;
+  valuation_date: string | null;
+  valuation_source: string | null;
+  ownership_status: string | null;
+  encumbrance_status: EncumbranceStatus;
+  encumbrance_amount: number | null;
+  lien_holder: string | null;
+  verification_status: CollateralVerificationStatus;
+  notes: string | null;
+};
+
+export type CollateralCreatePayload = {
+  collateral_type: CollateralType;
+  description: string;
+  reported_value: number;
+  verified_value?: number;
+  currency?: string;
+  valuation_date?: string;
+  valuation_source?: string;
+  ownership_status?: string;
+  encumbrance_status?: EncumbranceStatus;
+  encumbrance_amount?: number;
+  lien_holder?: string;
+  verification_status?: CollateralVerificationStatus;
+  notes?: string;
+};
+
+export type CollateralUpdatePayload = Partial<CollateralCreatePayload>;
+
+export type CollateralSummary = {
+  record_count: number;
+  total_reported_value: number;
+  total_verified_value: number;
+  total_encumbered_value: number;
+  total_unencumbered_reported_value: number;
+  verified_record_count: number;
+  unverified_record_count: number;
+  unknown_encumbrance_count: number;
+};
+
+export function listCollateral(token: string, studyId: number) {
+  return authedRequest<CollateralItem[]>(`/studies/${studyId}/collateral/`, token);
+}
+
+export function getCollateralSummary(token: string, studyId: number) {
+  return authedRequest<CollateralSummary>(`/studies/${studyId}/collateral/summary`, token);
+}
+
+export function createCollateral(token: string, studyId: number, payload: CollateralCreatePayload) {
+  return authedRequest<CollateralItem>(`/studies/${studyId}/collateral/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateCollateral(token: string, studyId: number, collateralId: number, payload: CollateralUpdatePayload) {
+  return authedRequest<CollateralItem>(`/studies/${studyId}/collateral/${collateralId}`, token, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteCollateral(token: string, studyId: number, collateralId: number) {
+  return authedRequest<void>(`/studies/${studyId}/collateral/${collateralId}`, token, { method: "DELETE" });
+}
+
 // --- Evidence (study provenance layer) ---------------------------------------
 
 export const SOURCE_TYPES = [

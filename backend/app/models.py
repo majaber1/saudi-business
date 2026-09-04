@@ -323,6 +323,53 @@ class StudyDecision(TimestampMixin, Base):
     study: Mapped["FeasibilityStudy"] = relationship()
 
 
+class CollateralItem(TimestampMixin, Base):
+    """A single collateral asset recorded for a study (Wave 2: Funding Intelligence).
+
+    Values are stored and explained, never converted into an assumed
+    lendable/borrowing amount here -- market value is not lendable value,
+    and no lender haircut is applied (see app.services.collateral). A
+    verified_value may only be set when verification_status is
+    DOCUMENT_SUPPORTED or VERIFIED -- typing a number never itself verifies
+    it. Consistency (non-negative values, encumbrance_amount only present
+    when the encumbrance status requires it, encumbrance_amount never
+    exceeding the asset's value) is enforced in the API layer
+    (app.services.collateral.validate_consistency) so it applies the same
+    way to both create and partial update.
+    """
+
+    __tablename__ = "collateral_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("feasibility_studies.id"), index=True, nullable=False)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+
+    # PROPERTY|EQUIPMENT|CASH|RECEIVABLES|GUARANTEE|OTHER
+    collateral_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    reported_value: Mapped[float] = mapped_column(Float, nullable=False)
+    verified_value: Mapped[Optional[float]] = mapped_column(Float)
+    currency: Mapped[str] = mapped_column(String(10), default="SAR", nullable=False)
+
+    valuation_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    valuation_source: Mapped[Optional[str]] = mapped_column(String(200))
+
+    ownership_status: Mapped[Optional[str]] = mapped_column(String(100))
+
+    # UNENCUMBERED|PARTIALLY_ENCUMBERED|FULLY_ENCUMBERED|UNKNOWN
+    encumbrance_status: Mapped[str] = mapped_column(String(30), default="UNKNOWN", nullable=False)
+    encumbrance_amount: Mapped[Optional[float]] = mapped_column(Float)
+    lien_holder: Mapped[Optional[str]] = mapped_column(String(200))
+
+    # UNVERIFIED|USER_REPORTED|DOCUMENT_SUPPORTED|VERIFIED
+    verification_status: Mapped[str] = mapped_column(String(30), default="USER_REPORTED", nullable=False)
+
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+
+    study: Mapped["FeasibilityStudy"] = relationship()
+
+
 class EvidenceItem(TimestampMixin, Base):
     """A single sourced fact attached to a study, with full provenance.
 
