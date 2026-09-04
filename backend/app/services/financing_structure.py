@@ -35,7 +35,9 @@ DISCLAIMER_EN = (
     "based on published official guidelines and solvency metrics. It does not constitute credit approval or funding commitment."
 )
 
-RECOMMENDED_MIN_EQUITY_RATIO = 0.20  # Typical minimum equity required by Saudi development funds (SDB, SIDF, etc.)
+INTERNAL_SCREENING_ASSUMPTION_MIN_EQUITY = 0.20  # Saudi Business internal advisory screening benchmark, not a statutory rule.
+# Alias for backwards-compatibility:
+RECOMMENDED_MIN_EQUITY_RATIO = INTERNAL_SCREENING_ASSUMPTION_MIN_EQUITY
 
 
 def compute_financing_structure(
@@ -49,9 +51,9 @@ def compute_financing_structure(
     financial_period_dict: Optional[dict] = None,
     collateral_dicts: Optional[List[dict]] = None,
 ) -> Dict[str, Any]:
-    """Computes a deterministic, reconciled Sources & Uses financing structure."""
+    """Computes a deterministic, reconciled Sources & Uses financing structure with hardened business semantics."""
 
-    # 1. Compute Funding Gap
+    # 1. Compute Funding Gap & Confirmed Sources
     project_investment = float(project.investment or 0.0) if project else 0.0
     gap_data = compute_funding_gap(
         capex_assumption=capex_assumption,
@@ -65,7 +67,9 @@ def compute_financing_structure(
     existing_debt = float(gap_data.get("existing_available_facilities") or gap_data.get("existing_facilities") or 0.0)
     initial_gap = float(gap_data["funding_gap"])
 
-    # 2. Financial Profile & Borrowing Capacity
+    total_confirmed_sources = owner_equity + existing_debt
+
+    # 2. Financial Profile & Internal Screening Debt Capacity
     safe_debt_capacity = 0.0
     capacity_status = "NO_DATA"
     annual_revenue = None
@@ -87,7 +91,6 @@ def compute_financing_structure(
     collateral_list = collateral_dicts or []
     collateral_summary = summarize_collateral(collateral_list)
     available_collateral = float(collateral_summary.get("total_verified_value") or 0.0)
-    total_reported_collateral = float(collateral_summary.get("total_reported_value") or 0.0)
 
     # 4. Matched Programs Evaluation
     matches_data = evaluate_study_funding_matches(
@@ -102,23 +105,73 @@ def compute_financing_structure(
     )
 
     all_matches = matches_data.get("matches", [])
-    eligible_programs = [m for m in all_matches if m.get("overall_match_status") in ("MATCH", "POSSIBLE_MATCH")]
+    matched_programs = [m for m in all_matches if m.get("overall_match_status") == "MATCH"]
+    possible_matches = [m for m in all_matches if m.get("overall_match_status") == "POSSIBLE_MATCH"]
 
-    # 5. Program Allocations Strategy
-    # Allocate matched debt programs against the initial funding gap up to program maximums
-    allocated_program_debt = 0.0
+    # 5. Program Allocations & Credit Enhancements Strategy
+    credit_enhancements = []
     program_allocations = []
-
+    allocated_program_debt = 0.0
     remaining_gap_to_fund = initial_gap
-    for prog in eligible_programs:
-        if remaining_gap_to_fund <= 0:
-            break
-        p_max = float(prog.get("financing_max") or remaining_gap_to_fund)
-        # Cap allocation to either program max or remaining gap
-        allocation = min(remaining_gap_to_fund, p_max)
-        if allocation > 0:
-            allocated_program_debt += allocation
-            remaining_gap_to_fund -= allocation
+
+    # Calculate remaining safe borrowing capacity available for new screening debt
+    if capacity_status == "CALCULATED":
+        available_safe_debt_cap = max(0.0, safe_debt_capacity - existing_debt)
+    else:
+        # If borrowing capacity is unassessed (e.g. startup pre-revenue), cap by remaining gap
+        available_safe_debt_cap = remaining_gap_to_fund
+
+    for prog in matched_programs:
+        p_type = prog.get("program_type", "").upper()
+        p_slug = prog.get("program_slug", "")
+        p_provider_ar = prog.get("provider_ar", "")
+
+        # Semantic Rule 2: Guarantee programs are Credit Enhancements, NOT cash debt sources (0 SAR cash)
+        is_guarantee = (
+            p_type == "GUARANTEE"
+            or "كفالة" in p_provider_ar
+            or p_slug.startswith("kafalah")
+        )
+
+        if is_guarantee:
+            guarantee_item = {
+                "program_id": prog["program_id"],
+                "program_slug": prog["program_slug"],
+                "provider": prog["provider"],
+                "provider_ar": prog["provider_ar"],
+                "program_name_ar": prog["program_name_ar"],
+                "program_name_en": prog["program_name_en"],
+                "program_type": "GUARANTEE",
+                "match_status": "MATCH",
+                "cash_contribution": 0.0,
+                "role_ar": "تعزيز ائتماني وضمان تمويل للبنوك التجارية (لا يقدم سيولة نقدية مباشرة وإنما يضمن التسهيلات البنكية)",
+                "role_en": "Credit enhancement and commercial bank guarantee (0 direct cash contribution)",
+                "max_guarantee_amount": prog.get("financing_max"),
+                "coverage_ratio": prog.get("rules_breakdown", {}).get("guarantee_rule", {}).get("max_coverage") if isinstance(prog.get("rules_breakdown"), dict) else None,
+                "official_source_url": prog.get("official_source_url"),
+            }
+            credit_enhancements.append(guarantee_item)
+            program_allocations.append({
+                "program_id": prog["program_id"],
+                "program_slug": prog["program_slug"],
+                "provider": prog["provider"],
+                "provider_ar": prog["provider_ar"],
+                "program_name_ar": prog["program_name_ar"],
+                "program_name_en": prog["program_name_en"],
+                "program_type": "GUARANTEE",
+                "match_status": "MATCH",
+                "allocated_amount": 0.0,
+                "allocation_status": "CREDIT_ENHANCEMENT_ONLY",
+                "term_months": prog.get("term_months"),
+                "grace_period_months": prog.get("grace_period_months"),
+                "official_source_url": prog.get("official_source_url"),
+            })
+            continue
+
+        # Direct cash debt program (LOAN, WORKING_CAPITAL, CO_FINANCING)
+        raw_max = prog.get("financing_max")
+        # Semantic Rule 3: Do NOT invent allocation if financing_max is unknown
+        if raw_max is None or float(raw_max) <= 0:
             program_allocations.append({
                 "program_id": prog["program_id"],
                 "program_slug": prog["program_slug"],
@@ -127,17 +180,78 @@ def compute_financing_structure(
                 "program_name_ar": prog["program_name_ar"],
                 "program_name_en": prog["program_name_en"],
                 "program_type": prog["program_type"],
-                "match_status": prog["overall_match_status"],
-                "allocated_amount": allocation,
+                "match_status": "MATCH",
+                "allocated_amount": None,  # Displayed as UNKNOWN, 0 cash added to Sources
+                "allocation_status": "UNKNOWN_LIMIT",
+                "term_months": prog.get("term_months"),
+                "grace_period_months": prog.get("grace_period_months"),
+                "official_source_url": prog.get("official_source_url"),
+            })
+            continue
+
+        p_max = float(raw_max)
+        # Semantic Rule 4: Constrain screening debt by remaining gap and borrowing capacity
+        remaining_capacity = max(0.0, available_safe_debt_cap - allocated_program_debt)
+        allocation = min(remaining_gap_to_fund, p_max, remaining_capacity)
+
+        allocated_amount_val = round(allocation, 2)
+        if allocated_amount_val > 0:
+            allocated_program_debt += allocated_amount_val
+            remaining_gap_to_fund -= allocated_amount_val
+            program_allocations.append({
+                "program_id": prog["program_id"],
+                "program_slug": prog["program_slug"],
+                "provider": prog["provider"],
+                "provider_ar": prog["provider_ar"],
+                "program_name_ar": prog["program_name_ar"],
+                "program_name_en": prog["program_name_en"],
+                "program_type": prog["program_type"],
+                "match_status": "MATCH",
+                "allocated_amount": allocated_amount_val,
+                "allocation_status": "POTENTIAL_SOURCE",
+                "term_months": prog.get("term_months"),
+                "grace_period_months": prog.get("grace_period_months"),
+                "official_source_url": prog.get("official_source_url"),
+            })
+        else:
+            program_allocations.append({
+                "program_id": prog["program_id"],
+                "program_slug": prog["program_slug"],
+                "provider": prog["provider"],
+                "provider_ar": prog["provider_ar"],
+                "program_name_ar": prog["program_name_ar"],
+                "program_name_en": prog["program_name_en"],
+                "program_type": prog["program_type"],
+                "match_status": "MATCH",
+                "allocated_amount": 0.0,
+                "allocation_status": "CAPACITY_CONSTRAINED",
                 "term_months": prog.get("term_months"),
                 "grace_period_months": prog.get("grace_period_months"),
                 "official_source_url": prog.get("official_source_url"),
             })
 
-    # Total Identified Sources
-    total_identified_sources = owner_equity + existing_debt + allocated_program_debt
-    residual_gap = max(0.0, total_requirement - total_identified_sources)
-    surplus = max(0.0, total_identified_sources - total_requirement)
+    # Semantic Rule 1: Include POSSIBLE_MATCH programs as potential options requiring validation (0 cash allocated)
+    for prog in possible_matches:
+        program_allocations.append({
+            "program_id": prog["program_id"],
+            "program_slug": prog["program_slug"],
+            "provider": prog["provider"],
+            "provider_ar": prog["provider_ar"],
+            "program_name_ar": prog["program_name_ar"],
+            "program_name_en": prog["program_name_en"],
+            "program_type": prog["program_type"],
+            "match_status": "POSSIBLE_MATCH",
+            "allocated_amount": None,  # NEVER allocated cash
+            "allocation_status": "VALIDATION_REQUIRED",
+            "term_months": prog.get("term_months"),
+            "grace_period_months": prog.get("grace_period_months"),
+            "official_source_url": prog.get("official_source_url"),
+        })
+
+    # Total Identified Sources (Confirmed Equity + Confirmed Facilities + Indicative Screening Program Debt)
+    total_identified_sources = round(owner_equity + existing_debt + allocated_program_debt, 2)
+    residual_gap = max(0.0, round(total_requirement - total_identified_sources, 2))
+    surplus = max(0.0, round(total_identified_sources - total_requirement, 2))
 
     # Structure Metrics & Ratios
     equity_pct = (owner_equity / total_requirement) if total_requirement > 0 else 0.0
@@ -146,7 +260,7 @@ def compute_financing_structure(
     de_ratio = round(debt_amount / owner_equity, 2) if owner_equity > 0 else None
     collateral_coverage = (available_collateral / debt_amount) if debt_amount > 0 else 1.0
 
-    # 6. Uses of Funds Breakdown
+    # Uses of Funds Breakdown
     uses = [
         {
             "category_key": "capex",
@@ -157,12 +271,12 @@ def compute_financing_structure(
         }
     ]
 
-    # 7. Sources of Funds Breakdown
+    # Sources of Funds Breakdown (Separating Confirmed vs Potential Indicative)
     sources = [
         {
             "source_key": "owner_equity",
-            "name_ar": "رأس مال المالك (المساهمة الذاتية)",
-            "name_en": "Owner Equity Contribution",
+            "name_ar": "رأس مال المالك (مساهمة ذاتية مؤكدة)",
+            "name_en": "Owner Equity Contribution (Confirmed)",
             "source_type": "EQUITY",
             "amount": owner_equity,
             "percentage": round(equity_pct * 100, 1),
@@ -172,25 +286,26 @@ def compute_financing_structure(
     if existing_debt > 0:
         sources.append({
             "source_key": "existing_facilities",
-            "name_ar": "تسهيلات قائمة معتمدة",
-            "name_en": "Existing Available Credit Facilities",
+            "name_ar": "تسهيلات ائتمانية قائمة معتمدة (مؤكدة)",
+            "name_en": "Existing Available Credit Facilities (Confirmed)",
             "source_type": "EXISTING_DEBT",
             "amount": existing_debt,
             "percentage": round((existing_debt / total_requirement) * 100, 1) if total_requirement > 0 else 0.0,
             "is_secured": True,
         })
     for pa in program_allocations:
-        sources.append({
-            "source_key": f"program_{pa['program_id']}",
-            "name_ar": f"{pa['provider_ar']} — {pa['program_name_ar']}",
-            "name_en": f"{pa['provider']} — {pa['program_name_en']}",
-            "source_type": "PROGRAM_DEBT",
-            "amount": pa["allocated_amount"],
-            "percentage": round((pa["allocated_amount"] / total_requirement) * 100, 1) if total_requirement > 0 else 0.0,
-            "is_secured": False,
-            "program_slug": pa["program_slug"],
-            "official_source_url": pa["official_source_url"],
-        })
+        if pa.get("allocated_amount") and pa["allocated_amount"] > 0:
+            sources.append({
+                "source_key": f"program_{pa['program_id']}",
+                "name_ar": f"{pa['provider_ar']} — {pa['program_name_ar']} (خيار تمويل محتمل - استرشادي)",
+                "name_en": f"{pa['provider']} — {pa['program_name_en']} (Potential Indicative Option)",
+                "source_type": "PROGRAM_DEBT",
+                "amount": pa["allocated_amount"],
+                "percentage": round((pa["allocated_amount"] / total_requirement) * 100, 1) if total_requirement > 0 else 0.0,
+                "is_secured": False,
+                "program_slug": pa["program_slug"],
+                "official_source_url": pa["official_source_url"],
+            })
     if residual_gap > 0:
         sources.append({
             "source_key": "residual_gap",
@@ -202,27 +317,36 @@ def compute_financing_structure(
             "is_secured": False,
         })
 
-    # 8. Deterministic Warnings & Alerts
+    # Deterministic Warnings & Alerts
     warnings = []
     if residual_gap > 0:
         warnings.append({
             "code": "RESIDUAL_GAP_EXISTS",
             "severity": "CRITICAL",
-            "title_ar": "توجد فجوة تمويلية غير مغطاة",
+            "title_ar": "توجد فجوة تمويلية متبقية غير مغطاة",
             "title_en": "Unfunded Residual Funding Gap",
-            "message_ar": f"هناك عجز تمويلي قدره {residual_gap:,.0f} ر.س ({residual_gap/total_requirement*100:.1f}%) يتطلب زيادة مساهمة المالك أو إدخال شركاء أو خفض التكاليف.",
-            "message_en": f"An unfunded gap of {residual_gap:,.0f} SAR ({residual_gap/total_requirement*100:.1f}%) remains; requires additional equity, partners, or cost reduction.",
+            "message_ar": f"هناك عجز تمويلي قدره {residual_gap:,.0f} ر.س ({residual_gap/total_requirement*100:.1f}%) يتطلب زيادة مساهمة المالك أو إدخال شركاء أو خفض التكاليف الاستثمارية.",
+            "message_en": f"An unfunded gap of {residual_gap:,.0f} SAR ({residual_gap/total_requirement*100:.1f}%) remains; requires additional equity, partners, or capex optimization.",
         })
 
-    if equity_pct < RECOMMENDED_MIN_EQUITY_RATIO:
-        shortfall = (RECOMMENDED_MIN_EQUITY_RATIO * total_requirement) - owner_equity
+    # Semantic Rule 5: Explicitly label 20% threshold as Saudi Business INTERNAL_SCREENING_ASSUMPTION
+    if equity_pct < INTERNAL_SCREENING_ASSUMPTION_MIN_EQUITY:
+        shortfall = (INTERNAL_SCREENING_ASSUMPTION_MIN_EQUITY * total_requirement) - owner_equity
         warnings.append({
-            "code": "LOW_OWNER_EQUITY",
+            "code": "INTERNAL_SCREENING_LOW_EQUITY",
             "severity": "WARNING",
-            "title_ar": "نسبة المساهمة الذاتية أقل من المعايير التنموية",
-            "title_en": "Owner Equity Below Benchmark",
-            "message_ar": f"المساهمة الذاتية الحالية ({equity_pct*100:.1f}%) أقل من الحد الأدنى الشائع (20%). العجز للوصول إلى النسبة هو {shortfall:,.0f} ر.س.",
-            "message_en": f"Current owner equity ({equity_pct*100:.1f}%) is below the typical 20% minimum. Shortfall is {shortfall:,.0f} SAR.",
+            "title_ar": "المساهمة الذاتية دون فرضية الفحص الداخلي (20%)",
+            "title_en": "Owner Equity Below Internal Screening Assumption (20%)",
+            "message_ar": (
+                f"المساهمة الذاتية الحالية ({equity_pct*100:.1f}%) أقل من فرضية الفحص الداخلي الاسترشادية لمنصة Saudi Business (20%). "
+                f"هذه فرضية فحص داخلي استرشادية (INTERNAL_SCREENING_ASSUMPTION) وليست قاعدة تنموية أو نظامية ملزمة لجميع جهات التمويل، "
+                f"حيث تطبق كل جهة اشتراطات المساهمة المعتمدة الخاصة بها من واقع سجل البرامج الموثقة (Phase 18). العجز الاسترشادي: {shortfall:,.0f} ر.س."
+            ),
+            "message_en": (
+                f"Current owner equity ({equity_pct*100:.1f}%) is below the Saudi Business internal screening assumption (20%). "
+                f"This is an advisory internal screening assumption (INTERNAL_SCREENING_ASSUMPTION), not a statutory or universal minimum. "
+                f"Each funding provider applies its own verified criteria from Phase 18 registry. Advisory shortfall: {shortfall:,.0f} SAR."
+            ),
         })
 
     if safe_debt_capacity > 0 and debt_amount > safe_debt_capacity:
@@ -237,8 +361,7 @@ def compute_financing_structure(
         })
 
     if debt_amount > 0 and available_collateral < debt_amount:
-        # Check if any allocated program provides Kafalah guarantee
-        has_guarantee = any(pa["program_type"] == "GUARANTEE" or "كفالة" in pa["provider_ar"] for pa in program_allocations)
+        has_guarantee = len(credit_enhancements) > 0 or any(pa.get("program_type") == "GUARANTEE" for pa in program_allocations)
         if not has_guarantee:
             warnings.append({
                 "code": "COLLATERAL_SHORTFALL",
@@ -249,7 +372,8 @@ def compute_financing_structure(
                 "message_en": f"Verified collateral ({available_collateral:,.0f} SAR) covers {collateral_coverage*100:.1f}% of total debt. Kafalah guarantees recommended.",
             })
 
-    # 9. Deterministic Next Actions Checklist
+    # Semantic Rule 6: Deterministic Next Actions (use MATCHED_PROGRAM instead of ELIGIBLE)
+    matched_count = len(matched_programs)
     next_actions = [
         {
             "step_number": 1,
@@ -271,17 +395,17 @@ def compute_financing_structure(
             "step_number": 3,
             "title_ar": "تأكيد إيداع المساهمة الذاتية في الحساب البنكي",
             "title_en": "Confirm Owner Equity Deposit in Dedicated Bank Account",
-            "status": "READY" if owner_equity >= (0.20 * total_requirement) else "ACTION_REQUIRED",
-            "description_ar": "إثبات كفاية السيولة النقدية أو الأصول العينية كرأس مال مالك لتفادي رفض طلب التمويل.",
-            "description_en": "Provide bank statement proof of owner capital to fulfill mandatory equity requirements.",
+            "status": "READY" if owner_equity >= (INTERNAL_SCREENING_ASSUMPTION_MIN_EQUITY * total_requirement) else "ACTION_REQUIRED",
+            "description_ar": "التحقق من كفاية المساهمة الذاتية وفق اشتراطات كل برنامج تمويلي محدد في سجل البرامج (أو فرضية الفحص الداخلي الاسترشادية 20%).",
+            "description_en": "Verify owner equity against specific funding program rules from Phase 18 registry (or internal screening assumption 20%).",
         },
         {
             "step_number": 4,
             "title_ar": "التقديم عبر البوابات الرسمية للبرامج المتطابقة",
             "title_en": "Apply via Official Portals of Matched Programs",
-            "status": "ELIGIBLE" if len(eligible_programs) > 0 else "NO_MATCH",
-            "description_ar": f"تم تحديد {len(eligible_programs)} برنامج تمويلي مطابق؛ ابدأ التقديم عبر بوابة النفاذ الوطني الرسمية لكل جهة.",
-            "description_en": f"{len(eligible_programs)} matching funding program(s) identified; apply directly via official portals.",
+            "status": "MATCHED_PROGRAM" if matched_count > 0 else "NO_MATCH",
+            "description_ar": f"تم تحديد {matched_count} برنامج تمويلي مطابق للفحص الأولي (MATCHED_PROGRAM)؛ ابدأ التقديم عبر بوابة النفاذ الوطني الرسمية لكل جهة.",
+            "description_en": f"{matched_count} matching funding program(s) identified (MATCHED_PROGRAM); apply directly via official portals.",
         },
     ]
 
@@ -293,7 +417,19 @@ def compute_financing_structure(
         "total_project_requirement": total_requirement,
         "owner_equity": owner_equity,
         "existing_debt": existing_debt,
+        "total_confirmed_sources": total_confirmed_sources,
+        "confirmed_sources": {
+            "owner_equity": owner_equity,
+            "existing_debt": existing_debt,
+            "total_confirmed": total_confirmed_sources,
+            "coverage_percentage": round((total_confirmed_sources / total_requirement) * 100, 1) if total_requirement > 0 else 0.0,
+        },
+        "initial_funding_gap": initial_gap,
+        "potential_program_capacity": allocated_program_debt,
         "allocated_program_debt": allocated_program_debt,
+        "internal_screening_debt_capacity": safe_debt_capacity,
+        "safe_debt_capacity": safe_debt_capacity,
+        "capacity_status": capacity_status,
         "total_identified_sources": total_identified_sources,
         "residual_gap": residual_gap,
         "surplus": surplus,
@@ -301,14 +437,13 @@ def compute_financing_structure(
         "debt_percentage": round(debt_pct, 4),
         "debt_to_equity_ratio": de_ratio,
         "collateral_coverage_ratio": round(collateral_coverage, 4),
-        "safe_debt_capacity": safe_debt_capacity,
-        "capacity_status": capacity_status,
         "sources": sources,
         "uses": uses,
         "program_allocations": program_allocations,
+        "credit_enhancements": credit_enhancements,
         "warnings": warnings,
         "next_actions": next_actions,
         "disclaimer_ar": DISCLAIMER_AR,
         "disclaimer_en": DISCLAIMER_EN,
-        "version": "1.0.0",
+        "version": "1.1.0",
     }

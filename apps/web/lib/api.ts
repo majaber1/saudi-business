@@ -751,10 +751,35 @@ export type FinancingProgramAllocation = {
   program_name_en: string;
   program_type: string;
   match_status: string;
-  allocated_amount: number;
+  allocated_amount?: number | null;
+  allocation_status?: string | null;
   term_months?: number | null;
   grace_period_months?: number | null;
   official_source_url?: string | null;
+};
+
+export type CreditEnhancementItem = {
+  program_id: number;
+  program_slug: string;
+  provider: string;
+  provider_ar: string;
+  program_name_ar: string;
+  program_name_en: string;
+  program_type: string;
+  match_status: string;
+  cash_contribution: number;
+  role_ar: string;
+  role_en: string;
+  max_guarantee_amount?: number | null;
+  coverage_ratio?: number | null;
+  official_source_url?: string | null;
+};
+
+export type ConfirmedSourcesData = {
+  owner_equity: number;
+  existing_debt: number;
+  total_confirmed: number;
+  coverage_percentage: number;
 };
 
 export type FinancingWarning = {
@@ -770,7 +795,7 @@ export type FinancingNextAction = {
   step_number: number;
   title_ar: string;
   title_en: string;
-  status: "READY" | "ACTION_REQUIRED" | "PENDING_VALUATION" | "ELIGIBLE" | "NO_MATCH";
+  status: "READY" | "ACTION_REQUIRED" | "PENDING_VALUATION" | "MATCHED_PROGRAM" | "POTENTIAL_SOURCE" | "NO_MATCH" | string;
   description_ar: string;
   description_en: string;
 };
@@ -783,7 +808,14 @@ export type FinancingStructure = {
   total_project_requirement: number;
   owner_equity: number;
   existing_debt: number;
+  total_confirmed_sources?: number;
+  confirmed_sources?: ConfirmedSourcesData;
+  initial_funding_gap?: number;
+  potential_program_capacity?: number;
   allocated_program_debt: number;
+  internal_screening_debt_capacity?: number;
+  safe_debt_capacity: number;
+  capacity_status: string;
   total_identified_sources: number;
   residual_gap: number;
   surplus: number;
@@ -791,11 +823,10 @@ export type FinancingStructure = {
   debt_percentage: number;
   debt_to_equity_ratio?: number | null;
   collateral_coverage_ratio: number;
-  safe_debt_capacity: number;
-  capacity_status: string;
   sources: FinancingSourceItem[];
   uses: FinancingUseItem[];
   program_allocations: FinancingProgramAllocation[];
+  credit_enhancements?: CreditEnhancementItem[];
   warnings: FinancingWarning[];
   next_actions: FinancingNextAction[];
   disclaimer_ar: string;

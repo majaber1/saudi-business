@@ -84,7 +84,7 @@ class TestFinancingStructure:
         assert uses_total == 3_000_000.0
 
     def test_low_owner_equity_warning(self):
-        """When equity is below 20%, a warning should be triggered."""
+        """When equity is below 20%, an internal screening warning should be triggered."""
         db = _MockSession([])
         project = _FakeProject(investment=3_000_000)
         study = _FakeStudy()
@@ -98,11 +98,11 @@ class TestFinancingStructure:
         )
 
         warning_codes = [w["code"] for w in res["warnings"]]
-        assert "LOW_OWNER_EQUITY" in warning_codes
+        assert "INTERNAL_SCREENING_LOW_EQUITY" in warning_codes
         assert "RESIDUAL_GAP_EXISTS" in warning_codes
 
-        low_eq = [w for w in res["warnings"] if w["code"] == "LOW_OWNER_EQUITY"][0]
-        assert "300,000" not in low_eq["message_ar"] or "10.0%" in low_eq["message_ar"]
+        low_eq = [w for w in res["warnings"] if w["code"] == "INTERNAL_SCREENING_LOW_EQUITY"][0]
+        assert "INTERNAL_SCREENING_ASSUMPTION" in low_eq["message_ar"] or "فرضية فحص داخلي" in low_eq["message_ar"]
 
     def test_exceeds_safe_debt_capacity_warning(self):
         """When debt exceeds assessed safe debt capacity, an alert should be raised."""
@@ -196,3 +196,268 @@ class TestFinancingStructure:
         assert res["disclaimer_en"] == DISCLAIMER_EN
         assert "استرشادي" in res["disclaimer_ar"]
         assert "advisory" in res["disclaimer_en"].lower()
+
+    # ── Semantic Regression Tests (Wave 2 Final Correction) ─────────────────
+
+    def test_possible_match_never_becomes_allocated_cash(self):
+        """Rule 1: POSSIBLE_MATCH must NEVER be allocated as cash debt in Sources & Uses."""
+        from tests.test_funding_matching import _FakeProgram
+        prog = _FakeProgram(
+            id=10,
+            slug="test-loan-prog",
+            program_type="DIRECT_LOAN",
+            financing_min=100_000,
+            financing_max=2_000_000,
+            target_business_stage="ALL",
+            target_sectors=["all"],
+            collateral_rule={"required": True},  # Requires collateral
+            revenue_rule=None,
+        )
+        db = _MockSession([prog])
+        project = _FakeProject(investment=2_000_000, industry="technology", stage="startup")
+        study = _FakeStudy()
+
+        # Partial collateral yields UNKNOWN for collateral rule => overall POSSIBLE_MATCH
+        res = compute_financing_structure(
+            db,
+            study=study,
+            project=project,
+            owner_contribution=1_000_000,
+            capex_assumption=2_000_000,
+            existing_facilities=0,
+            collateral_dicts=[{
+                "id": 1,
+                "market_value": 300_000,
+                "pledged_amount": 0,
+                "reported_value": 300_000,
+                "verified_value": 300_000,
+                "collateral_type": "PROPERTY",
+                "encumbrance_status": "UNENCUMBERED",
+                "verification_status": "VERIFIED",
+            }],
+        )
+
+        # Confirm program allocation has allocated_amount = None (never allocated cash)
+        for pa in res["program_allocations"]:
+            if pa["match_status"] == "POSSIBLE_MATCH":
+                assert pa["allocated_amount"] is None
+                assert pa["allocation_status"] == "VALIDATION_REQUIRED"
+
+        # allocated_program_debt must be 0
+        assert res["allocated_program_debt"] == 0.0
+        # Sources must not contain any cash debt from this possible match
+        prog_sources = [s for s in res["sources"] if s["source_type"] == "PROGRAM_DEBT"]
+        assert len(prog_sources) == 0
+
+    def test_guarantee_never_contributes_cash_to_sources(self):
+        """Rule 2: Guarantee programs (e.g. Kafalah) must contribute 0 SAR cash to Sources & Uses."""
+        from tests.test_funding_matching import _FakeProgram
+        kafalah_prog = _FakeProgram(
+            id=20,
+            slug="kafalah-standard",
+            provider="Kafalah",
+            provider_ar="برنامج كفالة",
+            program_type="GUARANTEE",
+            financing_min=100_000,
+            financing_max=15_000_000,
+            target_business_stage="ALL",
+            target_sectors=["all"],
+            collateral_rule={"required": False},
+            revenue_rule=None,
+        )
+        db = _MockSession([kafalah_prog])
+        project = _FakeProject(investment=3_000_000, industry="technology", stage="startup")
+        study = _FakeStudy()
+
+        res = compute_financing_structure(
+            db,
+            study=study,
+            project=project,
+            owner_contribution=1_000_000,
+            capex_assumption=3_000_000,
+            existing_facilities=0,
+        )
+
+        # Allocated program debt must be 0.0 (Guarantee is not a cash loan!)
+        assert res["allocated_program_debt"] == 0.0
+        assert res["residual_gap"] == 2_000_000.0
+
+        # Guarantee must be in credit_enhancements, NOT in sources as debt cash
+        assert len(res["credit_enhancements"]) == 1
+        assert res["credit_enhancements"][0]["program_slug"] == "kafalah-standard"
+        assert res["credit_enhancements"][0]["cash_contribution"] == 0.0
+
+        # In sources: only equity and residual gap
+        source_types = [s["source_type"] for s in res["sources"]]
+        assert "PROGRAM_DEBT" not in source_types
+        assert "EQUITY" in source_types
+        assert "UNFUNDED" in source_types
+
+    def test_unknown_financing_max_never_defaults_to_remaining_gap(self):
+        """Rule 3: If financing_max is unknown, amount must not be invented or defaulted to remaining gap."""
+        from tests.test_funding_matching import _FakeProgram
+        prog_unknown_max = _FakeProgram(
+            id=30,
+            slug="unknown-max-loan",
+            program_type="DIRECT_LOAN",
+            financing_min=100_000,
+            financing_max=None,  # Unknown limit
+            target_business_stage="ALL",
+            target_sectors=["all"],
+            collateral_rule={"required": False},
+            revenue_rule=None,
+        )
+        db = _MockSession([prog_unknown_max])
+        project = _FakeProject(investment=3_000_000, industry="technology", stage="startup")
+        study = _FakeStudy()
+
+        res = compute_financing_structure(
+            db,
+            study=study,
+            project=project,
+            owner_contribution=1_000_000,
+            capex_assumption=3_000_000,
+            existing_facilities=0,
+        )
+
+        # Must NOT allocate the 2,000,000 SAR gap!
+        assert res["allocated_program_debt"] == 0.0
+        pa = res["program_allocations"][0]
+        assert pa["allocated_amount"] is None
+        assert pa["allocation_status"] == "UNKNOWN_LIMIT"
+        assert res["residual_gap"] == 2_000_000.0
+
+    def test_potential_funding_is_not_counted_as_confirmed_funding(self):
+        """Rule 4A: Potential program capacity is strictly separated from confirmed sources."""
+        from tests.test_funding_matching import _FakeProgram
+        loan_prog = _FakeProgram(
+            id=40,
+            slug="direct-loan",
+            program_type="DIRECT_LOAN",
+            financing_min=100_000,
+            financing_max=1_500_000,
+            target_business_stage="ALL",
+            target_sectors=["all"],
+            collateral_rule={"required": False},
+            revenue_rule=None,
+        )
+        db = _MockSession([loan_prog])
+        # Project 2.0M, owner 600k, existing 200k => gap = 1.2M <= 1.5M max => MATCH
+        project = _FakeProject(investment=2_000_000, industry="technology", stage="startup")
+        study = _FakeStudy()
+
+        res = compute_financing_structure(
+            db,
+            study=study,
+            project=project,
+            owner_contribution=600_000,
+            capex_assumption=2_000_000,
+            existing_facilities=200_000,
+        )
+
+        # Confirmed sources must strictly equal owner equity (600k) + existing facilities (200k) = 800k
+        assert res["total_confirmed_sources"] == 800_000.0
+        assert res["confirmed_sources"]["total_confirmed"] == 800_000.0
+        assert res["potential_program_capacity"] == 1_200_000.0
+        # Confirmed sources does NOT include the 1.2M potential loan!
+        assert res["total_confirmed_sources"] != res["total_identified_sources"]
+        assert res["total_identified_sources"] == 2_000_000.0
+
+    def test_screening_debt_does_not_exceed_borrowing_capacity(self):
+        """Rule 4B: Screening debt allocation is strictly constrained by calculated safe borrowing capacity."""
+        from tests.test_funding_matching import _FakeProgram
+        loan_prog = _FakeProgram(
+            id=50,
+            slug="huge-loan",
+            program_type="DIRECT_LOAN",
+            financing_min=100_000,
+            financing_max=4_000_000,  # Huge max
+            target_business_stage="ALL",
+            target_sectors=["all"],
+            collateral_rule={"required": False},
+            revenue_rule=None,
+        )
+        db = _MockSession([loan_prog])
+        project = _FakeProject(investment=5_000_000, industry="technology", stage="startup")
+        study = _FakeStudy()
+
+        financial_period = {
+            "revenue": 1_000_000,
+            "ebitda": 200_000,
+            "total_debt": 0,
+            "debt_service": 50_000,
+        }
+
+        res = compute_financing_structure(
+            db,
+            study=study,
+            project=project,
+            owner_contribution=1_000_000,
+            capex_assumption=5_000_000,
+            existing_facilities=100_000,
+            financial_period_dict=financial_period,
+        )
+
+        safe_cap = res["safe_debt_capacity"]
+        assert safe_cap > 0
+        # Program debt must NOT exceed safe_debt_capacity - existing_facilities
+        assert res["allocated_program_debt"] <= max(0.0, safe_cap - 100_000)
+
+    def test_twenty_percent_assumption_not_represented_as_verified_external_rule(self):
+        """Rule 5: 20% equity benchmark must be explicitly labeled as internal screening assumption."""
+        db = _MockSession([])
+        project = _FakeProject(investment=3_000_000)
+        study = _FakeStudy()
+
+        res = compute_financing_structure(
+            db,
+            study=study,
+            project=project,
+            owner_contribution=300_000,  # 10%
+            capex_assumption=3_000_000,
+        )
+
+        low_eq_warnings = [w for w in res["warnings"] if w["code"] == "INTERNAL_SCREENING_LOW_EQUITY"]
+        assert len(low_eq_warnings) == 1
+        w = low_eq_warnings[0]
+        # Must explicitly mention internal screening assumption
+        assert "INTERNAL_SCREENING_ASSUMPTION" in w["message_ar"] or "فرضية فحص داخلي" in w["message_ar"]
+        assert "INTERNAL_SCREENING_ASSUMPTION" in w["message_en"]
+        # Must NOT claim universal statutory lender minimum
+        assert "المعايير التنموية" not in w["title_ar"]
+
+    def test_match_never_implies_approval(self):
+        """Rule 6 & 7: Matched programs must never show ELIGIBLE / APPROVED."""
+        from tests.test_funding_matching import _FakeProgram
+        prog = _FakeProgram(
+            id=60,
+            slug="direct-sme-loan",
+            program_type="DIRECT_LOAN",
+            financing_min=100_000,
+            financing_max=1_000_000,
+            target_business_stage="ALL",
+            target_sectors=["all"],
+            collateral_rule={"required": False},
+            revenue_rule=None,
+        )
+        db = _MockSession([prog])
+        # Project 1.5M, owner 500k => gap = 1.0M <= 1.0M max => MATCH
+        project = _FakeProject(investment=1_500_000, industry="technology", stage="startup")
+        study = _FakeStudy()
+
+        res = compute_financing_structure(
+            db,
+            study=study,
+            project=project,
+            owner_contribution=500_000,
+            capex_assumption=1_500_000,
+        )
+
+        # Next action step 4 status must be MATCHED_PROGRAM, not ELIGIBLE
+        act_4 = [a for a in res["next_actions"] if a["step_number"] == 4][0]
+        assert act_4["status"] == "MATCHED_PROGRAM"
+        assert act_4["status"] != "ELIGIBLE"
+        assert act_4["status"] != "APPROVED"
+        assert "موافق" not in act_4["description_ar"]
+        assert "approved" not in act_4["description_en"].lower()
+

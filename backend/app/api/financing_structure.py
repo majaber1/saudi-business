@@ -75,10 +75,35 @@ class ProgramAllocationOut(BaseModel):
     program_name_en: str
     program_type: str
     match_status: str
-    allocated_amount: float
+    allocated_amount: Optional[float] = None
+    allocation_status: Optional[str] = None
     term_months: Optional[int] = None
     grace_period_months: Optional[int] = None
     official_source_url: Optional[str] = None
+
+
+class CreditEnhancementOut(BaseModel):
+    program_id: int
+    program_slug: str
+    provider: str
+    provider_ar: str
+    program_name_ar: str
+    program_name_en: str
+    program_type: str
+    match_status: str
+    cash_contribution: float = 0.0
+    role_ar: str
+    role_en: str
+    max_guarantee_amount: Optional[float] = None
+    coverage_ratio: Optional[float] = None
+    official_source_url: Optional[str] = None
+
+
+class ConfirmedSourcesOut(BaseModel):
+    owner_equity: float
+    existing_debt: float
+    total_confirmed: float
+    coverage_percentage: float
 
 
 class FinancingWarningOut(BaseModel):
@@ -107,7 +132,14 @@ class FinancingStructureOut(BaseModel):
     total_project_requirement: float
     owner_equity: float
     existing_debt: float
+    total_confirmed_sources: Optional[float] = None
+    confirmed_sources: Optional[ConfirmedSourcesOut] = None
+    initial_funding_gap: Optional[float] = None
+    potential_program_capacity: Optional[float] = None
     allocated_program_debt: float
+    internal_screening_debt_capacity: Optional[float] = None
+    safe_debt_capacity: float
+    capacity_status: str
     total_identified_sources: float
     residual_gap: float
     surplus: float
@@ -115,11 +147,10 @@ class FinancingStructureOut(BaseModel):
     debt_percentage: float
     debt_to_equity_ratio: Optional[float] = None
     collateral_coverage_ratio: float
-    safe_debt_capacity: float
-    capacity_status: str
     sources: List[FinancingSourceOut]
     uses: List[FinancingUseOut]
     program_allocations: List[ProgramAllocationOut]
+    credit_enhancements: Optional[List[CreditEnhancementOut]] = []
     warnings: List[FinancingWarningOut]
     next_actions: List[NextActionOut]
     disclaimer_ar: str

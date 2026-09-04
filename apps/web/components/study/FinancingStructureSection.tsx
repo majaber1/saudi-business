@@ -66,8 +66,10 @@ export default function FinancingStructureSection({ token, studyId, period, refr
         return { label: "إجراء مطلوب", className: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300" };
       case "PENDING_VALUATION":
         return { label: "بانتظار التقييم", className: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" };
-      case "ELIGIBLE":
-        return { label: "مؤهل للتقديم", className: "bg-primary/10 text-primary dark:bg-primary/20" };
+      case "MATCHED_PROGRAM":
+        return { label: "برنامج مطابق للفحص الأولي", className: "bg-primary/10 text-primary dark:bg-primary/20" };
+      case "POTENTIAL_SOURCE":
+        return { label: "مصدر تمويل محتمل", className: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300" };
       default:
         return { label: status, className: "bg-muted text-muted-foreground" };
     }
@@ -85,7 +87,7 @@ export default function FinancingStructureSection({ token, studyId, period, refr
             </span>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Reconciled Sources & Uses of Funds — نموذج مالي متكامل لتوزيع مصادر رأس المال والتمويل التنموي
+            Reconciled Sources & Uses of Funds — نموذج مالي متكامل لتوزيع مصادر رأس المال وخيارات التمويل التنموي
           </p>
         </div>
         <button
@@ -124,15 +126,15 @@ export default function FinancingStructureSection({ token, studyId, period, refr
           {/* KPI Summary Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3.5 rounded-lg border border-border bg-muted/20">
-              <span className="text-xs text-muted-foreground block">إجمالي الاحتياج</span>
+              <span className="text-xs text-muted-foreground block">إجمالي الاحتياج الاستثماري</span>
               <span className="text-lg font-bold text-foreground mt-0.5 block">
                 {formatCurrency(data.total_project_requirement)}
               </span>
-              <span className="text-[10px] text-muted-foreground">100% استخدامات الأموال</span>
+              <span className="text-[10px] text-muted-foreground">100% استخدامات الأموال (Uses)</span>
             </div>
 
             <div className="p-3.5 rounded-lg border border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/20">
-              <span className="text-xs text-emerald-800 dark:text-emerald-300 block">المساهمة الذاتية (Equity)</span>
+              <span className="text-xs text-emerald-800 dark:text-emerald-300 block">المساهمة الذاتية (مصادر مؤكدة)</span>
               <span className="text-lg font-bold text-emerald-700 dark:text-emerald-300 mt-0.5 block">
                 {formatCurrency(data.owner_equity)}
               </span>
@@ -142,12 +144,12 @@ export default function FinancingStructureSection({ token, studyId, period, refr
             </div>
 
             <div className="p-3.5 rounded-lg border border-border bg-muted/20">
-              <span className="text-xs text-muted-foreground block">التمويل التنموي المخصص</span>
+              <span className="text-xs text-muted-foreground block">طاقة البرامج المحتملة (استرشادي)</span>
               <span className="text-lg font-bold text-foreground mt-0.5 block">
                 {formatCurrency(data.allocated_program_debt)}
               </span>
               <span className="text-[10px] text-muted-foreground">
-                {data.program_allocations.length} برنامج معتمد
+                خيارات تمويل محتملة (غير مؤكدة)
               </span>
             </div>
 
@@ -157,7 +159,7 @@ export default function FinancingStructureSection({ token, studyId, period, refr
                 : "border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/20"
             }`}>
               <span className={`text-xs block ${data.residual_gap > 0 ? "text-rose-800 dark:text-rose-300" : "text-emerald-800 dark:text-emerald-300"}`}>
-                الفجوة المتبقية (Residual Gap)
+                الفجوة التمويلية المتبقية
               </span>
               <span className={`text-lg font-bold mt-0.5 block ${data.residual_gap > 0 ? "text-rose-700 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-300"}`}>
                 {formatCurrency(data.residual_gap)}
@@ -167,6 +169,64 @@ export default function FinancingStructureSection({ token, studyId, period, refr
               </span>
             </div>
           </div>
+
+          {/* Internal Screening Debt Capacity Strip */}
+          <div className="p-3 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-blue-900 dark:text-blue-300">طاقة الاستدانة التقديرية (فحص داخلي استرشادي):</span>
+              <span className="font-mono font-bold text-foreground">{formatCurrency(data.safe_debt_capacity)}</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                حالة الفحص: {data.capacity_status}
+              </span>
+            </div>
+            <span className="text-[10px] text-muted-foreground">
+              تقدير داخلي مبني على التدفقات؛ لا يمثل موافقة ائتمانية بنكية.
+            </span>
+          </div>
+
+          {/* Credit Enhancement / Guarantee Support Card (Separated from Cash Debt) */}
+          {data.credit_enhancements && data.credit_enhancements.length > 0 && (
+            <div className="p-4 rounded-lg bg-purple-50/40 dark:bg-purple-950/20 border border-purple-300 dark:border-purple-800 space-y-3">
+              <div className="flex items-center justify-between border-b border-purple-200 dark:border-purple-800/60 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🛡️</span>
+                  <h4 className="font-bold text-sm text-purple-950 dark:text-purple-200">
+                    دعم الضمانات والتعزيز الائتماني (Credit Enhancement / Guarantee Support)
+                  </h4>
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 font-medium">
+                  مساهمة نقدية مباشرة: 0 ر.س
+                </span>
+              </div>
+              <p className="text-xs text-purple-900/80 dark:text-purple-300 leading-relaxed">
+                برامج الضمانات (مثل برنامج كفالة) لا تقدم سيولة نقدية مباشرة لمصادر واستخدامات الأموال، وإنما توفر كفالات ائتمانية للبنوك التجارية لتغطية مخاطر التمويل وتقليل متطلبات الرهن العيني لتسهيل الإقراض البنكي.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {data.credit_enhancements.map((ce) => (
+                  <div key={ce.program_id} className="p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-background/80 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-foreground">{ce.program_name_ar}</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                        {ce.provider}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{ce.role_ar}</p>
+                    <div className="flex items-center justify-between text-[11px] pt-1">
+                      <span className="text-muted-foreground">الحد الأقصى للضمان:</span>
+                      <span className="font-bold text-foreground">{formatCurrency(ce.max_guarantee_amount)}</span>
+                    </div>
+                    {ce.official_source_url && (
+                      <div className="pt-1 text-end">
+                        <a href={ce.official_source_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-primary hover:underline">
+                          البوابة الرسمية لكفالة ↗
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Sources & Uses Reconciled Table / Breakdown */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -203,9 +263,11 @@ export default function FinancingStructureSection({ token, studyId, period, refr
                   const barColor =
                     s.source_type === "EQUITY"
                       ? "bg-emerald-500"
-                      : s.source_type === "UNFUNDED"
-                      ? "bg-rose-500"
-                      : "bg-blue-500";
+                      : s.source_type === "EXISTING_DEBT"
+                      ? "bg-blue-500"
+                      : s.source_type === "PROGRAM_DEBT"
+                      ? "bg-sky-500"
+                      : "bg-rose-500";
                   return (
                     <div key={s.source_key} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
@@ -237,7 +299,7 @@ export default function FinancingStructureSection({ token, studyId, period, refr
               <div className="p-2.5 rounded bg-background border border-border/60">
                 <span className="text-muted-foreground block text-[11px]">نسبة المساهمة الذاتية</span>
                 <span className="font-bold text-foreground text-sm">{(data.equity_percentage * 100).toFixed(1)}%</span>
-                <span className="text-[10px] text-muted-foreground block">(الحد الأدنى الموصى به: 20%)</span>
+                <span className="text-[10px] text-muted-foreground block">(فرضية فحص داخلي: 20%)</span>
               </div>
               <div className="p-2.5 rounded bg-background border border-border/60">
                 <span className="text-muted-foreground block text-[11px]">نسبة الدين إلى التكلفة</span>
@@ -264,7 +326,10 @@ export default function FinancingStructureSection({ token, studyId, period, refr
           {/* Program Allocations Cards */}
           {data.program_allocations.length > 0 && (
             <div className="space-y-3">
-              <h4 className="font-bold text-sm text-foreground">البرامج التمويلية المقترحة لتغطية الفجوة</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-sm text-foreground">خيارات البرامج التمويلية المقترحة (Screening Options)</h4>
+                <span className="text-[11px] text-muted-foreground">خيارات استرشادية لا تمثل تمويلاً معتمداً</span>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {data.program_allocations.map((pa: FinancingProgramAllocation) => (
                   <div key={pa.program_id} className="p-3.5 rounded-lg border border-border bg-card space-y-2 text-xs">
@@ -276,15 +341,25 @@ export default function FinancingStructureSection({ token, studyId, period, refr
                         <h5 className="font-bold text-foreground text-sm mt-1">{pa.program_name_ar}</h5>
                         <p className="text-[11px] text-muted-foreground">{pa.program_name_en}</p>
                       </div>
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300">
-                        {pa.match_status}
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                        pa.match_status === "MATCH"
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300"
+                          : "bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300"
+                      }`}>
+                        {pa.match_status === "MATCH" ? "برنامج مطابق للفحص الأولي" : "مطابقة محتملة (تتطلب تحقق)"}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 p-2 rounded bg-muted/20 border border-border/30">
                       <div>
                         <span className="text-muted-foreground block text-[10px]">المبلغ المخصص المقترح</span>
-                        <span className="font-bold text-primary text-xs">{formatCurrency(pa.allocated_amount)}</span>
+                        <span className="font-bold text-primary text-xs">
+                          {pa.allocation_status === "CREDIT_ENHANCEMENT_ONLY"
+                            ? "تعزيز ائتماني (0 ر.س نقد)"
+                            : pa.allocated_amount !== null && pa.allocated_amount !== undefined
+                            ? formatCurrency(pa.allocated_amount)
+                            : "غير محدد (يتطلب مراجعة الحد)"}
+                        </span>
                       </div>
                       <div>
                         <span className="text-muted-foreground block text-[10px]">المدة والسماح</span>
