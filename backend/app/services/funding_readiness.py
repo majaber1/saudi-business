@@ -31,13 +31,20 @@ from app.services.funding_gap import compute_funding_gap
 
 CALCULATION_VERSION = "1.0.0"
 
-READINESS_THRESHOLDS = {
+# Internal screening assumptions for preliminary readiness evaluation.
+# NOTE: These are NOT official Saudi lender requirements or regulations.
+# They serve solely as deterministic baseline screening heuristics for the
+# internal Saudi Business readiness workflow until verified program rules
+# are applied in Phase 18.
+INTERNAL_SCREENING_ASSUMPTIONS = {
     "min_dscr_ready": 1.25,
     "min_dscr_acceptable": 1.0,
     "max_leverage_ready": 4.0,
     "max_leverage_acceptable": 5.0,
     "min_owner_equity_pct": 0.15,
 }
+# Backward-compatibility alias
+READINESS_THRESHOLDS = INTERNAL_SCREENING_ASSUMPTIONS
 
 STATUS_READY = "READY"
 STATUS_PARTIALLY_READY = "PARTIALLY_READY"
@@ -208,7 +215,8 @@ def evaluate_funding_readiness(
             "borrowing_capacity_snapshot": capacity_snapshot,
             "collateral_snapshot": collateral_snapshot,
             "documents_status": "NOT_EVALUATED",
-            "assumptions_used": READINESS_THRESHOLDS,
+            "internal_screening_assumptions": INTERNAL_SCREENING_ASSUMPTIONS,
+            "assumptions_used": INTERNAL_SCREENING_ASSUMPTIONS,
             "calculation_version": CALCULATION_VERSION,
         }
 
@@ -223,15 +231,15 @@ def evaluate_funding_readiness(
     # A) Negative/zero EBITDA
     if ebitda_val <= 0:
         blocking_factors.append(
-            f"Operating cash generation is non-viable (EBITDA = {ebitda_val:,.0f} SAR). Positive operational earnings are required for commercial debt funding."
+            f"Operating cash generation is non-viable (EBITDA = {ebitda_val:,.0f} SAR). Positive operational earnings are required under internal screening assumptions."
         )
         blocking_factors_ar.append(
-            f"الأرباح التشغيلية غير قابلة للإقراض (EBITDA = {ebitda_val:,.0f} ر.س). يلزم تحقيق أرباح تشغيلية موجبة للتأهل للتمويل."
+            f"الأرباح التشغيلية غير قابلة للإقراض (EBITDA = {ebitda_val:,.0f} ر.س). يلزم تحقيق أرباح تشغيلية موجبة وفق معايير الفحص الداخلي."
         )
 
     # B) Non-viable DSCR (< 1.0)
     dscr_val = ebitda_val / debt_service_val if debt_service_val > 0 else 999.0
-    if debt_service_val > 0 and dscr_val < READINESS_THRESHOLDS["min_dscr_acceptable"]:
+    if debt_service_val > 0 and dscr_val < INTERNAL_SCREENING_ASSUMPTIONS["min_dscr_acceptable"]:
         blocking_factors.append(
             f"Existing debt service coverage is weak ({dscr_val:.2f}x DSCR), below the 1.0x break-even threshold (current operations cannot service existing debt)."
         )
@@ -241,12 +249,12 @@ def evaluate_funding_readiness(
 
     # C) Severe over-leverage (> 5.0x)
     debt_to_ebitda = existing_debt_val / ebitda_val if ebitda_val > 0 else 999.0
-    if ebitda_val > 0 and debt_to_ebitda > READINESS_THRESHOLDS["max_leverage_acceptable"]:
+    if ebitda_val > 0 and debt_to_ebitda > INTERNAL_SCREENING_ASSUMPTIONS["max_leverage_acceptable"]:
         blocking_factors.append(
-            f"Existing leverage is excessively high ({debt_to_ebitda:.2f}x Debt/EBITDA), exceeding institutional leverage thresholds."
+            f"Existing leverage is excessively high ({debt_to_ebitda:.2f}x Debt/EBITDA), exceeding the Saudi Business internal screening threshold ({INTERNAL_SCREENING_ASSUMPTIONS['max_leverage_acceptable']:.1f}x)."
         )
         blocking_factors_ar.append(
-            f"الرافعة المالية الحالية مرتفعة جداً ({debt_to_ebitda:.2f}x ضعف الدين إلى EBITDA)، متجاوزة السقوف الائتمانية المقبولة."
+            f"الرافعة المالية الحالية مرتفعة جداً ({debt_to_ebitda:.2f}x ضعف الدين إلى EBITDA)، متجاوزة سقف الفحص الداخلي لمنصة Saudi Business ({INTERNAL_SCREENING_ASSUMPTIONS['max_leverage_acceptable']:.1f}x)."
         )
 
     # D) Zero capacity with positive funding gap
@@ -260,10 +268,10 @@ def evaluate_funding_readiness(
 
     if blocking_factors:
         summary_en = (
-            "The current business profile contains material financial constraints that prevent approaching debt funding providers at this time."
+            "The current business profile contains material financial constraints under internal screening rules that prevent approaching debt funding options at this time."
         )
         summary_ar = (
-            "الملف المالي الحالي يحتوي على محددات جوهرية تعيق التقدم لجهات التمويل الإقراضي في الوقت الراهن."
+            "الملف المالي الحالي يحتوي على محددات جوهرية وفق معايير الفحص الداخلي تعيق التقدم لخيارات التمويل الإقراضي في الوقت الراهن."
         )
         return {
             "study_id": study_id,
@@ -284,7 +292,8 @@ def evaluate_funding_readiness(
             "borrowing_capacity_snapshot": capacity_snapshot,
             "collateral_snapshot": collateral_snapshot,
             "documents_status": "NOT_EVALUATED",
-            "assumptions_used": READINESS_THRESHOLDS,
+            "internal_screening_assumptions": INTERNAL_SCREENING_ASSUMPTIONS,
+            "assumptions_used": INTERNAL_SCREENING_ASSUMPTIONS,
             "calculation_version": CALCULATION_VERSION,
         }
 
@@ -294,32 +303,44 @@ def evaluate_funding_readiness(
 
     # A) Debt service coverage
     if dscr_val >= 1.5:
-        positive_factors.append(f"Strong debt-service coverage profile ({dscr_val:.2f}x DSCR), well above standard 1.25x target.")
-        positive_factors_ar.append(f"معدل تغطية خدمة دين قوي ({dscr_val:.2f}x)، أعلى بكثير من المستهدف المعتاد 1.25x.")
-    elif dscr_val >= READINESS_THRESHOLDS["min_dscr_ready"]:
+        positive_factors.append(
+            f"Strong debt-service coverage profile ({dscr_val:.2f}x DSCR), comfortably above the Saudi Business internal screening threshold of {INTERNAL_SCREENING_ASSUMPTIONS['min_dscr_ready']}x."
+        )
+        positive_factors_ar.append(
+            f"معدل تغطية خدمة دين قوي ({dscr_val:.2f}x)، يتجاوز سقف الفحص الداخلي لمنصة Saudi Business ({INTERNAL_SCREENING_ASSUMPTIONS['min_dscr_ready']}x)."
+        )
+    elif dscr_val >= INTERNAL_SCREENING_ASSUMPTIONS["min_dscr_ready"]:
         positive_factors.append(f"Acceptable debt-service coverage ratio ({dscr_val:.2f}x DSCR).")
         positive_factors_ar.append(f"معدل تغطية خدمة دين مقبول ({dscr_val:.2f}x).")
     else:
         warnings.append(
-            f"Debt-service coverage ({dscr_val:.2f}x DSCR) is tight (below 1.25x target). Lenders may require debt rescheduling or personal guarantee."
+            f"Debt-service coverage ({dscr_val:.2f}x DSCR) is tight (below the Saudi Business internal screening threshold of {INTERNAL_SCREENING_ASSUMPTIONS['min_dscr_ready']}x)."
         )
         warnings_ar.append(
-            f"معدل تغطية خدمة الدين ({dscr_val:.2f}x) ضيق (أقل من 1.25x). قد يشترط الممولون إعادة جدولة أو كفالات إضافية."
+            f"معدل تغطية خدمة الدين ({dscr_val:.2f}x) ضيق (دون معيار الفحص الداخلي لمنصة Saudi Business البالغ {INTERNAL_SCREENING_ASSUMPTIONS['min_dscr_ready']}x)."
         )
 
     # B) Leverage
     if debt_to_ebitda <= 2.0:
-        positive_factors.append(f"Conservative existing leverage ({debt_to_ebitda:.2f}x Debt/EBITDA), leaving ample balance sheet capacity.")
-        positive_factors_ar.append(f"رافعة مالية محافظة ({debt_to_ebitda:.2f}x ضعف الدين إلى EBITDA)، مما يتيح طاقة اقتراضية مريحة.")
-    elif debt_to_ebitda <= READINESS_THRESHOLDS["max_leverage_ready"]:
-        positive_factors.append(f"Moderate leverage ({debt_to_ebitda:.2f}x Debt/EBITDA) within standard institutional screening limits.")
-        positive_factors_ar.append(f"رافعة مالية معتدلة ({debt_to_ebitda:.2f}x ضعف الدين إلى EBITDA) ضمن الحدود الائتمانية المقبولة.")
+        positive_factors.append(
+            f"Conservative existing leverage ({debt_to_ebitda:.2f}x Debt/EBITDA), leaving ample balance sheet capacity."
+        )
+        positive_factors_ar.append(
+            f"رافعة مالية محافظة ({debt_to_ebitda:.2f}x ضعف الدين إلى EBITDA)، مما يتيح طاقة اقتراضية مريحة."
+        )
+    elif debt_to_ebitda <= INTERNAL_SCREENING_ASSUMPTIONS["max_leverage_ready"]:
+        positive_factors.append(
+            f"Moderate leverage ({debt_to_ebitda:.2f}x Debt/EBITDA) within Saudi Business internal screening limits ({INTERNAL_SCREENING_ASSUMPTIONS['max_leverage_ready']}x)."
+        )
+        positive_factors_ar.append(
+            f"رافعة مالية معتدلة ({debt_to_ebitda:.2f}x ضعف الدين إلى EBITDA) ضمن حدود الفحص الداخلي لمنصة Saudi Business ({INTERNAL_SCREENING_ASSUMPTIONS['max_leverage_ready']}x)."
+        )
     else:
         warnings.append(
-            f"Leverage is elevated ({debt_to_ebitda:.2f}x Debt/EBITDA), which may reduce the maximum loan amount offered by funders."
+            f"Leverage is elevated ({debt_to_ebitda:.2f}x Debt/EBITDA), exceeding the Saudi Business internal screening comfort threshold ({INTERNAL_SCREENING_ASSUMPTIONS['max_leverage_ready']}x)."
         )
         warnings_ar.append(
-            f"الرافعة المالية مرتفعة نسبياً ({debt_to_ebitda:.2f}x ضعف الدين إلى EBITDA)، مما قد يحد من قيمة القرض الممنوح."
+            f"الرافعة المالية مرتفعة نسبياً ({debt_to_ebitda:.2f}x ضعف الدين إلى EBITDA)، متجاوزة حد الفحص الداخلي لمنصة Saudi Business ({INTERNAL_SCREENING_ASSUMPTIONS['max_leverage_ready']}x)."
         )
 
     # C) Borrowing capacity vs Funding gap
@@ -347,17 +368,25 @@ def evaluate_funding_readiness(
     # D) Owner equity contribution percentage
     equity_pct = owner_cap / total_req if total_req > 0 else 0.0
     if equity_pct >= 0.20:
-        positive_factors.append(f"Substantial owner equity commitment ({equity_pct * 100:.1f}% of project cost, {owner_cap:,.0f} SAR).")
-        positive_factors_ar.append(f"التزام ذاتي قوي من المالك ({equity_pct * 100:.1f}% من تكلفة المشروع، {owner_cap:,.0f} ر.س).")
-    elif equity_pct >= READINESS_THRESHOLDS["min_owner_equity_pct"]:
-        positive_factors.append(f"Owner equity contribution meets standard baseline ({equity_pct * 100:.1f}% of project cost).")
-        positive_factors_ar.append(f"المساهمة الذاتية تستوفي الحد الأدنى المعتاد ({equity_pct * 100:.1f}% من تكلفة المشروع).")
+        positive_factors.append(
+            f"Substantial owner equity commitment ({equity_pct * 100:.1f}% of project cost, {owner_cap:,.0f} SAR)."
+        )
+        positive_factors_ar.append(
+            f"التزام ذاتي قوي من المالك ({equity_pct * 100:.1f}% من تكلفة المشروع، {owner_cap:,.0f} ر.س)."
+        )
+    elif equity_pct >= INTERNAL_SCREENING_ASSUMPTIONS["min_owner_equity_pct"]:
+        positive_factors.append(
+            f"Owner equity contribution meets Saudi Business internal screening baseline ({equity_pct * 100:.1f}% of project cost)."
+        )
+        positive_factors_ar.append(
+            f"المساهمة الذاتية تستوفي خط الأساس للفحص الداخلي لمنصة Saudi Business ({equity_pct * 100:.1f}% من تكلفة المشروع)."
+        )
     else:
         warnings.append(
-            f"Owner equity contribution is low ({equity_pct * 100:.1f}%). Saudi development and commercial lenders typically expect at least 15-20% owner equity."
+            f"Owner equity contribution is low ({equity_pct * 100:.1f}%). The Saudi Business internal screening guideline suggests at least {int(INTERNAL_SCREENING_ASSUMPTIONS['min_owner_equity_pct'] * 100)}% owner equity."
         )
         warnings_ar.append(
-            f"المساهمة الذاتية منخفضة ({equity_pct * 100:.1f}%). تشترط برامج التمويل السعودية عادة مساهمة ذاتية لا تقل عن 15-20%."
+            f"المساهمة الذاتية منخفضة ({equity_pct * 100:.1f}%). معيار الفحص الداخلي لمنصة Saudi Business يقترح مساهمة ذاتية لا تقل عن {int(INTERNAL_SCREENING_ASSUMPTIONS['min_owner_equity_pct'] * 100)}%."
         )
         actionable_steps.append({
             "key": "increase_owner_equity",
@@ -369,10 +398,10 @@ def evaluate_funding_readiness(
     # E) Collateral evaluation
     if collateral_snapshot["record_count"] == 0:
         warnings.append(
-            "No collateral assets recorded. While cash-flow lending exists, unsecured facilities often carry lower borrowing limits or require Kafalah backing."
+            "No collateral assets recorded. Under internal screening guidelines, unsecured facilities carry tighter limits and may require Kafalah backing."
         )
         warnings_ar.append(
-            "لا توجد أصول ضمانات مسجّلة. قد يتطلب التمويل غير المضمون هوامش أضيق أو دعم كفالة."
+            "لا توجد أصول ضمانات مسجّلة. وفق إرشادات الفحص الداخلي، التمويل غير المضمون يتطلب شروطاً أدق أو دعم كفالة."
         )
         actionable_steps.append({
             "key": "add_collateral",
@@ -381,36 +410,65 @@ def evaluate_funding_readiness(
             "action_target": "collateral",
         })
     else:
-        # Check verification state
-        unverified_count = sum(
-            1 for r in collateral_list
-            if r.get("verification_status") not in ("DOCUMENT_SUPPORTED", "VERIFIED")
+        # Strict separation: reported_value vs verified_value vs verification_status
+        # Only explicitly stored verified_value contributes to total verified collateral value!
+        # A record with DOCUMENT_SUPPORTED but without verified_value does NOT contribute to verified value.
+        explicit_verified_val = sum(
+            float(r["verified_value"])
+            for r in collateral_list
+            if r.get("verified_value") is not None
+            and r.get("verification_status") in ("VERIFIED", "DOCUMENT_SUPPORTED")
         )
-        if unverified_count > 0:
+
+        doc_supported_no_val = [
+            r for r in collateral_list
+            if r.get("verification_status") == "DOCUMENT_SUPPORTED" and r.get("verified_value") is None
+        ]
+        unverified_items = [
+            r for r in collateral_list
+            if r.get("verification_status") in ("USER_REPORTED", "UNVERIFIED")
+        ]
+        verified_items = [
+            r for r in collateral_list
+            if r.get("verified_value") is not None
+            and r.get("verification_status") in ("VERIFIED", "DOCUMENT_SUPPORTED")
+        ]
+
+        if explicit_verified_val > 0:
+            positive_factors.append(
+                f"Collateral portfolio includes {explicit_verified_val:,.0f} SAR in explicitly verified collateral value ({len(verified_items)} asset(s))."
+            )
+            positive_factors_ar.append(
+                f"تتضمن محفظة الضمانات قيمة موثّقة صراحة تبلغ {explicit_verified_val:,.0f} ر.س لعدد {len(verified_items)} من الأصول."
+            )
+
+        if doc_supported_no_val:
             warnings.append(
-                f"{unverified_count} collateral asset(s) are user-reported or unverified. Official appraisals and documentation will be requested by funders."
+                f"{len(doc_supported_no_val)} collateral asset(s) are document supported, value not independently verified."
             )
             warnings_ar.append(
-                f"توجد {unverified_count} من الضمانات مُبلَّغة من المستخدم أو غير موثّقة بمستند رسمي يلزم توثيقها للممولين."
+                f"عدد {len(doc_supported_no_val)} من أصول الضمانات مدعومة بمستندات ولكن لم يتم التحقق المستقل من قيمتها."
+            )
+            actionable_steps.append({
+                "key": "appraise_collateral",
+                "title_en": "Obtain independent valuation for document-supported collateral",
+                "title_ar": "الحصول على تقييم مستقل للضمانات المدعومة بمستندات",
+                "action_target": "collateral",
+            })
+
+        if unverified_items:
+            warnings.append(
+                f"{len(unverified_items)} collateral asset(s) are user-reported or unverified without documentation."
+            )
+            warnings_ar.append(
+                f"توجد {len(unverified_items)} من الضمانات مُبلَّغة من المستخدم أو غير موثّقة بمستند رسمي."
             )
             actionable_steps.append({
                 "key": "verify_collateral",
-                "title_en": "Upload formal valuation or document for collateral",
-                "title_ar": "إرفاق تقييم رسمي أو مستند داعم للضمانات",
+                "title_en": "Provide official documentation or appraisal for collateral",
+                "title_ar": "تقديم مستندات رسمية أو تقييم معتمد للضمانات",
                 "action_target": "collateral",
             })
-        else:
-            doc_verified_val = sum(
-                float(r.get("verified_value") or r.get("reported_value", 0.0))
-                for r in collateral_list
-                if r.get("verification_status") in ("DOCUMENT_SUPPORTED", "VERIFIED")
-            )
-            positive_factors.append(
-                f"Collateral portfolio is fully document-supported ({collateral_snapshot['record_count']} items, {doc_verified_val:,.0f} SAR verified value)."
-            )
-            positive_factors_ar.append(
-                f"محفظة الضمانات موثّقة بمستندات رسمية ({collateral_snapshot['record_count']} أصول، بقيمة موثّقة {doc_verified_val:,.0f} ر.س)."
-            )
 
         # Check encumbrance
         if collateral_snapshot["unknown_encumbrance_count"] > 0:
@@ -433,18 +491,18 @@ def evaluate_funding_readiness(
     if not warnings:
         status = STATUS_READY
         summary_en = (
-            "The business profile and funding plan meet core screening criteria to approach debt funding providers."
+            "The business profile and funding plan meet Saudi Business internal screening criteria to approach debt funding options."
         )
         summary_ar = (
-            "الملف المالي وخطة التمويل مستوفيان لمعايير الفحص الأولي للتقدم إلى جهات التمويل الإقراضي."
+            "الملف المالي وخطة التمويل مستوفيان لمعايير الفحص الداخلي لمنصة Saudi Business للتقدم لخيارات التمويل."
         )
     else:
         status = STATUS_PARTIALLY_READY
         summary_en = (
-            "The study has sufficient financial data to estimate borrowing capacity, but important supporting data, collateral verification, or equity adjustments are needed before formal submission."
+            "The study has sufficient financial data to estimate borrowing capacity, but important supporting data, collateral verification, or equity adjustments are needed under internal screening rules before formal submission."
         )
         summary_ar = (
-            "تتوفر بيانات مالية كافية لتقدير القدرة التمويلية، ولكن يلزم استكمال بعض البيانات الداعمة أو توثيق الضمانات قبل التقديم الرسمي."
+            "تتوفر بيانات مالية كافية لتقدير القدرة التمويلية، ولكن يلزم استكمال بعض البيانات الداعمة أو توثيق الضمانات وفق معايير الفحص الداخلي قبل التقديم الرسمي."
         )
 
     return {
@@ -466,6 +524,7 @@ def evaluate_funding_readiness(
         "borrowing_capacity_snapshot": capacity_snapshot,
         "collateral_snapshot": collateral_snapshot,
         "documents_status": "NOT_EVALUATED",
-        "assumptions_used": READINESS_THRESHOLDS,
+        "internal_screening_assumptions": INTERNAL_SCREENING_ASSUMPTIONS,
+        "assumptions_used": INTERNAL_SCREENING_ASSUMPTIONS,
         "calculation_version": CALCULATION_VERSION,
     }

@@ -531,6 +531,7 @@ export type FundingReadiness = {
   borrowing_capacity_snapshot: Record<string, unknown> | null;
   collateral_snapshot: Record<string, unknown> | null;
   documents_status: string;
+  internal_screening_assumptions?: Record<string, unknown>;
   assumptions_used: Record<string, unknown>;
   calculation_version: string;
 };

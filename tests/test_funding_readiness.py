@@ -254,7 +254,7 @@ def test_verified_collateral_positive_factor():
             {"reported_value": 4000000, "verified_value": 4000000, "verification_status": "VERIFIED", "encumbrance_status": "UNENCUMBERED", "encumbrance_amount": None}
         ],
     )
-    assert any("Collateral portfolio is fully document-supported" in p for p in result["positive_factors"])
+    assert any("explicitly verified collateral value" in p for p in result["positive_factors"])
 
 
 def test_weak_financial_health_is_not_ready():
@@ -363,6 +363,114 @@ def test_deterministic_repeatability():
     r1 = evaluate_funding_readiness(**params)
     r2 = evaluate_funding_readiness(**params)
     assert r1 == r2
+
+
+def test_internal_thresholds_not_represented_as_verified_lender_rules():
+    from app.services.funding_readiness import INTERNAL_SCREENING_ASSUMPTIONS
+    assert "min_dscr_ready" in INTERNAL_SCREENING_ASSUMPTIONS
+    assert "min_owner_equity_pct" in INTERNAL_SCREENING_ASSUMPTIONS
+
+    # Trigger warnings for low equity and tight DSCR
+    result = evaluate_funding_readiness(
+        study_id=1,
+        project_investment=3000000,
+        owner_contribution=100000,  # 3.3% < 15%
+        financial_period={
+            "revenue": 10000000,
+            "ebitda": 1000000,
+            "existing_debt": 1000000,
+            "annual_debt_service": 900000,  # DSCR = 1.11 < 1.25
+        },
+    )
+    assert "internal_screening_assumptions" in result
+    all_text = " ".join(result["warnings"] + result["positive_factors"] + [result["summary_en"]])
+    # Must NOT present internal thresholds as verified Saudi lender rules or institutional mandates
+    assert "Saudi lenders typically require" not in all_text
+    assert "institutional leverage thresholds" not in all_text
+    assert "official" not in all_text.lower()
+    # Must clearly reference internal screening
+    assert "internal screening" in all_text.lower()
+
+
+def test_document_supported_without_verified_value_does_not_inflate_verified_collateral_value():
+    result = evaluate_funding_readiness(
+        study_id=1,
+        project_investment=3000000,
+        owner_contribution=750000,
+        financial_period={
+            "revenue": 12500000,
+            "ebitda": 2500000,
+            "existing_debt": 1200000,
+            "annual_debt_service": 420000,
+        },
+        collateral_records=[
+            {
+                "reported_value": 5000000,
+                "verified_value": None,  # no verified value!
+                "verification_status": "DOCUMENT_SUPPORTED",
+                "encumbrance_status": "UNENCUMBERED",
+                "encumbrance_amount": None,
+            }
+        ],
+    )
+    # Must NOT be READY because valuation is not independently verified
+    assert result["status"] == STATUS_PARTIALLY_READY
+    # Warning must state document supported, value not independently verified
+    assert any("document supported, value not independently verified" in w for w in result["warnings"])
+    # Verified value must NOT be inflated by reported_value
+    assert result["collateral_snapshot"]["total_verified_value"] == 0
+    # No claim of 5M verified value in positive factors
+    assert not any("5,000,000" in p for p in result["positive_factors"])
+    assert not any("verified collateral value" in p for p in result["positive_factors"])
+
+
+def test_user_reported_collateral_does_not_become_verified():
+    result = evaluate_funding_readiness(
+        study_id=1,
+        project_investment=3000000,
+        owner_contribution=750000,
+        financial_period={
+            "revenue": 12500000,
+            "ebitda": 2500000,
+            "existing_debt": 1200000,
+            "annual_debt_service": 420000,
+        },
+        collateral_records=[
+            {
+                "reported_value": 8000000,
+                "verified_value": None,
+                "verification_status": "USER_REPORTED",
+                "encumbrance_status": "UNENCUMBERED",
+                "encumbrance_amount": None,
+            }
+        ],
+    )
+    assert result["status"] == STATUS_PARTIALLY_READY
+    assert any("user-reported or unverified without documentation" in w for w in result["warnings"])
+    assert result["collateral_snapshot"]["total_verified_value"] == 0
+    assert not any("verified collateral value" in p for p in result["positive_factors"])
+
+
+def test_funding_readiness_remains_deterministic():
+    kwargs = {
+        "study_id": 99,
+        "project_investment": 4500000,
+        "owner_contribution": 1000000,
+        "financial_period": {
+            "revenue": 15000000,
+            "ebitda": 3000000,
+            "existing_debt": 1500000,
+            "annual_debt_service": 500000,
+        },
+        "collateral_records": [
+            {"reported_value": 3000000, "verified_value": 3000000, "verification_status": "VERIFIED", "encumbrance_status": "UNENCUMBERED", "encumbrance_amount": None},
+            {"reported_value": 2000000, "verified_value": None, "verification_status": "DOCUMENT_SUPPORTED", "encumbrance_status": "UNENCUMBERED", "encumbrance_amount": None},
+        ],
+    }
+    r1 = evaluate_funding_readiness(**kwargs)
+    r2 = evaluate_funding_readiness(**kwargs)
+    r3 = evaluate_funding_readiness(**kwargs)
+    assert r1 == r2 == r3
 
 
 # ==============================================================================

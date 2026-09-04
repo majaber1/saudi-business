@@ -9,7 +9,7 @@ import {
 const copy = {
   ar: {
     heading: "جاهزية التمويل",
-    intro: "تقييم أولي معياري لمدى استعداد الشركة والملف التمويلي للتقدم إلى جهات التمويل (بنوك، صناديق تنموية، برنامج كفالة). هذا فحص جاهزية وليس موافقة ائتمانية.",
+    intro: "تقييم الفحص الداخلي لمنصة Saudi Business لمدى استعداد الشركة والملف التمويلي للتقدم لخيارات التمويل. هذا فحص جاهزية وفق معايير فحص داخلية وليس موافقة ائتمانية أو متطلبات رسمية لجهات التمويل.",
     statusLabels: {
       READY: "جاهز للتقديم",
       PARTIALLY_READY: "جاهز جزئياً",
@@ -34,7 +34,7 @@ const copy = {
   },
   en: {
     heading: "Funding Readiness",
-    intro: "Standardized screening assessment of whether the company and project are prepared to approach funding providers (banks, development funds, Kafalah). This evaluates readiness, not credit approval.",
+    intro: "Saudi Business internal screening assessment of whether the company and project are prepared to approach funding options. Evaluates readiness based on internal screening rules, not credit approval or official lender underwriting.",
     statusLabels: {
       READY: "Ready to Approach Funders",
       PARTIALLY_READY: "Partially Ready",
@@ -124,7 +124,7 @@ export default function FundingReadinessSection({ readiness, locale, loading }: 
   // Extract snapshot figures safely
   const gapSnapshot = readiness.funding_gap_snapshot as { funding_gap?: number } | null;
   const capacitySnapshot = readiness.borrowing_capacity_snapshot as { base_capacity?: number } | null;
-  const collateralSnapshot = readiness.collateral_snapshot as { total_reported_value?: number } | null;
+  const collateralSnapshot = readiness.collateral_snapshot as { total_reported_value?: number; total_verified_value?: number } | null;
   const healthSnapshot = readiness.financial_health_snapshot as { debt_service_capacity?: string; leverage?: string } | null;
 
   return (
@@ -177,6 +177,17 @@ export default function FundingReadinessSection({ readiness, locale, loading }: 
               ? `${fmt(collateralSnapshot.total_reported_value, locale)} ${c.sar}`
               : "0 " + c.sar}
           </p>
+          {collateralSnapshot?.total_verified_value !== undefined && collateralSnapshot.total_verified_value > 0 ? (
+            <p className="text-xs text-emerald-700 mt-0.5">
+              {isAr
+                ? `موثّق: ${fmt(collateralSnapshot.total_verified_value, locale)} ${c.sar}`
+                : `Verified: ${fmt(collateralSnapshot.total_verified_value, locale)} ${c.sar}`}
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400 mt-0.5">
+              {isAr ? "غير موثّق مستقلاً" : "Not verified"}
+            </p>
+          )}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-3">
           <p className="text-xs text-ink-500">{c.documentsLabel}</p>

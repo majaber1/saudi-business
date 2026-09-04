@@ -198,7 +198,10 @@ export default function FundingTab({ token, studyId, locale }: Props) {
   }
 
   async function onSetAssumption(kind: "owner" | "facilities") {
-    const value = kind === "owner" ? ownerInput : facilitiesInput;
+    const fallbackVal = typeof document !== "undefined"
+      ? (document.querySelectorAll<HTMLInputElement>('#funding-gap input[type="number"]')[kind === "owner" ? 0 : 1]?.value ?? "")
+      : "";
+    const value = (kind === "owner" ? ownerInput : facilitiesInput) || fallbackVal;
     if (!value) return;
     setAssumptionBusy(kind);
     setError(null);
@@ -213,8 +216,7 @@ export default function FundingTab({ token, studyId, locale }: Props) {
         origin: "USER",
       });
       if (kind === "owner") setOwnerInput(""); else setFacilitiesInput("");
-      const gapRow = await getFundingGap(token, studyId);
-      setGap(gapRow);
+      await reload();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
