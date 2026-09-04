@@ -720,6 +720,94 @@ export function getFundingProgramMatch(token: string, studyId: number, programId
   return authedRequest<FundingProgramMatchResult>(`/studies/${studyId}/funding-matches/${programId}`, token);
 }
 
+// --- Financing Structure (Phase 20: Capstone) -------------------------------
+
+export type FinancingSourceItem = {
+  source_key: string;
+  name_ar: string;
+  name_en: string;
+  source_type: "EQUITY" | "EXISTING_DEBT" | "PROGRAM_DEBT" | "UNFUNDED";
+  amount: number;
+  percentage: number;
+  is_secured: boolean;
+  program_slug?: string | null;
+  official_source_url?: string | null;
+};
+
+export type FinancingUseItem = {
+  category_key: string;
+  name_ar: string;
+  name_en: string;
+  amount: number;
+  percentage: number;
+};
+
+export type FinancingProgramAllocation = {
+  program_id: number;
+  program_slug: string;
+  provider: string;
+  provider_ar: string;
+  program_name_ar: string;
+  program_name_en: string;
+  program_type: string;
+  match_status: string;
+  allocated_amount: number;
+  term_months?: number | null;
+  grace_period_months?: number | null;
+  official_source_url?: string | null;
+};
+
+export type FinancingWarning = {
+  code: string;
+  severity: "CRITICAL" | "WARNING" | "ADVISORY";
+  title_ar: string;
+  title_en: string;
+  message_ar: string;
+  message_en: string;
+};
+
+export type FinancingNextAction = {
+  step_number: number;
+  title_ar: string;
+  title_en: string;
+  status: "READY" | "ACTION_REQUIRED" | "PENDING_VALUATION" | "ELIGIBLE" | "NO_MATCH";
+  description_ar: string;
+  description_en: string;
+};
+
+export type FinancingStructure = {
+  study_id: number;
+  project_name: string;
+  sector: string;
+  stage: string;
+  total_project_requirement: number;
+  owner_equity: number;
+  existing_debt: number;
+  allocated_program_debt: number;
+  total_identified_sources: number;
+  residual_gap: number;
+  surplus: number;
+  equity_percentage: number;
+  debt_percentage: number;
+  debt_to_equity_ratio?: number | null;
+  collateral_coverage_ratio: number;
+  safe_debt_capacity: number;
+  capacity_status: string;
+  sources: FinancingSourceItem[];
+  uses: FinancingUseItem[];
+  program_allocations: FinancingProgramAllocation[];
+  warnings: FinancingWarning[];
+  next_actions: FinancingNextAction[];
+  disclaimer_ar: string;
+  disclaimer_en: string;
+  version: string;
+};
+
+export function getFinancingStructure(token: string, studyId: number, period?: string) {
+  const query = period ? `?period=${encodeURIComponent(period)}` : "";
+  return authedRequest<FinancingStructure>(`/studies/${studyId}/financing-structure/${query}`, token);
+}
+
 // --- Evidence (study provenance layer) ---------------------------------------
 
 export const SOURCE_TYPES = [

@@ -36,6 +36,7 @@ from app.api.collateral import router as collateral_router
 from app.api.funding_readiness import router as funding_readiness_router
 from app.api.funding_programs import router as funding_programs_router
 from app.api.funding_matching import router as funding_matching_router
+from app.api.financing_structure import router as financing_structure_router
 from app.api.auth import UserOut, require_roles
 from app.services.monitoring import metrics_snapshot, observe_request
 
@@ -91,6 +92,7 @@ app.include_router(collateral_router)
 app.include_router(funding_readiness_router)
 app.include_router(funding_programs_router)
 app.include_router(funding_matching_router)
+app.include_router(financing_structure_router)
 
 from app.db import ensure_migrations_applied  # noqa: E402
 

@@ -20,6 +20,7 @@ import {
 import CollateralSection from "@/components/study/CollateralSection";
 import FundingReadinessSection from "@/components/study/FundingReadinessSection";
 import FundingMatchesSection from "@/components/study/FundingMatchesSection";
+import FinancingStructureSection from "@/components/study/FinancingStructureSection";
 import VerifiedFundingProgramsSection from "@/components/study/VerifiedFundingProgramsSection";
 
 const copy = {
@@ -235,6 +236,8 @@ export default function FundingTab({ token, studyId, locale }: Props) {
       <FundingReadinessSection readiness={readiness} locale={locale} loading={readinessLoading} />
 
       <FundingMatchesSection token={token} studyId={studyId} refreshSignal={refreshSignal} />
+
+      <FinancingStructureSection token={token} studyId={studyId} refreshSignal={refreshSignal} />
 
       {/* Company financial data */}
       <section id="company-financial-data">
