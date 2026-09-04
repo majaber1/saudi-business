@@ -500,6 +500,46 @@ export function deleteCollateral(token: string, studyId: number, collateralId: n
   return authedRequest<void>(`/studies/${studyId}/collateral/${collateralId}`, token, { method: "DELETE" });
 }
 
+// --- Funding Readiness (Wave 2) --------------------------------------------------
+
+export const READINESS_STATUSES = ["READY", "PARTIALLY_READY", "NEEDS_INFORMATION", "NOT_READY"] as const;
+export type ReadinessStatus = (typeof READINESS_STATUSES)[number];
+
+export type ActionableStep = {
+  key: string;
+  title_en: string;
+  title_ar: string;
+  action_target: string;
+};
+
+export type FundingReadiness = {
+  study_id: number;
+  status: ReadinessStatus;
+  summary_en: string;
+  summary_ar: string;
+  positive_factors: string[];
+  positive_factors_ar: string[];
+  blocking_factors: string[];
+  blocking_factors_ar: string[];
+  missing_information: string[];
+  missing_information_ar: string[];
+  warnings: string[];
+  warnings_ar: string[];
+  actionable_steps: ActionableStep[];
+  financial_health_snapshot: Record<string, unknown> | null;
+  funding_gap_snapshot: Record<string, unknown> | null;
+  borrowing_capacity_snapshot: Record<string, unknown> | null;
+  collateral_snapshot: Record<string, unknown> | null;
+  documents_status: string;
+  assumptions_used: Record<string, unknown>;
+  calculation_version: string;
+};
+
+export function getFundingReadiness(token: string, studyId: number, period?: string) {
+  const query = period ? `?period=${encodeURIComponent(period)}` : "";
+  return authedRequest<FundingReadiness>(`/studies/${studyId}/funding-readiness/${query}`, token);
+}
+
 // --- Evidence (study provenance layer) ---------------------------------------
 
 export const SOURCE_TYPES = [

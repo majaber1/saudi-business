@@ -80,7 +80,7 @@ const ENCUMBRANCE_STYLE: Record<EncumbranceStatus, string> = {
   UNKNOWN: "bg-slate-100 text-slate-600",
 };
 
-type Props = { token: string; studyId: number; locale: "ar" | "en" };
+type Props = { token: string; studyId: number; locale: "ar" | "en"; onChanged?: () => void };
 
 type FormState = {
   collateral_type: CollateralType;
@@ -118,7 +118,7 @@ function fmt(n: number, locale: "ar" | "en") {
   return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-SA", { maximumFractionDigits: 0 }).format(n);
 }
 
-export default function CollateralSection({ token, studyId, locale }: Props) {
+export default function CollateralSection({ token, studyId, locale, onChanged }: Props) {
   const c = copy[locale];
 
   const [items, setItems] = useState<CollateralItem[] | null>(null);
@@ -201,6 +201,7 @@ export default function CollateralSection({ token, studyId, locale }: Props) {
       setEditingId(null);
       setForm(emptyForm);
       await reload();
+      onChanged?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -212,6 +213,7 @@ export default function CollateralSection({ token, studyId, locale }: Props) {
     try {
       await deleteCollateral(token, studyId, id);
       await reload();
+      onChanged?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -220,7 +222,7 @@ export default function CollateralSection({ token, studyId, locale }: Props) {
   const needsEncumbranceAmount = form.encumbrance_status === "PARTIALLY_ENCUMBERED" || form.encumbrance_status === "FULLY_ENCUMBERED";
 
   return (
-    <section>
+    <section id="collateral-section">
       <h3 className="font-semibold text-ink-900">{c.heading}</h3>
       <p className="mt-1 text-sm text-ink-600">{c.intro}</p>
       {error && <p role="alert" className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}

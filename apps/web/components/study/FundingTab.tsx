@@ -6,6 +6,7 @@ import {
   getBorrowingCapacity,
   getFinancialHealth,
   getFundingGap,
+  getFundingReadiness,
   listFinancialPeriods,
   saveFinancialPeriod,
   type BorrowingCapacity,
@@ -13,9 +14,11 @@ import {
   type FinancialHealth,
   type FinancialPeriodUpdate,
   type FundingGap,
+  type FundingReadiness,
   type HealthMetric,
 } from "@/lib/api";
 import CollateralSection from "@/components/study/CollateralSection";
+import FundingReadinessSection from "@/components/study/FundingReadinessSection";
 
 const copy = {
   ar: {
@@ -135,6 +138,8 @@ export default function FundingTab({ token, studyId, locale }: Props) {
   const [health, setHealth] = useState<FinancialHealth | null | undefined>(undefined);
   const [gap, setGap] = useState<FundingGap | null>(null);
   const [capacity, setCapacity] = useState<BorrowingCapacity | null | undefined>(undefined);
+  const [readiness, setReadiness] = useState<FundingReadiness | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [periodLabel, setPeriodLabel] = useState("FY2025");
@@ -148,18 +153,23 @@ export default function FundingTab({ token, studyId, locale }: Props) {
 
   const reload = useCallback(async () => {
     try {
-      const [periodRows, healthRow, gapRow, capacityRow] = await Promise.all([
+      setReadinessLoading(true);
+      const [periodRows, healthRow, gapRow, capacityRow, readinessRow] = await Promise.all([
         listFinancialPeriods(token, studyId),
         getFinancialHealth(token, studyId),
         getFundingGap(token, studyId),
         getBorrowingCapacity(token, studyId),
+        getFundingReadiness(token, studyId),
       ]);
       setPeriods(periodRows);
       setHealth(healthRow);
       setGap(gapRow);
       setCapacity(capacityRow);
+      setReadiness(readinessRow);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setReadinessLoading(false);
     }
   }, [token, studyId]);
 
@@ -218,8 +228,10 @@ export default function FundingTab({ token, studyId, locale }: Props) {
       <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900">{c.disclaimer}</p>
       {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
+      <FundingReadinessSection readiness={readiness} locale={locale} loading={readinessLoading} />
+
       {/* Company financial data */}
-      <section>
+      <section id="company-financial-data">
         <h3 className="font-semibold text-ink-900">{c.financialData}</h3>
         {periods === null ? (
           <p className="mt-2 text-sm text-ink-500">…</p>
@@ -267,7 +279,7 @@ export default function FundingTab({ token, studyId, locale }: Props) {
       </section>
 
       {/* Financial health */}
-      <section>
+      <section id="financial-health">
         <h3 className="font-semibold text-ink-900">{c.health}</h3>
         {health === undefined ? (
           <p className="mt-2 text-sm text-ink-500">…</p>
@@ -300,7 +312,7 @@ export default function FundingTab({ token, studyId, locale }: Props) {
       </section>
 
       {/* Funding gap */}
-      <section>
+      <section id="funding-gap">
         <h3 className="font-semibold text-ink-900">{c.fundingGap}</h3>
         {gap === null ? (
           <p className="mt-2 text-sm text-ink-500">…</p>
@@ -325,7 +337,7 @@ export default function FundingTab({ token, studyId, locale }: Props) {
       </section>
 
       {/* Borrowing capacity */}
-      <section>
+      <section id="borrowing-capacity">
         <h3 className="font-semibold text-ink-900">{c.capacity}</h3>
         {capacity === undefined ? (
           <p className="mt-2 text-sm text-ink-500">…</p>
@@ -363,7 +375,7 @@ export default function FundingTab({ token, studyId, locale }: Props) {
         )}
       </section>
 
-      <CollateralSection token={token} studyId={studyId} locale={locale} />
+      <CollateralSection token={token} studyId={studyId} locale={locale} onChanged={reload} />
     </div>
   );
 }
