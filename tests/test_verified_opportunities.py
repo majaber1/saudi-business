@@ -150,12 +150,32 @@ def test_franchise_opportunity_fields_and_provenance():
     assert barns["franchise_fee"] is None
     assert barns["verification_status"] == STATUS_VERIFIED_PARTIAL
     assert barns["official_source_url"] == "https://barns.com.sa/en/franchising-and-licensing"
+    prov_barns = barns["field_provenance"]
+    assert prov_barns["opportunity_existence"]["supported"] is True
+    assert prov_barns["opportunity_existence"]["official_source_url"] == barns["official_source_url"]
+    assert prov_barns["opportunity_existence"]["source_document"] == "بوابة الامتياز التجاري الرسمية - بارنز"
+    assert prov_barns["opportunity_existence"]["source_locator"] == "franchising-and-licensing"
+    assert "برنامج الامتياز التجاري" in prov_barns["opportunity_existence"]["evidence_excerpt"]
 
-    prov = barns["field_provenance"]
-    assert prov["opportunity_existence"]["supported"] is True
-    assert prov["opportunity_existence"]["source_document"] == "بوابة الامتياز التجاري الرسمية - بارنز"
-    assert prov["opportunity_existence"]["source_locator"] == "franchising-and-licensing"
-    assert "برنامج الامتياز التجاري" in prov["opportunity_existence"]["evidence_excerpt"]
+    drcafe = next(i for i in items if i["slug"] == "franchise-dr-cafe")
+    assert drcafe["official_source_url"] == "https://drcafe.com/en-sa/franchise-profile"
+    assert drcafe["verification_status"] == STATUS_VERIFIED_PARTIAL
+    prov_drcafe = drcafe["field_provenance"]
+    assert prov_drcafe["opportunity_existence"]["supported"] is True
+    assert prov_drcafe["opportunity_existence"]["official_source_url"] == drcafe["official_source_url"]
+    assert prov_drcafe["opportunity_existence"]["source_document"] == "Franchise Profile - dr.CAFE COFFEE"
+    assert prov_drcafe["opportunity_existence"]["source_locator"] == "/en-sa/franchise-profile"
+    assert "The franchisee is granted the license" in prov_drcafe["opportunity_existence"]["evidence_excerpt"]
+
+    shawarmer = next(i for i in items if i["slug"] == "franchise-shawarmer")
+    assert shawarmer["official_source_url"] == "https://franchise.shawarmer.com/"
+    assert shawarmer["verification_status"] == STATUS_VERIFIED_PARTIAL
+    prov_shawarmer = shawarmer["field_provenance"]
+    assert prov_shawarmer["opportunity_existence"]["supported"] is True
+    assert prov_shawarmer["opportunity_existence"]["official_source_url"] == shawarmer["official_source_url"]
+    assert prov_shawarmer["opportunity_existence"]["source_document"] == "Shawarmer Franchise Portal and Brand Profile Brochure"
+    assert "Downloads/Franchise_Brochure_General_160323.pdf" in prov_shawarmer["opportunity_existence"]["source_locator"]
+    assert "Shawarmer was founded in 1999" in prov_shawarmer["opportunity_existence"]["evidence_excerpt"]
 
 
 def test_create_defaults_to_unverified():

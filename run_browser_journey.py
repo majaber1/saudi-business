@@ -169,27 +169,51 @@ def main():
         # ----------------------------------------------------------------------
         # 4. Inspect Opportunity Details, Exact Primary Evidence & Provenance
         # ----------------------------------------------------------------------
-        print("\nStep 4: Inspecting Opportunity Details, Exact Primary Evidence & Provenance...")
-        details_buttons = page.locator("button:has-text('التفاصيل والأدلة')")
-        details_buttons.first.click()
-        page.wait_for_selector('div[role="dialog"]')
-        print("Opportunity detail modal opened.")
+        print("\nStep 4: Inspecting Opportunity Details, Exact Primary Evidence & Provenance for all 3 actionable records...")
+        
+        expected_sources = {
+            "بارنز": "https://barns.com.sa/en/franchising-and-licensing",
+            "كيف": "https://drcafe.com/en-sa/franchise-profile",
+            "شاورمر": "https://franchise.shawarmer.com/",
+        }
 
-        # Verify facts breakdown sections & exact primary source proof
-        dialog = page.locator('div[role="dialog"]')
-        dialog_text = dialog.inner_text()
-        assert "معلومات منشورة وموثقة" in dialog_text
-        assert "تصنيف المنصة المعياري" in dialog_text
-        assert "معلومات غير معلنة" in dialog_text
-        assert "افتراضات مطلوبة من المستثمر" in dialog_text
-        assert "توثيق وجود الفرصة بالمصدر الأولي" in dialog_text
-        assert "الجهة المصدرية:" in dialog_text
-        assert "رابط المصدر:" in dialog_text
-        print("Verified exact opportunity existence proof and official source provenance.")
+        cards = page.locator('[data-testid="opportunity-card"]').all()
+        assert len(cards) == 3, f"Expected 3 actionable cards, got {len(cards)}"
 
-        # Close modal
-        dialog.locator("button:has-text('إغلاق')").click()
-        page.wait_for_timeout(500)
+        for i in range(len(cards)):
+            card = page.locator('[data-testid="opportunity-card"]').nth(i)
+            card_text = card.inner_text()
+            
+            # Find matching brand
+            matched_key = None
+            for key in expected_sources:
+                if key in card_text:
+                    matched_key = key
+                    break
+            assert matched_key is not None, f"Card does not match any expected brand: {card_text}"
+            expected_url = expected_sources[matched_key]
+
+            # Click details button
+            card.locator("button:has-text('التفاصيل والأدلة')").click()
+            page.wait_for_selector('div[role="dialog"]')
+            dialog = page.locator('div[role="dialog"]')
+            dialog_text = dialog.inner_text()
+
+            assert "معلومات منشورة وموثقة" in dialog_text
+            assert "تصنيف المنصة المعياري" in dialog_text
+            assert "معلومات غير معلنة" in dialog_text
+            assert "افتراضات مطلوبة من المستثمر" in dialog_text
+            assert "توثيق وجود الفرصة بالمصدر الأولي" in dialog_text
+
+            source_link = dialog.locator(f'a[href="{expected_url}"]')
+            assert source_link.is_visible(), f"Expected link with href '{expected_url}' not found in modal for {matched_key}"
+            print(f"Verified official source for {matched_key}: {expected_url}")
+
+            # Close modal
+            dialog.locator("button:has-text('إغلاق')").click()
+            page.wait_for_timeout(500)
+
+        print("Verified all 3 actionable opportunities have exact canonical primary sources and 0 broken source links.")
 
         # ----------------------------------------------------------------------
         # 6. Compare Opportunities Side-by-Side
