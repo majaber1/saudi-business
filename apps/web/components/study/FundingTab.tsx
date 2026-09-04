@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import CollateralSection from "@/components/study/CollateralSection";
 import FundingReadinessSection from "@/components/study/FundingReadinessSection";
+import FundingMatchesSection from "@/components/study/FundingMatchesSection";
 import VerifiedFundingProgramsSection from "@/components/study/VerifiedFundingProgramsSection";
 
 const copy = {
@@ -152,6 +153,8 @@ export default function FundingTab({ token, studyId, locale }: Props) {
   const [facilitiesInput, setFacilitiesInput] = useState("");
   const [assumptionBusy, setAssumptionBusy] = useState<"owner" | "facilities" | null>(null);
 
+  const [refreshSignal, setRefreshSignal] = useState(0);
+
   const reload = useCallback(async () => {
     try {
       setReadinessLoading(true);
@@ -167,6 +170,7 @@ export default function FundingTab({ token, studyId, locale }: Props) {
       setGap(gapRow);
       setCapacity(capacityRow);
       setReadiness(readinessRow);
+      setRefreshSignal((prev) => prev + 1);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -229,6 +233,8 @@ export default function FundingTab({ token, studyId, locale }: Props) {
       {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
       <FundingReadinessSection readiness={readiness} locale={locale} loading={readinessLoading} />
+
+      <FundingMatchesSection token={token} studyId={studyId} refreshSignal={refreshSignal} />
 
       {/* Company financial data */}
       <section id="company-financial-data">

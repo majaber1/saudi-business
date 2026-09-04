@@ -641,6 +641,85 @@ export function getFundingProgramsSummary(token?: string) {
   return request<RegistrySummary>("/funding-programs/summary");
 }
 
+// --- Funding Matching (Phase 19) -------------------------------------------
+
+export type FundingRuleEvaluation = {
+  rule_key: string;
+  rule_name_ar: string;
+  rule_name_en: string;
+  rule_type: string;
+  required_value: unknown;
+  actual_value: unknown;
+  result: "PASS" | "FAIL" | "UNKNOWN";
+  notes_ar: string;
+  notes_en: string;
+  source_url: string;
+  source_authority: string;
+  rule_version: string;
+};
+
+export type FundingProgramMatchResult = {
+  program_id: number;
+  program_slug: string;
+  provider: string;
+  provider_ar: string;
+  program_name_ar: string;
+  program_name_en: string;
+  program_type: string;
+  target_business_stage: string;
+  financing_min?: number | null;
+  financing_max?: number | null;
+  term_months?: number | null;
+  grace_period_months?: number | null;
+  official_source_url: string;
+  source_owner: string;
+  rule_version: string;
+  last_verified_at?: string | null;
+  overall_match_status: "MATCH" | "POSSIBLE_MATCH" | "NEEDS_INFORMATION" | "NOT_MATCHED";
+  status_reason_ar: string;
+  status_reason_en: string;
+  passed_rules: string[];
+  failed_rules: string[];
+  unknown_rules: string[];
+  missing_information: string[];
+  rule_evaluations: FundingRuleEvaluation[];
+};
+
+export type FundingMatchesSummary = {
+  study_id: number;
+  study_profile_snapshot: {
+    project_name: string;
+    sector: string;
+    stage: string;
+    total_project_requirement: number;
+    owner_contribution: number;
+    funding_gap: number;
+    available_collateral: number;
+    collateral_coverage_ratio: number;
+    annual_revenue?: number | null;
+    safe_debt_capacity: number;
+    financial_health_score?: string | null;
+  };
+  total_programs_evaluated: number;
+  matches_count: number;
+  possible_matches_count: number;
+  needs_information_count: number;
+  not_matched_count: number;
+  matches: FundingProgramMatchResult[];
+  disclaimer_ar: string;
+  disclaimer_en: string;
+  calculation_version: string;
+};
+
+export function getFundingMatches(token: string, studyId: number, period?: string) {
+  const query = period ? `?period=${encodeURIComponent(period)}` : "";
+  return authedRequest<FundingMatchesSummary>(`/studies/${studyId}/funding-matches/${query}`, token);
+}
+
+export function getFundingProgramMatch(token: string, studyId: number, programId: number) {
+  return authedRequest<FundingProgramMatchResult>(`/studies/${studyId}/funding-matches/${programId}`, token);
+}
+
 // --- Evidence (study provenance layer) ---------------------------------------
 
 export const SOURCE_TYPES = [
