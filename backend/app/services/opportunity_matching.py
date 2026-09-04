@@ -348,6 +348,10 @@ def evaluate_single_opportunity(
     # --------------------------------------------------------------------------
     # 7. Business Model & Target Customer
     # --------------------------------------------------------------------------
+    # 7. Business Model, Target Customer & Experience Sectors (PREFERENCE)
+    # Evaluated deterministically as PREFERENCE criteria.
+    # Mismatches lower match strength (MATCH -> POSSIBLE_MATCH), never cause NOT_MATCHED.
+    # --------------------------------------------------------------------------
     target_cust = profile_snapshot.get("target_customer")
     if target_cust and target_cust != "ANY":
         if opp.target_customer == target_cust:
@@ -364,6 +368,21 @@ def evaluate_single_opportunity(
                 "source_version": opp.data_version,
                 "provenance": prov.get("opportunity_existence"),
             }
+        elif opp.target_customer is None:
+            criteria["target_customer"] = {
+                "criterion": "target_customer",
+                "label_ar": "نوع العميل المستهدف (B2B / B2C)",
+                "constraint_strength": STRENGTH_PREFERENCE,
+                "user_value": target_cust,
+                "opportunity_value": "غير معلن رسمياً (UNKNOWN)",
+                "result": CRITERION_UNKNOWN,
+                "reason": "نوع العميل المستهدف للفرصة غير منشور رسمياً في البوابة العامة.",
+                "source_type": opp.source_type,
+                "source_url": opp.official_source_url,
+                "source_version": opp.data_version,
+                "provenance": prov.get("opportunity_existence"),
+            }
+            non_critical_unknowns += 1
         else:
             criteria["target_customer"] = {
                 "criterion": "target_customer",
@@ -371,12 +390,96 @@ def evaluate_single_opportunity(
                 "constraint_strength": STRENGTH_PREFERENCE,
                 "user_value": target_cust,
                 "opportunity_value": opp.target_customer or "غير محدد",
-                "result": CRITERION_NOT_APPLICABLE,
-                "reason": f"نوع عميل الفرصة ({opp.target_customer}) يختلف عن خيار المستثمر.",
+                "result": CRITERION_FAIL,
+                "reason": f"نوع عميل الفرصة ({opp.target_customer}) يختلف عن خيار المستثمر ({target_cust})، ويُعد عامل تفضيل.",
                 "source_type": opp.source_type,
                 "source_url": opp.official_source_url,
                 "source_version": opp.data_version,
                 "provenance": prov.get("opportunity_existence"),
+            }
+            preference_mismatches += 1
+
+    # Preferred Business Models
+    preferred_models = profile_snapshot.get("preferred_business_models") or []
+    if preferred_models:
+        if opp.business_model is None:
+            criteria["business_model"] = {
+                "criterion": "business_model",
+                "label_ar": "نموذج العمل التجاري",
+                "constraint_strength": STRENGTH_PREFERENCE,
+                "user_value": preferred_models,
+                "opportunity_value": "غير معلن رسمياً (UNKNOWN)",
+                "result": CRITERION_UNKNOWN,
+                "reason": "نموذج العمل التشغيلي للفرصة غير منشور صراحة في الإفصاح العام.",
+                "source_type": opp.source_type,
+                "source_url": opp.official_source_url,
+                "source_version": opp.data_version,
+                "provenance": prov.get("opportunity_existence"),
+            }
+            non_critical_unknowns += 1
+        elif any(
+            m.strip().lower() in opp.business_model.lower() or opp.business_model.lower() in m.strip().lower()
+            for m in preferred_models if m.strip()
+        ):
+            criteria["business_model"] = {
+                "criterion": "business_model",
+                "label_ar": "نموذج العمل التجاري",
+                "constraint_strength": STRENGTH_PREFERENCE,
+                "user_value": preferred_models,
+                "opportunity_value": opp.business_model,
+                "result": CRITERION_PASS,
+                "reason": f"نموذج عمل الفرصة ({opp.business_model}) يتوافق مع نماذج العمل المفضلة للمستثمر.",
+                "source_type": opp.source_type,
+                "source_url": opp.official_source_url,
+                "source_version": opp.data_version,
+                "provenance": prov.get("opportunity_existence"),
+            }
+        else:
+            criteria["business_model"] = {
+                "criterion": "business_model",
+                "label_ar": "نموذج العمل التجاري",
+                "constraint_strength": STRENGTH_PREFERENCE,
+                "user_value": preferred_models,
+                "opportunity_value": opp.business_model,
+                "result": CRITERION_FAIL,
+                "reason": f"نموذج عمل الفرصة ({opp.business_model}) يختلف عن التفضيلات المحددة، كعامل تفضيل غير حتمي.",
+                "source_type": opp.source_type,
+                "source_url": opp.official_source_url,
+                "source_version": opp.data_version,
+                "provenance": prov.get("opportunity_existence"),
+            }
+            preference_mismatches += 1
+
+    # Experience Sectors
+    experience_sectors = profile_snapshot.get("experience_sectors") or []
+    if experience_sectors:
+        if opp.sector in experience_sectors:
+            criteria["experience_sector"] = {
+                "criterion": "experience_sector",
+                "label_ar": "توافق الخبرة السابقة للمستثمر",
+                "constraint_strength": STRENGTH_PREFERENCE,
+                "user_value": experience_sectors,
+                "opportunity_value": opp.sector,
+                "result": CRITERION_PASS,
+                "reason": f"يمتلك المستثمر خبرة سابقة في قطاع الفرصة ({opp.sector}). (ملاحظة: الخبرة السابقة ميزة تفضيلية ولا تضمن الأداء المالي).",
+                "source_type": opp.source_type,
+                "source_url": opp.official_source_url,
+                "source_version": opp.data_version,
+                "provenance": prov.get("sector"),
+            }
+        else:
+            criteria["experience_sector"] = {
+                "criterion": "experience_sector",
+                "label_ar": "توافق الخبرة السابقة للمستثمر",
+                "constraint_strength": STRENGTH_PREFERENCE,
+                "user_value": experience_sectors,
+                "opportunity_value": opp.sector,
+                "result": CRITERION_FAIL,
+                "reason": f"قطاع الفرصة ({opp.sector}) ليس ضمن القطاعات التي يمتلك المستثمر خبرة فيها، ويُعامل كعامل تفضيل استرشادي فقط.",
+                "source_type": opp.source_type,
+                "source_url": opp.official_source_url,
+                "source_version": opp.data_version,
+                "provenance": prov.get("sector"),
             }
             preference_mismatches += 1
 

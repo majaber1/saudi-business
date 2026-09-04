@@ -92,16 +92,19 @@ export default function OpportunitiesPage() {
   const [createStudyError, setCreateStudyError] = useState("");
   const [studyMatchResultId, setStudyMatchResultId] = useState<number | undefined>(undefined);
 
-  // Fit & Matching states (Wave 3B)
+  // Fit & Matching states (Wave 3B) - Neutral defaults for new users
   const [fitProfile, setFitProfile] = useState<FitProfile>({
-    available_capital: 450000,
+    available_capital: null,
     capital_constraint_type: "HARD",
-    preferred_sectors: ["food_beverage"],
+    preferred_sectors: [],
     excluded_sectors: [],
-    preferred_opportunity_types: ["FRANCHISE"],
+    preferred_opportunity_types: [],
     opportunity_type_constraint: "PREFERENCE",
-    target_region: "KSA_NATIONAL",
-    target_city: "",
+    target_region: null,
+    target_city: null,
+    preferred_business_models: [],
+    target_customer: null,
+    experience_sectors: [],
     notes: "",
   });
   const [matchRun, setMatchRun] = useState<MatchRunResponse | null>(null);
@@ -154,10 +157,16 @@ export default function OpportunitiesPage() {
           setFitProfile((prev) => ({
             ...prev,
             ...prof,
-            available_capital: prof.available_capital ?? prev.available_capital,
-            preferred_sectors: prof.preferred_sectors?.length ? prof.preferred_sectors : prev.preferred_sectors,
+            available_capital: prof.available_capital !== undefined ? prof.available_capital : prev.available_capital,
+            preferred_sectors: prof.preferred_sectors ?? [],
             excluded_sectors: prof.excluded_sectors ?? [],
-            preferred_opportunity_types: prof.preferred_opportunity_types?.length ? prof.preferred_opportunity_types : prev.preferred_opportunity_types,
+            preferred_opportunity_types: prof.preferred_opportunity_types ?? [],
+            preferred_business_models: prof.preferred_business_models ?? [],
+            target_customer: prof.target_customer ?? null,
+            experience_sectors: prof.experience_sectors ?? [],
+            target_region: prof.target_region ?? null,
+            target_city: prof.target_city ?? null,
+            notes: prof.notes ?? "",
           }));
         }
         if (run) {
@@ -674,7 +683,7 @@ export default function OpportunitiesPage() {
                   </label>
                   <select
                     data-testid="opp-type-select"
-                    value={fitProfile.preferred_opportunity_types?.[0] ?? "FRANCHISE"}
+                    value={fitProfile.preferred_opportunity_types?.[0] ?? ""}
                     onChange={(e) =>
                       setFitProfile({
                         ...fitProfile,
@@ -683,9 +692,86 @@ export default function OpportunitiesPage() {
                     }
                     className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs outline-none focus:border-brand-500"
                   >
+                    <option value="">{ar ? "الكل / بدون تفضيل محدد" : "All / No Preference"}</option>
                     <option value="FRANCHISE">{ar ? "امتياز تجاري (FRANCHISE)" : "Franchise"}</option>
                     <option value="BUSINESS_OPPORTUNITY">{ar ? "فرصة مستقلة (BUSINESS_OPPORTUNITY)" : "Business Opportunity"}</option>
                   </select>
+                </div>
+
+                {/* Target Customer */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "نوع العميل المستهدف" : "Target Customer"}
+                  </label>
+                  <select
+                    data-testid="target-customer-select"
+                    value={fitProfile.target_customer ?? ""}
+                    onChange={(e) =>
+                      setFitProfile({
+                        ...fitProfile,
+                        target_customer: e.target.value || null,
+                      })
+                    }
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs outline-none focus:border-brand-500"
+                  >
+                    <option value="">{ar ? "الكل / بدون تفضيل محدد" : "All / No Preference"}</option>
+                    <option value="B2C">{ar ? "أفراد ومستهلكين (B2C)" : "Consumers (B2C)"}</option>
+                    <option value="B2B">{ar ? "منشآت وشركات (B2B)" : "Businesses (B2B)"}</option>
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {ar ? "تفضيل استرشادي يحدد درجة التوافق" : "Preference factor for fit alignment"}
+                  </p>
+                </div>
+
+                {/* Preferred Business Model */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "نموذج العمل المفضل" : "Preferred Business Model"}
+                  </label>
+                  <input
+                    data-testid="business-model-input"
+                    type="text"
+                    value={fitProfile.preferred_business_models?.[0] ?? ""}
+                    onChange={(e) =>
+                      setFitProfile({
+                        ...fitProfile,
+                        preferred_business_models: e.target.value.trim() ? [e.target.value.trim()] : [],
+                      })
+                    }
+                    placeholder={ar ? "مثال: Franchise Branch أو Drive-Thru أو Wholesale" : "e.g. Franchise Branch, Drive-Thru"}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 p-2.5 text-xs outline-none focus:border-brand-500"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {ar ? "تفضيل تشغيلي غير مستبعد حتمياً" : "Non-critical operational preference"}
+                  </p>
+                </div>
+
+                {/* Experience Sector */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "قطاع الخبرة السابقة للمستثمر" : "Investor Experience Sector"}
+                  </label>
+                  <select
+                    data-testid="experience-sectors-select"
+                    value={fitProfile.experience_sectors?.[0] ?? ""}
+                    onChange={(e) =>
+                      setFitProfile({
+                        ...fitProfile,
+                        experience_sectors: e.target.value ? [e.target.value] : [],
+                      })
+                    }
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs outline-none focus:border-brand-500"
+                  >
+                    <option value="">{ar ? "لا توجد خبرة محددة" : "No specific sector experience"}</option>
+                    {SECTOR_OPTIONS.filter((s) => s.value).map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {ar ? s.label_ar : s.label_en}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {ar ? "عامل تفضيل ولا يؤدي لاستبعاد الفرص" : "Preference factor; never excludes opportunities"}
+                  </p>
                 </div>
 
                 {/* Target Region */}
@@ -719,7 +805,7 @@ export default function OpportunitiesPage() {
                 </div>
 
                 {/* Notes */}
-                <div className="sm:col-span-2 lg:col-span-2">
+                <div className="sm:col-span-2 lg:col-span-3">
                   <label className="block text-xs font-semibold text-slate-700">
                     {ar ? "ملاحظات إضافية وتفضيلات استثمارية" : "Additional Investor Notes"}
                   </label>

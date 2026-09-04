@@ -228,6 +228,19 @@ def main():
         page.wait_for_selector('[data-testid="capital-input"]')
         print("Fit profile constraints form is visible.")
 
+        # Verify brand-new user starts with neutral / empty capital (no manufactured 450,000 value)
+        initial_capital_val = page.locator('[data-testid="capital-input"]').input_value()
+        assert initial_capital_val == "", f"Expected empty initial capital, got '{initial_capital_val}'"
+        placeholder_val = page.locator('[data-testid="capital-input"]').get_attribute("placeholder")
+        assert "450,000" in (placeholder_val or ""), "Expected 450,000 placeholder hint"
+        print("Confirmed: Brand-new user starts with empty capital (no synthetic 450,000 default value).")
+
+        # Verify new fit preference fields are visible in the form
+        assert page.locator('[data-testid="target-customer-select"]').is_visible()
+        assert page.locator('[data-testid="business-model-input"]').is_visible()
+        assert page.locator('[data-testid="experience-sectors-select"]').is_visible()
+        print("Confirmed: target_customer, preferred_business_models, and experience_sectors are visible in UI.")
+
         # Set capital to 500,000 SAR
         page.fill('[data-testid="capital-input"]', "500000")
 

@@ -910,3 +910,220 @@ def test_semantic_hardening_n_negative_capital_422():
         )
         assert r.status_code == 422, f"Expected 422 for available_capital={neg_val}, got {r.status_code}"
 
+
+def test_semantic_hardening_o_new_user_starts_neutral_no_manufactured_defaults():
+    """O. A brand new user profile is empty/neutral without manufactured capital or preferences."""
+    _, tok = _register_and_login("neutral_defaults_user")
+    headers = _auth(tok)
+
+    # Initially GET /fit-profile returns None (no profile created yet)
+    r = client.get("/api/v1/opportunities/fit-profile", headers=headers)
+    assert r.status_code == 200
+    assert r.json() is None
+
+    # When created with neutral defaults
+    r_post = client.post(
+        "/api/v1/opportunities/fit-profile",
+        json={
+            "available_capital": None,
+            "capital_constraint_type": "HARD",
+            "preferred_sectors": [],
+            "excluded_sectors": [],
+            "preferred_opportunity_types": [],
+            "opportunity_type_constraint": "PREFERENCE",
+            "target_region": None,
+            "target_city": None,
+            "preferred_business_models": [],
+            "target_customer": None,
+            "experience_sectors": [],
+            "notes": "",
+        },
+        headers=headers,
+    )
+    assert r_post.status_code == 200
+    p = r_post.json()
+    assert p["available_capital"] is None
+    assert p["preferred_sectors"] == []
+    assert p["excluded_sectors"] == []
+    assert p["preferred_opportunity_types"] == []
+    assert p["target_region"] is None
+    assert p["target_city"] is None
+    assert p["preferred_business_models"] == []
+    assert p["target_customer"] is None
+    assert p["experience_sectors"] == []
+
+
+def test_semantic_hardening_p_unknown_investment_requires_explicit_study_budget():
+    """P. When opportunity investment is UNKNOWN and user has no custom budget, study creation fails."""
+    _, tok = _register_and_login("unknown_study_budget")
+    headers = _auth(tok)
+
+    db = app_db.SessionLocal()
+    try:
+        # dr.CAFE has unknown investment_min
+        drcafe = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-dr-cafe").first()
+        assert drcafe is not None
+        assert drcafe.investment_min is None
+
+        # Attempt to create study without custom_budget -> must fail with 400
+        r_fail = client.post(
+            f"/api/v1/opportunities/{drcafe.id}/create-study",
+            json={},
+            headers=headers,
+        )
+        assert r_fail.status_code == 400
+        assert "الميزانية" in r_fail.text or "budget" in r_fail.text.lower()
+
+        # Attempt with 0 -> must fail with 400
+        r_fail_zero = client.post(
+            f"/api/v1/opportunities/{drcafe.id}/create-study",
+            json={"custom_budget": 0},
+            headers=headers,
+        )
+        assert r_fail_zero.status_code == 400
+    finally:
+        db.close()
+
+
+def test_semantic_hardening_q_explicit_user_budget_persists_as_user_assumption():
+    """Q. Explicit user budget persists as USER_ASSUMPTION in study payload & lineage."""
+    _, tok = _register_and_login("user_assumption_study")
+    headers = _auth(tok)
+
+    db = app_db.SessionLocal()
+    try:
+        drcafe = db.query(models.VerifiedOpportunity).filter_by(slug="franchise-dr-cafe").first()
+        assert drcafe is not None
+
+        user_budget = 350000.0
+        r = client.post(
+            f"/api/v1/opportunities/{drcafe.id}/create-study",
+            json={"custom_budget": user_budget, "study_title": "دراسة د.كيف التجريبية"},
+            headers=headers,
+        )
+        assert r.status_code == 201
+        data = r.json()
+        study_id = data["study_id"]
+
+        study = db.query(models.FeasibilityStudy).filter_by(id=study_id).first()
+        assert study is not None
+        assert study.source_opportunity_lineage["budget_type"] == "USER_ASSUMPTION"
+        assert study.source_opportunity_lineage["is_user_assumption"] is True
+        assert study.source_opportunity_lineage["budget_amount"] == user_budget
+        assert study.payload["budget_type"] == "USER_ASSUMPTION"
+        assert study.payload["investment"] == user_budget
+    finally:
+        db.close()
+
+
+def test_semantic_hardening_r_preferred_business_models_deterministic_evaluation():
+    """R. preferred_business_models is evaluated as PREFERENCE (PASS/FAIL/UNKNOWN, never causes NOT_MATCHED alone)."""
+    _, tok = _register_and_login("pref_model_eval")
+    headers = _auth(tok)
+
+    # Set profile with preferred business model "Drive-Thru" and neutral capital
+    client.post(
+        "/api/v1/opportunities/fit-profile",
+        json={
+            "available_capital": None,
+            "capital_constraint_type": "HARD",
+            "preferred_sectors": ["food_beverage"],
+            "preferred_business_models": ["Drive-Thru"],
+        },
+        headers=headers,
+    )
+
+    r_run = client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+    assert r_run.status_code == 200
+    results = r_run.json()["results"]
+
+    # Find Barn's (Franchise Drive-Thru / In-Store) -> should PASS business_model
+    barns_res = next(r for r in results if r["slug"] == "franchise-barns-cafe")
+    assert barns_res["criteria_evaluations"]["business_model"]["result"] == CRITERION_PASS
+    assert barns_res["criteria_evaluations"]["business_model"]["constraint_strength"] == "PREFERENCE"
+    assert barns_res["match_state"] == STATE_MATCH
+
+    # Find Shawarmer (Quick Service Restaurant Franchise) -> should FAIL business_model, but NOT_MATCHED must not be triggered solely by this preference
+    shawarmer_res = next(r for r in results if r["slug"] == "franchise-shawarmer")
+    assert shawarmer_res["criteria_evaluations"]["business_model"]["result"] == CRITERION_FAIL
+    assert shawarmer_res["criteria_evaluations"]["business_model"]["constraint_strength"] == "PREFERENCE"
+    # Preference mismatch yields POSSIBLE_MATCH, never NOT_MATCHED
+    assert shawarmer_res["match_state"] == STATE_POSSIBLE_MATCH
+
+
+def test_semantic_hardening_s_experience_sectors_deterministic_evaluation():
+    """S. experience_sectors is evaluated as PREFERENCE (never causes NOT_MATCHED alone)."""
+    _, tok = _register_and_login("exp_sector_eval")
+    headers = _auth(tok)
+
+    # User with experience in logistics and neutral capital
+    client.post(
+        "/api/v1/opportunities/fit-profile",
+        json={
+            "available_capital": None,
+            "capital_constraint_type": "HARD",
+            "preferred_sectors": ["food_beverage"],
+            "experience_sectors": ["logistics"],
+        },
+        headers=headers,
+    )
+
+    r_run = client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+    assert r_run.status_code == 200
+    results = r_run.json()["results"]
+
+    # Barn's (sector=food_beverage) -> experience_sector should FAIL as PREFERENCE
+    barns_res = next(r for r in results if r["slug"] == "franchise-barns-cafe")
+    assert barns_res["criteria_evaluations"]["experience_sector"]["result"] == CRITERION_FAIL
+    assert barns_res["criteria_evaluations"]["experience_sector"]["constraint_strength"] == "PREFERENCE"
+    # Preference mismatch makes it POSSIBLE_MATCH, never NOT_MATCHED
+    assert barns_res["match_state"] == STATE_POSSIBLE_MATCH
+
+    # Update profile: add food_beverage to experience_sectors
+    client.post(
+        "/api/v1/opportunities/fit-profile",
+        json={
+            "available_capital": None,
+            "capital_constraint_type": "HARD",
+            "preferred_sectors": ["food_beverage"],
+            "experience_sectors": ["food_beverage"],
+            "preferred_business_models": ["Drive-Thru"],
+            "target_customer": "B2C",
+        },
+        headers=headers,
+    )
+
+    r_run2 = client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+    barns_res2 = next(r for r in r_run2.json()["results"] if r["slug"] == "franchise-barns-cafe")
+    assert barns_res2["criteria_evaluations"]["experience_sector"]["result"] == CRITERION_PASS
+    assert barns_res2["criteria_evaluations"]["target_customer"]["result"] == CRITERION_PASS
+    assert barns_res2["match_state"] == STATE_MATCH
+
+
+def test_semantic_hardening_t_target_customer_deterministic_evaluation():
+    """T. target_customer (B2B / B2C) is evaluated as PREFERENCE (PASS/FAIL/UNKNOWN)."""
+    _, tok = _register_and_login("target_cust_eval")
+    headers = _auth(tok)
+
+    # User targeting B2B with neutral capital
+    client.post(
+        "/api/v1/opportunities/fit-profile",
+        json={
+            "available_capital": None,
+            "capital_constraint_type": "HARD",
+            "target_customer": "B2B",
+        },
+        headers=headers,
+    )
+
+    r_run = client.post("/api/v1/opportunities/fit-evaluate", headers=headers)
+    assert r_run.status_code == 200
+    results = r_run.json()["results"]
+
+    # Barn's is B2C -> target_customer is FAIL (PREFERENCE), so match_state is POSSIBLE_MATCH (not NOT_MATCHED)
+    barns_res = next(r for r in results if r["slug"] == "franchise-barns-cafe")
+    assert barns_res["criteria_evaluations"]["target_customer"]["result"] == CRITERION_FAIL
+    assert barns_res["criteria_evaluations"]["target_customer"]["constraint_strength"] == "PREFERENCE"
+    assert barns_res["match_state"] == STATE_POSSIBLE_MATCH
+
+
