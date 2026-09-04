@@ -131,79 +131,64 @@ def main():
         print("\nStep 3: Browsing opportunities and testing filters...")
         page.wait_for_selector('[data-testid="opportunity-card"]', timeout=10000)
         cards = page.locator('[data-testid="opportunity-card"]').all()
-        print(f"Initial opportunities displayed: {len(cards)} items")
-        assert len(cards) == 11, f"Expected exactly 11 opportunity cards, got {len(cards)}"
+        print(f"Initial actionable opportunities displayed: {len(cards)} items")
+        # Wave 3A: Only actual proven opportunities (3 franchises) are actionable
+        assert len(cards) == 3, f"Expected exactly 3 actionable opportunities, got {len(cards)}"
 
-        # Filter by sector: logistics
-        print("Filtering by sector: logistics...")
-        page.select_option("select:has-text('جميع القطاعات')", value="logistics")
+        # Filter by sector: food_beverage
+        print("Filtering by sector: food_beverage...")
+        page.select_option("select:has-text('جميع القطاعات')", value="food_beverage")
         page.wait_for_timeout(1000)
         filtered_cards = page.locator('[data-testid="opportunity-card-title"]').all_inner_texts()
-        print(f"Filtered cards (logistics): {len(filtered_cards)} items")
-        assert any("تخزين مبرد" in c for c in filtered_cards)
+        print(f"Filtered cards (food_beverage): {len(filtered_cards)} items")
+        assert len(filtered_cards) == 3
+        assert any("بارنز" in c for c in filtered_cards)
 
         # Reset sector filter
         page.select_option("select:has-text('القطاعات')", value="")
         page.wait_for_timeout(1000)
 
-        # Filter by budget: 400000
-        print("Filtering by budget: 400,000 SAR...")
+        # Filter by budget: 400000 (Rule C: confirm UNKNOWN budget is NOT shown as fit)
+        print("Filtering by budget: 400,000 SAR (Verifying UNKNOWN budget != budget fit)...")
         page.fill('input[type="number"]', "400000")
         page.wait_for_timeout(1000)
-        budget_cards = page.locator('[data-testid="opportunity-card"]').all()
-        print(f"Filtered cards (budget <= 400k): {len(budget_cards)} items")
-        assert len(budget_cards) >= 1
+
+        # Verify budget fit section shows empty message
+        assert page.locator('[data-testid="budget-fit-empty"]').is_visible()
+        # Verify unknown budget opportunities are isolated in clearly separate group
+        assert page.locator('[data-testid="budget-unknown-group"]').is_visible()
+        assert page.locator('[data-testid="budget-unknown-notice"]').is_visible()
+        unknown_cards = page.locator('[data-testid="budget-unknown-group"] [data-testid="opportunity-card"]').all()
+        assert len(unknown_cards) == 3
+        print(f"Confirmed: UNKNOWN budget is NOT shown as fit ({len(unknown_cards)} isolated in budget-unknown group).")
 
         # Clear budget
         page.fill('input[type="number"]', "")
         page.wait_for_timeout(1000)
 
         # ----------------------------------------------------------------------
-        # 4. Inspect Business Opportunity Details & Provenance
+        # 4. Inspect Opportunity Details, Exact Primary Evidence & Provenance
         # ----------------------------------------------------------------------
-        print("\nStep 4: Inspecting Business Opportunity Details & Provenance...")
-        page.click("button:has-text('الفرص التجارية والصناعية')")
-        page.wait_for_timeout(1000)
-
-        # Open details for first business opportunity
+        print("\nStep 4: Inspecting Opportunity Details, Exact Primary Evidence & Provenance...")
         details_buttons = page.locator("button:has-text('التفاصيل والأدلة')")
         details_buttons.first.click()
         page.wait_for_selector('div[role="dialog"]')
-        print("Business opportunity detail modal opened.")
+        print("Opportunity detail modal opened.")
 
-        # Verify facts breakdown sections
+        # Verify facts breakdown sections & exact primary source proof
         dialog = page.locator('div[role="dialog"]')
         dialog_text = dialog.inner_text()
         assert "معلومات منشورة وموثقة" in dialog_text
         assert "تصنيف المنصة المعياري" in dialog_text
         assert "معلومات غير معلنة" in dialog_text
         assert "افتراضات مطلوبة من المستثمر" in dialog_text
+        assert "توثيق وجود الفرصة بالمصدر الأولي" in dialog_text
         assert "الجهة المصدرية:" in dialog_text
         assert "رابط المصدر:" in dialog_text
-        print("Verified facts breakdown and official source provenance.")
+        print("Verified exact opportunity existence proof and official source provenance.")
 
         # Close modal
         dialog.locator("button:has-text('إغلاق')").click()
-        page.wait_for_timeout(500)
-
-        # ----------------------------------------------------------------------
-        # 5. Inspect Franchise Opportunity Details & Evidence
-        # ----------------------------------------------------------------------
-        print("\nStep 5: Inspecting Franchise Opportunity Details & Evidence...")
-        page.click("button:has-text('فرص الامتياز التجاري (الفرانشايز)')")
-        page.wait_for_timeout(1000)
-
-        # Open details for first franchise
-        page.locator("button:has-text('التفاصيل والأدلة')").first.click()
-        page.wait_for_selector('div[role="dialog"]')
-        f_dialog = page.locator('div[role="dialog"]')
-        f_dialog_text = f_dialog.inner_text()
-        assert "امتياز تجاري" in f_dialog_text
-        assert "رسوم الامتياز" in f_dialog_text or "المساحة المطلوبة" in f_dialog_text
-        assert "الجهة المصدرية:" in f_dialog_text
-        print("Verified franchise opportunity details, fees, and provenance.")
-
-        f_dialog.locator("button:has-text('إغلاق')").click()
         page.wait_for_timeout(500)
 
         # ----------------------------------------------------------------------

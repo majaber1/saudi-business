@@ -3,7 +3,8 @@ import type { NextRequest } from "next/server";
 export const SESSION_COOKIE = "sb_session";
 
 export function backendUrl(path: string) {
-  const origin = (process.env.BACKEND_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+  const origin = process.env.BACKEND_API_URL?.replace(/\/$/, "");
+  if (!origin) throw new Error("BACKEND_API_URL is not configured");
   return `${origin}/${path.replace(/^\//, "")}`;
 }
 

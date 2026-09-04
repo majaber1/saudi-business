@@ -53,11 +53,21 @@ export default function OpportunitiesPage() {
   const [geography, setGeography] = useState("");
   const [budget, setBudget] = useState<string>("");
   const [search, setSearch] = useState("");
-
   // Data states
   const [items, setItems] = useState<VerifiedOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const parsedBudget = parseFloat(budget);
+  const hasBudget = !Number.isNaN(parsedBudget) && parsedBudget > 0;
+  const budgetFitItems = useMemo(
+    () => (hasBudget ? items.filter((o) => o.investment_min !== null && o.investment_min !== undefined && o.investment_min <= parsedBudget) : []),
+    [hasBudget, items, parsedBudget]
+  );
+  const budgetUnknownItems = useMemo(
+    () => (hasBudget ? items.filter((o) => o.investment_min === null || o.investment_min === undefined) : []),
+    [hasBudget, items]
+  );
 
   // Selection for comparison (max 4)
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -88,7 +98,6 @@ export default function OpportunitiesPage() {
       type: filterType,
       sector: sector || undefined,
       geography: geography || undefined,
-      max_budget: !Number.isNaN(parsedBudget) && parsedBudget > 0 ? parsedBudget : undefined,
       search: search.trim() || undefined,
     })
       .then((data) => {
@@ -193,6 +202,126 @@ export default function OpportunitiesPage() {
       setCreateStudyError(err instanceof Error ? err.message : String(err));
       setCreatingStudy(false);
     }
+  };
+
+  const renderCard = (opp: VerifiedOpportunity) => {
+    const isCompared = selectedIds.includes(opp.id);
+    const isFranchise = opp.opportunity_type === "FRANCHISE";
+
+    return (
+      <div
+        key={opp.id}
+        data-testid="opportunity-card"
+        className="flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+      >
+        <div>
+          {/* Badges */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                isFranchise ? "bg-purple-100 text-purple-800" : "bg-emerald-100 text-emerald-800"
+              }`}
+            >
+              {isFranchise ? (ar ? "امتياز تجاري" : "Franchise") : (ar ? "فرصة استثمارية" : "Business Opp")}
+            </span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600">
+              {opp.verification_status}
+            </span>
+          </div>
+
+          {/* Title & Brand */}
+          <h3 data-testid="opportunity-card-title" className="mt-3 text-base font-bold text-slate-900">
+            {ar ? opp.title_ar : opp.title_en}
+          </h3>
+          {opp.brand_name && (
+            <p className="mt-0.5 text-xs font-semibold text-brand-700">{opp.brand_name}</p>
+          )}
+          <p className="mt-1 text-xs text-slate-500">
+            {opp.sector} {opp.city ? `· ${opp.city}` : ""}
+          </p>
+
+          {/* Description excerpt */}
+          <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-slate-600">
+            {ar ? opp.description_ar : opp.description_en}
+          </p>
+
+          {/* Financial and Requirements Facts */}
+          <div className="mt-5 space-y-2 rounded-2xl bg-slate-50/80 p-3.5 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">{ar ? "الاستثمار التقديري:" : "Est. Investment:"}</span>
+              <span className="font-mono font-medium text-slate-900">
+                {opp.investment_min
+                  ? `${fmtSAR(opp.investment_min, locale)} – ${fmtSAR(opp.investment_max, locale)}`
+                  : (ar ? "غير معلن - يحدده المستثمر" : "Unannounced (Investor Assumption)")}
+              </span>
+            </div>
+
+            {isFranchise && (
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">{ar ? "رسوم الامتياز:" : "Franchise Fee:"}</span>
+                <span className="font-mono font-medium text-slate-900">
+                  {opp.franchise_fee !== null && opp.franchise_fee !== undefined
+                    ? fmtSAR(opp.franchise_fee, locale)
+                    : (ar ? "غير معلن في البوابة العامة" : "Unannounced")}
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">{ar ? "المساحة التشغيلية:" : "Space:"}</span>
+              <span className="text-slate-800">
+                {opp.required_space || (ar ? "غير معلن - حسب نموذج الموقع" : "Site-specific")}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-200/60 pt-1.5 text-[11px]">
+              <span className="text-slate-500">{ar ? "المصدر الرسمي:" : "Source:"}</span>
+              <span className="truncate text-slate-700" title={opp.source_owner}>
+                {opp.source_owner}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="mt-5 border-t border-slate-100 pt-4">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => openDetail(opp.id)}
+              className="rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+            >
+              {ar ? "التفاصيل والأدلة" : "Details & Evidence"}
+            </button>
+            <button
+              onClick={() => openCreateStudy(opp)}
+              className="rounded-xl bg-brand-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-700"
+            >
+              {ar ? "إنشاء دراسة جدوى" : "Create Study"}
+            </button>
+          </div>
+
+          <div className="mt-2.5 flex items-center justify-between text-xs">
+            <button
+              onClick={() => toggleComparison(opp.id)}
+              className={`text-[11px] font-medium transition ${
+                isCompared ? "font-bold text-brand-700" : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              {isCompared ? (ar ? "✓ مضاف للمقارنة" : "✓ In Compare") : (ar ? "+ إضافة للمقارنة" : "+ Add to Compare")}
+            </button>
+
+            <a
+              href={opp.official_source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-slate-400 hover:text-slate-700 hover:underline"
+            >
+              {ar ? "رابط المصدر ↗" : "Official Link ↗"}
+            </a>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -515,127 +644,55 @@ export default function OpportunitiesPage() {
               <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-600">
                 {ar ? "لا توجد فرص مطابقة للشروط المحددة حالياً." : "No matching opportunities found."}
               </div>
+            ) : hasBudget ? (
+              <div className="mt-8 space-y-10">
+                {/* Section 1: Known Budget Fit */}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-bold text-slate-900">
+                      {ar ? `الفرص المتوافقة مع الميزانية (${fmtSAR(parsedBudget, locale)})` : `Budget-Fit Opportunities (${fmtSAR(parsedBudget, locale)})`}
+                    </h2>
+                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+                      {budgetFitItems.length} {ar ? "فرص متوافقة" : "Fit"}
+                    </span>
+                  </div>
+                  {budgetFitItems.length === 0 ? (
+                    <div data-testid="budget-fit-empty" className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-6 text-center text-xs text-slate-600">
+                      {ar ? "لا توجد فرص ذات تكلفة استثمارية معلنة تناسب هذه الميزانية حالياً." : "No opportunities with announced investment fit this budget currently."}
+                    </div>
+                  ) : (
+                    <div data-testid="budget-fit-group" className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                      {budgetFitItems.map(renderCard)}
+                    </div>
+                  )}
+                </div>
+
+                {/* Section 2: Budget Unknown (Clearly Separated) */}
+                {budgetUnknownItems.length > 0 && (
+                  <div data-testid="budget-unknown-group" className="border-t border-slate-200 pt-8">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-lg font-bold text-slate-900">
+                        {ar ? "فرص غير معلنة الميزانية رسمياً — تتطلب افتراض ميزانية" : "Unannounced Budget Opportunities — Investor Assumption Required"}
+                      </h2>
+                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                        {budgetUnknownItems.length} {ar ? "غير معلن" : "Unknown Budget"}
+                      </span>
+                    </div>
+                    <div data-testid="budget-unknown-notice" className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 leading-relaxed">
+                      <strong>{ar ? "تنبيه الشفافية والموثوقية:" : "Transparency Notice:"}</strong>{" "}
+                      {ar
+                        ? "هذه الفرص موثقة رسمياً لكن الحد الأدنى للاستثمار لم يُنشر في مصادرها المعلنة، ولذا لا تُعد متوافقة مع ميزانيتك تلقائياً حتى يتم تحديد افتراض مالي مستقل."
+                        : "These opportunities are officially verified but their minimum investment is unannounced, so they are NOT classified as matching your budget until you provide an assumption."}
+                    </div>
+                    <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                      {budgetUnknownItems.map(renderCard)}
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {items.map((opp) => {
-                  const isCompared = selectedIds.includes(opp.id);
-                  const isFranchise = opp.opportunity_type === "FRANCHISE";
-
-                  return (
-                    <div
-                      key={opp.id}
-                      data-testid="opportunity-card"
-                      className="flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                    >
-                      <div>
-                        {/* Badges */}
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                              isFranchise ? "bg-purple-100 text-purple-800" : "bg-emerald-100 text-emerald-800"
-                            }`}
-                          >
-                            {isFranchise ? (ar ? "امتياز تجاري" : "Franchise") : (ar ? "فرصة استثمارية" : "Business Opp")}
-                          </span>
-                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600">
-                            {opp.verification_status}
-                          </span>
-                        </div>
-
-                        {/* Title & Brand */}
-                        <h3 data-testid="opportunity-card-title" className="mt-3 text-base font-bold text-slate-900">
-                          {ar ? opp.title_ar : opp.title_en}
-                        </h3>
-                        {opp.brand_name && (
-                          <p className="mt-0.5 text-xs font-semibold text-brand-700">{opp.brand_name}</p>
-                        )}
-                        <p className="mt-1 text-xs text-slate-500">
-                          {opp.sector} {opp.city ? `· ${opp.city}` : ""}
-                        </p>
-
-                        {/* Description excerpt */}
-                        <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-slate-600">
-                          {ar ? opp.description_ar : opp.description_en}
-                        </p>
-
-                        {/* Financial and Requirements Facts */}
-                        <div className="mt-5 space-y-2 rounded-2xl bg-slate-50/80 p-3.5 text-xs">
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500">{ar ? "الاستثمار التقديري:" : "Est. Investment:"}</span>
-                            <span className="font-mono font-medium text-slate-900">
-                              {opp.investment_min
-                                ? `${fmtSAR(opp.investment_min, locale)} – ${fmtSAR(opp.investment_max, locale)}`
-                                : (ar ? "غير معلن - يحدده المستثمر" : "Unannounced (Investor Assumption)")}
-                            </span>
-                          </div>
-
-                          {isFranchise && (
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-500">{ar ? "رسوم الامتياز:" : "Franchise Fee:"}</span>
-                              <span className="font-mono font-medium text-slate-900">
-                                {opp.franchise_fee !== null && opp.franchise_fee !== undefined
-                                  ? fmtSAR(opp.franchise_fee, locale)
-                                  : (ar ? "غير معلن في البوابة العامة" : "Unannounced")}
-                              </span>
-                            </div>
-                          )}
-
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500">{ar ? "المساحة التشغيلية:" : "Space:"}</span>
-                            <span className="text-slate-800">
-                              {opp.required_space || (ar ? "غير معلن - حسب نموذج الموقع" : "Site-specific")}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between border-t border-slate-200/60 pt-1.5 text-[11px]">
-                            <span className="text-slate-500">{ar ? "المصدر الرسمي:" : "Source:"}</span>
-                            <span className="truncate text-slate-700" title={opp.source_owner}>
-                              {opp.source_owner}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Action buttons */}
-                      <div className="mt-5 border-t border-slate-100 pt-4">
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => openDetail(opp.id)}
-                            className="rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
-                          >
-                            {ar ? "التفاصيل والأدلة" : "Details & Evidence"}
-                          </button>
-                          <button
-                            onClick={() => openCreateStudy(opp)}
-                            className="rounded-xl bg-brand-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-700"
-                          >
-                            {ar ? "إنشاء دراسة جدوى" : "Create Study"}
-                          </button>
-                        </div>
-
-                        <div className="mt-2.5 flex items-center justify-between text-xs">
-                          <button
-                            onClick={() => toggleComparison(opp.id)}
-                            className={`text-[11px] font-medium transition ${
-                              isCompared ? "font-bold text-brand-700" : "text-slate-500 hover:text-slate-800"
-                            }`}
-                          >
-                            {isCompared ? (ar ? "✓ مضاف للمقارنة" : "✓ In Compare") : (ar ? "+ إضافة للمقارنة" : "+ Add to Compare")}
-                          </button>
-
-                          <a
-                            href={opp.official_source_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[11px] text-slate-400 hover:text-slate-700 hover:underline"
-                          >
-                            {ar ? "رابط المصدر ↗" : "Official Link ↗"}
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                {items.map(renderCard)}
               </div>
             )}
           </>
@@ -790,6 +847,12 @@ export default function OpportunitiesPage() {
                     {ar ? "توثيق الأدلة على مستوى الحقول (Field-Level Provenance):" : "Field-Level Provenance:"}
                   </h5>
                   <div className="mt-2.5 space-y-2">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                      <span className="text-slate-600">{ar ? "توثيق وجود الفرصة بالمصدر الأولي:" : "Opportunity Existence Proof:"}</span>
+                      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                        {ar ? "موثق بمصدر أولي مستقل ↗" : "Verified Primary Source ↗"}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
                       <span className="text-slate-600">{ar ? "الاستثمار الرأسمالي (Capex Min/Max):" : "Investment Range:"}</span>
                       <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">

@@ -26,6 +26,7 @@ from app.services.opportunities import (
     seed_verified_opportunities,
     validate_evidence_and_status,
     STATUS_UNVERIFIED,
+    STATUS_VERIFIED_PARTIAL,
     STATUS_VERIFIED_CURRENT,
 )
 from app import models
@@ -176,6 +177,7 @@ def list_opportunities(
     geography: Optional[str] = Query(None),
     verification_status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    include_unverified: bool = Query(False),
 ):
     """List verified opportunities and franchises with genuine source provenance.
 
@@ -192,6 +194,7 @@ def list_opportunities(
             geography=geography,
             verification_status=verification_status,
             search=search,
+            include_unverified=include_unverified,
         )
     finally:
         db.close()
@@ -290,13 +293,17 @@ def create_opportunity(
             raise HTTPException(status_code=409, detail="Opportunity with this slug already exists")
 
         payload = data.model_dump()
+        # Rule A: POST /opportunities is ALWAYS created as UNVERIFIED.
+        # Self-certifying VERIFIED_CURRENT or self-promoting to VERIFIED_PARTIAL via API is strictly prohibited.
+        if data.verification_status in (STATUS_VERIFIED_CURRENT, STATUS_VERIFIED_PARTIAL):
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot self-certify as VERIFIED_CURRENT or VERIFIED_PARTIAL. New opportunities created via API always start as UNVERIFIED.",
+            )
+        payload["verification_status"] = STATUS_UNVERIFIED
+        payload["is_active"] = False
         if payload.get("field_provenance") is None:
             payload["field_provenance"] = {}
-        try:
-            validated_status = validate_evidence_and_status(payload, data.verification_status)
-            payload["verification_status"] = validated_status
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
 
         item = models.VerifiedOpportunity(**payload)
         db.add(item)
@@ -343,8 +350,14 @@ def update_opportunity(
         if not update_dict:
             return item
 
-        # Validate requested status change
+        # Validate requested status change (Rule A: cannot promote to VERIFIED_CURRENT or VERIFIED_PARTIAL via PATCH)
         if "verification_status" in update_dict:
+            req_status = update_dict["verification_status"]
+            if req_status in (STATUS_VERIFIED_CURRENT, STATUS_VERIFIED_PARTIAL):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Cannot self-promote to VERIFIED_CURRENT or VERIFIED_PARTIAL via PATCH. Promotion is restricted to server-controlled verification workflow.",
+                )
             merged = {
                 "opportunity_type": item.opportunity_type,
                 "investment_min": update_dict.get("investment_min", item.investment_min),
@@ -360,7 +373,7 @@ def update_opportunity(
                 "is_active": item.is_active,
             }
             try:
-                validated_status = validate_evidence_and_status(merged, update_dict["verification_status"])
+                validated_status = validate_evidence_and_status(merged, req_status, is_server_curated=False)
                 update_dict["verification_status"] = validated_status
             except ValueError as e:
                 raise HTTPException(status_code=422, detail=str(e))

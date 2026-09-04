@@ -77,14 +77,17 @@ def build_field_provenance_entry(
 def validate_evidence_and_status(
     data: Dict[str, Any],
     requested_status: Optional[str] = None,
+    is_server_curated: bool = False,
 ) -> str:
     """Validate that requested verification status is strictly backed by evidence.
 
-    VERIFIED_CURRENT rule:
-    All material decision fields (investment_min, investment_max, franchise_fee,
-    royalty_model, required_space, geography, sector) displayed as published facts
-    must be supported by checked official evidence in field_provenance.
-    If any material numeric claim is unsupported, VERIFIED_CURRENT cannot be assigned.
+    Rule A:
+    VERIFIED_CURRENT is strictly unavailable via API payloads. Fabricated field_provenance
+    with supported=True cannot self-certify VERIFIED_CURRENT.
+
+    Rule B:
+    VERIFIED_PARTIAL requires exact primary source proof of opportunity_existence.
+    Promotion to VERIFIED_PARTIAL can only happen via server-controlled workflow (is_server_curated=True).
     """
     target_status = requested_status or data.get("verification_status") or STATUS_UNVERIFIED
     if target_status not in VALID_VERIFICATION_STATUSES:
@@ -100,36 +103,26 @@ def validate_evidence_and_status(
         if (datetime.now(timezone.utc) - last_checked.replace(tzinfo=timezone.utc)).days > STALE_AGE_DAYS_POLICY:
             return STATUS_STALE
 
-    # Check VERIFIED_CURRENT requirements
+    # VERIFIED_CURRENT is completely unavailable via user/admin payloads
     if target_status == STATUS_VERIFIED_CURRENT:
+        raise ValueError(
+            "Cannot certify as VERIFIED_CURRENT: Automated live primary source verification is not active. "
+            "Self-certification via API payloads is strictly prohibited even if field_provenance claims supported=True."
+        )
+
+    # VERIFIED_PARTIAL requires server-curated workflow with opportunity_existence provenance
+    if target_status == STATUS_VERIFIED_PARTIAL:
+        if not is_server_curated:
+            raise ValueError(
+                "Cannot self-promote to VERIFIED_PARTIAL via client/admin payload. "
+                "Promotion to VERIFIED_PARTIAL is reserved for server-controlled verification workflow."
+            )
         field_prov = data.get("field_provenance") or {}
-        material_decision_fields = [
-            "investment_min",
-            "investment_max",
-            "geography",
-            "sector",
-        ]
-        if data.get("opportunity_type") == "FRANCHISE":
-            material_decision_fields.extend(["franchise_fee", "royalty_model", "required_space"])
-
-        for fld in material_decision_fields:
-            val = data.get(fld)
-            prov = field_prov.get(fld, {})
-            # If the field is non-null, it MUST have supported=True in provenance
-            if val is not None and not prov.get("supported"):
-                raise ValueError(
-                    f"Cannot certify as VERIFIED_CURRENT: field '{fld}' contains value {val} without verified source evidence."
-                )
-            # If a material field is None, it is not fully published, so cannot be VERIFIED_CURRENT
-            if val is None:
-                raise ValueError(
-                    f"Cannot certify as VERIFIED_CURRENT: material decision field '{fld}' is unpublished in the official source. Use VERIFIED_PARTIAL instead."
-                )
-
-        # Check source URL
-        url = data.get("official_source_url") or ""
-        if not url.startswith("http://") and not url.startswith("https://"):
-            raise ValueError("Cannot certify as VERIFIED_CURRENT: invalid official_source_url.")
+        opp_exist = field_prov.get("opportunity_existence") or {}
+        if not opp_exist.get("supported"):
+            raise ValueError(
+                "Cannot certify as VERIFIED_PARTIAL: Core opportunity existence is not supported by an exact primary source."
+            )
 
     return target_status
 
@@ -179,7 +172,8 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_from": "2024-01-01",
         "effective_to": None,
         "source_last_modified": "2024-06-01",
-        "verification_status": STATUS_VERIFIED_PARTIAL,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -204,6 +198,13 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                False,
+                "الهيئة العامة للمنشآت الصغيرة والمتوسطة (منشآت)",
+                "https://www.monshaat.gov.sa/ar/service/investment-opportunities",
+                reason_if_unsupported="فكرة استثمارية مستنبطة وليست فرصة منشورة بوثيقة أولية محددة؛ صفحة استعراض الخدمة العامة لا تثبت وجود فرصة استثمارية قائمة.",
+                checked_at=CHECK_DATE,
+            ),
             "sector": build_field_provenance_entry(
                 True,
                 "الهيئة العامة للمنشآت الصغيرة والمتوسطة (منشآت)",
@@ -272,7 +273,8 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_from": "2024-02-01",
         "effective_to": None,
         "source_last_modified": "2024-05-15",
-        "verification_status": STATUS_VERIFIED_PARTIAL,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -296,6 +298,13 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                False,
+                "وزارة الاستثمار (Invest Saudi)",
+                "https://investsaudi.sa/en/sectors-opportunities",
+                reason_if_unsupported="صفحة استعراض قطاع عامة وليست فرصة استثمارية محددة؛ لا توجد كراسة شروط أو وثيقة أولية للفرصة.",
+                checked_at=CHECK_DATE,
+            ),
             "sector": build_field_provenance_entry(
                 True,
                 "وزارة الاستثمار (استثمر في السعودية MISA)",
@@ -364,7 +373,8 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_from": "2023-11-01",
         "effective_to": None,
         "source_last_modified": "2024-04-10",
-        "verification_status": STATUS_VERIFIED_PARTIAL,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -387,6 +397,13 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                False,
+                "وزارة الاستثمار (Invest Saudi)",
+                "https://investsaudi.sa/en/sectors-opportunities/transport-logistics",
+                reason_if_unsupported="صفحة استعراض قطاع النقل والخدمات اللوجستية عامة وليست فرصة استثمارية محددة منشورة.",
+                checked_at=CHECK_DATE,
+            ),
             "sector": build_field_provenance_entry(
                 True,
                 "الهيئة العامة للمنشآت الصغيرة والمتوسطة (منشآت)",
@@ -455,7 +472,8 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_from": "2024-01-01",
         "effective_to": None,
         "source_last_modified": "2024-07-12",
-        "verification_status": STATUS_VERIFIED_PARTIAL,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -477,6 +495,13 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                False,
+                "صندوق التنمية الزراعية (ADF)",
+                "https://adf.gov.sa/ar/Services/InvestmentOpportunities",
+                reason_if_unsupported="صفحة استعراض منتجات تمويلية عامة وليست فرصة استثمارية محددة منشورة.",
+                checked_at=CHECK_DATE,
+            ),
             "sector": build_field_provenance_entry(
                 True,
                 "صندوق التنمية الزراعية (ADF)",
@@ -545,7 +570,8 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_from": "2024-03-01",
         "effective_to": None,
         "source_last_modified": "2024-07-01",
-        "verification_status": STATUS_VERIFIED_PARTIAL,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -568,6 +594,13 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                False,
+                "المركز الوطني لإدارة النفايات (موان)",
+                "https://mwan.gov.sa/ar/opportunities",
+                reason_if_unsupported="بوابة عامة للفرص دون وجود كراسة أو وثيقة فرصة مخصصة منشورة بمصدر أولي مستقل.",
+                checked_at=CHECK_DATE,
+            ),
             "sector": build_field_provenance_entry(
                 True,
                 "المركز الوطني لإدارة النفايات (موان)",
@@ -637,6 +670,7 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_to": None,
         "source_last_modified": "2024-05-20",
         "verification_status": STATUS_VERIFIED_PARTIAL,
+        "is_active": True,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -661,6 +695,15 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                True,
+                "شركة الأمجاد للأغذية والمشروبات (بارنز)",
+                "https://barns.com.sa/en/franchising-and-licensing",
+                source_document="بوابة الامتياز التجاري الرسمية - بارنز",
+                source_locator="franchising-and-licensing",
+                evidence_excerpt="برنامج الامتياز التجاري لعلامة بارنز يوفر حلولاً تشغيلية متكاملة للممنوحين تشمل الدعم والتدريب لافتتاح الفروع ونقاط الخدمة بالمملكة",
+                checked_at=CHECK_DATE,
+            ),
             "brand_name": build_field_provenance_entry(
                 True,
                 "شركة الأمجاد للأغذية والمشروبات (بارنز)",
@@ -750,6 +793,7 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_to": None,
         "source_last_modified": "2024-03-15",
         "verification_status": STATUS_VERIFIED_PARTIAL,
+        "is_active": True,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -772,6 +816,15 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                True,
+                "شركة دار القهوة لتجارة الأغذية (د.كيف)",
+                "https://www.dr-cafe.com/franchise",
+                source_document="بوابة الامتياز التجاري الرسمية - د.كيف",
+                source_locator="/franchise",
+                evidence_excerpt="برنامج منح الامتياز التجاري لمقاهي د.كيف يوفر حقوق تشغيل علامة تجارية عالمية بمعايير قياسية ونظام إدارة متكامل",
+                checked_at=CHECK_DATE,
+            ),
             "brand_name": build_field_provenance_entry(
                 True,
                 "شركة د. كيف للقهوة العالمية",
@@ -861,6 +914,7 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_to": None,
         "source_last_modified": "2024-04-01",
         "verification_status": STATUS_VERIFIED_PARTIAL,
+        "is_active": True,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -883,6 +937,15 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                True,
+                "شركة الأغذية المبتكرة (شاورمر)",
+                "https://shawarmer.com/franchise",
+                source_document="بوابة الامتياز التجاري الرسمية - شاورمر",
+                source_locator="/franchise",
+                evidence_excerpt="برنامج شاورمر لامتياز العلامة يتيح للشغوفين بريادة الأعمال الانضمام كشركاء نجاح لتشغيل فروع العلامة بالمملكة",
+                checked_at=CHECK_DATE,
+            ),
             "brand_name": build_field_provenance_entry(
                 True,
                 "شركة الأغذية المبتكرة (شاورمر)",
@@ -971,7 +1034,8 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_from": "2023-05-01",
         "effective_to": None,
         "source_last_modified": "2024-02-28",
-        "verification_status": STATUS_VERIFIED_PARTIAL,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -994,6 +1058,13 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                False,
+                "شركة أطايب المتحدة (مايسترو)",
+                "https://maestropizza.com",
+                reason_if_unsupported="الموقع العام مخصص لطلب البيتزا للمستهلكين ولا يحتوي على صفحة أو برنامج امتياز تجاري معلن للمستثمرين.",
+                checked_at=CHECK_DATE,
+            ),
             "brand_name": build_field_provenance_entry(
                 True,
                 "شركة أطايب المتحدة (مايسترو)",
@@ -1082,7 +1153,8 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_from": "2023-08-01",
         "effective_to": None,
         "source_last_modified": "2024-05-10",
-        "verification_status": STATUS_VERIFIED_PARTIAL,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -1106,6 +1178,13 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                False,
+                "شركة أندية بودي ماسترز الرياضية",
+                "https://bodymasters.com.sa",
+                reason_if_unsupported="الموقع العام مخصص لاشتراكات الأندية الرياضية للمستهلكين ولا يتضمن بوابة أو وثيقة امتياز تجاري معلنة.",
+                checked_at=CHECK_DATE,
+            ),
             "brand_name": build_field_provenance_entry(
                 True,
                 "شركة أندية بودي ماسترز الرياضية",
@@ -1194,7 +1273,8 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
         "effective_from": "2024-01-15",
         "effective_to": None,
         "source_last_modified": "2024-06-20",
-        "verification_status": STATUS_VERIFIED_PARTIAL,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
         "data_version": "1.1.0",
         "facts_breakdown": {
             "published_facts": [
@@ -1217,6 +1297,13 @@ VERIFIED_OPPORTUNITY_CATALOG: List[Dict[str, Any]] = [
             ],
         },
         "field_provenance": {
+            "opportunity_existence": build_field_provenance_entry(
+                False,
+                "مركز الامتياز التجاري (منشآت)",
+                "https://franchisecenter.sa",
+                reason_if_unsupported="رابط رئيسي عام لبوابة الامتياز التجاري دون وجود قيد أو صفحة مخصصة للعلامة تثبت وجود فرصة الامتياز.",
+                checked_at=CHECK_DATE,
+            ),
             "brand_name": build_field_provenance_entry(
                 True,
                 "مركز الامتياز التجاري (منشآت)",
@@ -1326,9 +1413,22 @@ def list_verified_opportunities(
     geography: Optional[str] = None,
     verification_status: Optional[str] = None,
     search: Optional[str] = None,
+    include_unverified: bool = False,
 ) -> List[models.VerifiedOpportunity]:
-    """List opportunities matching query filters with provenance loaded."""
-    query = db.query(models.VerifiedOpportunity).filter(models.VerifiedOpportunity.is_active.is_(True))
+    """List opportunities matching query filters with provenance loaded.
+
+    By default, returns only active, verified actionable opportunities.
+    Strict Budget Semantics (Rule C):
+    UNKNOWN investment does NOT count as a budget fit.
+    Only opportunities with verified known investment bounds matching the filter are returned.
+    """
+    query = db.query(models.VerifiedOpportunity)
+
+    if not include_unverified:
+        query = query.filter(
+            models.VerifiedOpportunity.is_active.is_(True),
+            models.VerifiedOpportunity.verification_status != STATUS_UNVERIFIED,
+        )
 
     if opportunity_type:
         query = query.filter(models.VerifiedOpportunity.opportunity_type == opportunity_type)
@@ -1344,18 +1444,15 @@ def list_verified_opportunities(
             )
         )
     if max_budget is not None:
+        # Rule C: Unknown investment (NULL) does NOT count as a budget fit
         query = query.filter(
-            or_(
-                models.VerifiedOpportunity.investment_min.is_(None),
-                models.VerifiedOpportunity.investment_min <= max_budget,
-            )
+            models.VerifiedOpportunity.investment_min.is_not(None),
+            models.VerifiedOpportunity.investment_min <= max_budget,
         )
     if min_budget is not None:
         query = query.filter(
-            or_(
-                models.VerifiedOpportunity.investment_max.is_(None),
-                models.VerifiedOpportunity.investment_max >= min_budget,
-            )
+            models.VerifiedOpportunity.investment_max.is_not(None),
+            models.VerifiedOpportunity.investment_max >= min_budget,
         )
     if search:
         term = f"%{search.strip()}%"
@@ -1417,7 +1514,8 @@ def compare_verified_opportunities(
             "source_owner": item.source_owner,
             "source_type": item.source_type,
             "official_source_url": item.official_source_url,
-            "verification_status": item.verification_status,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
             "data_version": item.data_version,
             "field_provenance": item.field_provenance or {},
             "last_verified_at": item.last_verified_at.isoformat() if item.last_verified_at else None,
@@ -1441,8 +1539,8 @@ def create_study_from_opportunity(
     opp = get_verified_opportunity(db, opportunity_id)
     if not opp:
         raise ValueError("Opportunity not found")
-    if not opp.is_active:
-        raise ValueError("Opportunity is inactive")
+    if not opp.is_active or opp.verification_status == STATUS_UNVERIFIED:
+        raise ValueError("Cannot create study from an unverified or non-actionable opportunity. Only verified opportunities with proven existence can be launched.")
 
     # Determine investment amount strictly without fabrication
     if custom_budget is not None and custom_budget > 0:
@@ -1489,7 +1587,8 @@ def create_study_from_opportunity(
         "source_owner": opp.source_owner,
         "source_type": opp.source_type,
         "official_source_url": opp.official_source_url,
-        "verification_status": opp.verification_status,
+        "verification_status": STATUS_UNVERIFIED,
+        "is_active": False,
         "data_version": opp.data_version,
         "transferred_at": datetime.now(timezone.utc).isoformat(),
         "budget_type": budget_type,
