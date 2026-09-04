@@ -216,9 +216,101 @@ def main():
         print("Verified all 3 actionable opportunities have exact canonical primary sources and 0 broken source links.")
 
         # ----------------------------------------------------------------------
-        # 6. Compare Opportunities Side-by-Side
+        # 5. Wave 3B: My Fit Tab, Profile Constraints, Deterministic Matching & Explain Fit
+        # ----------------------------------------------------------------------
+        print("\nStep 5: Testing Wave 3B 'فرص تناسبني (My Fit)' Tab and Deterministic Matching...")
+        my_fit_tab = page.locator('[data-testid="my-fit-tab"]')
+        assert my_fit_tab.is_visible()
+        my_fit_tab.click()
+        page.wait_for_timeout(500)
+
+        # Form fields should be visible
+        page.wait_for_selector('[data-testid="capital-input"]')
+        print("Fit profile constraints form is visible.")
+
+        # Set capital to 500,000 SAR
+        page.fill('[data-testid="capital-input"]', "500000")
+        
+        # Click evaluate button
+        print("Clicking Evaluate Fit button...")
+        page.click('[data-testid="evaluate-fit-btn"]')
+        page.wait_for_timeout(1500)
+
+        # Verify evaluated cards appear
+        fit_cards = page.locator('[data-testid="opportunity-card"]').all()
+        print(f"Evaluated match cards displayed: {len(fit_cards)} cards")
+        assert len(fit_cards) >= 3, f"Expected at least 3 evaluated cards, got {len(fit_cards)}"
+
+        # Verify no synthetic percentages or scores (e.g., "87%", "درجة التوافق")
+        for card in fit_cards:
+            text = card.inner_text()
+            assert "%" not in text, f"Synthetic percentage detected in card: {text}"
+            assert "درجة" not in text or "درجة التوافق" not in text, "Synthetic score detected in card"
+        print("Confirmed: ZERO synthetic percentages or arbitrary scores present.")
+
+        # Check Barn's Cafe card has NEEDS_INFORMATION with missing info notice
+        barns_found = False
+        for card in fit_cards:
+            text = card.inner_text()
+            if "بارنز" in text:
+                barns_found = True
+                assert "يحتاج معلومات إضافية" in text or "غير محدد" in text or "NEEDS_INFORMATION" in text
+                print("Confirmed Barn's Cafe evaluates deterministically to NEEDS_INFORMATION (due to unknown investment min).")
+                break
+        assert barns_found, "Barn's Cafe card not found in fit results"
+
+        # Click Explain Fit button
+        print("Opening Explain Fit breakdown modal...")
+        explain_btn = page.locator('[data-testid="explain-fit-btn"]').first
+        explain_btn.click()
+        page.wait_for_selector('[data-testid="explain-fit-modal"]')
+        explain_modal = page.locator('[data-testid="explain-fit-modal"]')
+        modal_text = explain_modal.inner_text()
+        assert "الملاءمة" in modal_text
+        assert "خلاصة القرار" in modal_text
+        assert "المعيار" in modal_text
+        assert "النتيجة" in modal_text
+        print("Verified Explain Fit modal displays full deterministic criteria evaluation table.")
+
+        # Close explain fit modal
+        explain_modal.locator("button:has-text('إغلاق')").click()
+        page.wait_for_timeout(500)
+
+        # Test Hard Constraint Rejection: Exclude Food & Beverage
+        print("Testing Hard Constraint: Exclude 'food_beverage' sector...")
+        page.select_option('[data-testid="excluded-sectors-select"]', value="food_beverage")
+        page.click('[data-testid="evaluate-fit-btn"]')
+        page.wait_for_timeout(1500)
+
+        # All 3 actionable F&B franchises should now evaluate to NOT_MATCHED
+        updated_cards = page.locator('[data-testid="opportunity-card"]').all()
+        fb_count = 0
+        for card in updated_cards:
+            text = card.inner_text()
+            if any(brand in text for brand in ["بارنز", "كيف", "شاورمر"]):
+                assert "غير متطابق" in text or "NOT_MATCHED" in text, f"Expected NOT_MATCHED for F&B brand, got: {text}"
+                fb_count += 1
+        assert fb_count == 3, f"Expected 3 F&B cards, found {fb_count}"
+        print("Confirmed: Excluded sector hard constraint causes deterministic transition to NOT_MATCHED for all 3 F&B opportunities.")
+
+        # Save Fit Matching screenshot
+        page.screenshot(path="browser_verification_opportunity_fit.png")
+        print("Saved verification screenshot to browser_verification_opportunity_fit.png")
+
+        # Clear excluded sector constraint
+        print("Clearing sector exclusion...")
+        page.select_option('[data-testid="excluded-sectors-select"]', value="")
+        page.click('[data-testid="evaluate-fit-btn"]')
+        page.wait_for_timeout(1500)
+
+        # ----------------------------------------------------------------------
+        # 6. Compare Opportunities Side-by-Side (including Fit state)
         # ----------------------------------------------------------------------
         print("\nStep 6: Comparing opportunities side-by-side...")
+        # Switch back to All tab to add compare items
+        page.click("button:has-text('جميع الفرص والامتياز')")
+        page.wait_for_timeout(500)
+
         compare_buttons = page.locator("button:has-text('إضافة للمقارنة')")
         compare_buttons.nth(0).click()
         page.wait_for_timeout(300)
@@ -236,27 +328,28 @@ def main():
         assert "نطاق الاستثمار المنشور" in table_text
         assert "جهة المصدر الرسمي" in table_text
         assert "حالة التوثيق" in table_text
-        print("Verified factual side-by-side comparison table with zero fake rankings.")
+        assert "حالة الملاءمة" in table_text
+        print("Verified factual side-by-side comparison table with deterministic fit state row.")
 
-        # Return to all
-        page.click("button:has-text('جميع الفرص والامتياز')")
-        page.wait_for_timeout(1000)
+        # Return to My Fit tab
+        page.click('[data-testid="my-fit-tab"]')
+        page.wait_for_timeout(500)
 
         # ----------------------------------------------------------------------
-        # 7. Create Study from Opportunity
+        # 7. Create Study from Opportunity via Fit Card
         # ----------------------------------------------------------------------
-        print("\nStep 7: Creating Feasibility Study from Opportunity (with user budget assumption)...")
-        create_buttons = page.locator("button:has-text('إنشاء دراسة جدوى')")
-        create_buttons.first.click()
+        print("\nStep 7: Creating Feasibility Study from Opportunity Fit Card...")
+        create_study_btn = page.locator('[data-testid="start-study-btn"]').first
+        create_study_btn.click()
         page.wait_for_selector('div[role="dialog"]')
         cs_dialog = page.locator('div[role="dialog"]')
-        print("Create study confirmation modal opened.")
+        print("Create study confirmation modal opened from fit card.")
 
-        # Enter user budget assumption if required (investment_min is null in source)
+        # Enter user budget assumption if required
         budget_input = cs_dialog.locator('input[type="number"]')
         if budget_input.count() > 0 and budget_input.first.is_visible():
-            budget_input.first.fill("450000")
-            print("Entered user budget assumption: 450,000 SAR (USER_ASSUMPTION)")
+            budget_input.first.fill("500000")
+            print("Entered user budget assumption: 500,000 SAR (USER_ASSUMPTION)")
 
         # Confirm and launch
         cs_dialog.locator("button:has-text('تأكيد وبدء الدراسة')").click()

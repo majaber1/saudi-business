@@ -982,3 +982,90 @@ class OpportunityVersionHistory(TimestampMixin, Base):
 
     opportunity: Mapped["VerifiedOpportunity"] = relationship(back_populates="version_history")
 
+
+class OpportunityFitProfile(TimestampMixin, Base):
+    """User Opportunity Fit Profile (Wave 3B).
+
+    Stores user constraints and preferences for matching against verified opportunities.
+    User inputs (capital, sectors, regions) are strictly labeled as USER_INPUT / USER_ASSUMPTION.
+    """
+
+    __tablename__ = "opportunity_fit_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    available_capital: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    capital_constraint_type: Mapped[str] = mapped_column(String(20), default="HARD", nullable=False)  # HARD | PREFERENCE
+
+    preferred_sectors: Mapped[list[str]] = mapped_column(JSON, default=list)
+    excluded_sectors: Mapped[list[str]] = mapped_column(JSON, default=list)  # Hard constraint
+
+    preferred_opportunity_types: Mapped[list[str]] = mapped_column(JSON, default=list)  # ["FRANCHISE", "BUSINESS_OPPORTUNITY"]
+    opportunity_type_constraint: Mapped[str] = mapped_column(String(20), default="PREFERENCE", nullable=False)  # HARD | PREFERENCE
+
+    target_region: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    target_city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    preferred_business_models: Mapped[list[str]] = mapped_column(JSON, default=list)
+    target_customer: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # B2B | B2C | ANY
+    experience_sectors: Mapped[list[str]] = mapped_column(JSON, default=list)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    user: Mapped["User"] = relationship()
+    match_runs: Mapped[list["OpportunityMatchRun"]] = relationship(
+        back_populates="fit_profile", cascade="all, delete-orphan", order_by="OpportunityMatchRun.id.desc()"
+    )
+
+
+class OpportunityMatchRun(TimestampMixin, Base):
+    """Snapshot of a deterministic matching evaluation against verified opportunities."""
+
+    __tablename__ = "opportunity_match_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    fit_profile_id: Mapped[int] = mapped_column(
+        ForeignKey("opportunity_fit_profiles.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    fit_profile_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    fit_profile_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    calculation_version: Mapped[str] = mapped_column(String(20), default="1.0.0", nullable=False)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    fit_profile: Mapped["OpportunityFitProfile"] = relationship(back_populates="match_runs")
+    results: Mapped[list["OpportunityMatchResult"]] = relationship(
+        back_populates="match_run", cascade="all, delete-orphan", order_by="OpportunityMatchResult.id.asc()"
+    )
+
+
+class OpportunityMatchResult(TimestampMixin, Base):
+    """Immutable evaluation result of a single opportunity against a user fit profile run."""
+
+    __tablename__ = "opportunity_match_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    match_run_id: Mapped[int] = mapped_column(
+        ForeignKey("opportunity_match_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    opportunity_id: Mapped[int] = mapped_column(
+        ForeignKey("verified_opportunities.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    opportunity_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    verification_status_at_eval: Mapped[str] = mapped_column(String(30), nullable=False)
+    # MATCH | POSSIBLE_MATCH | NEEDS_INFORMATION | NOT_MATCHED | NOT_EVALUATED
+    match_state: Mapped[str] = mapped_column(String(30), index=True, nullable=False)
+    criteria_evaluations: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    missing_information: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    match_run: Mapped["OpportunityMatchRun"] = relationship(back_populates="results")
+    opportunity: Mapped["VerifiedOpportunity"] = relationship()
+
+

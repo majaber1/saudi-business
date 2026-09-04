@@ -1529,6 +1529,7 @@ def create_study_from_opportunity(
     opportunity_id: int,
     custom_budget: Optional[float] = None,
     study_title: Optional[str] = None,
+    match_result_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Create a persistent Feasibility Study and Project directly from a verified opportunity.
 
@@ -1587,8 +1588,8 @@ def create_study_from_opportunity(
         "source_owner": opp.source_owner,
         "source_type": opp.source_type,
         "official_source_url": opp.official_source_url,
-        "verification_status": STATUS_UNVERIFIED,
-        "is_active": False,
+        "verification_status": opp.verification_status,
+        "is_active": opp.is_active,
         "data_version": opp.data_version,
         "transferred_at": datetime.now(timezone.utc).isoformat(),
         "budget_type": budget_type,
@@ -1608,6 +1609,36 @@ def create_study_from_opportunity(
         "field_provenance_snapshot": opp.field_provenance or {},
     }
 
+    # Optional Fit Snapshot from Wave 3B matching
+    fit_snapshot = None
+    if match_result_id is not None:
+        from app.services.opportunity_matching import build_fit_snapshot_for_study
+        mr = (
+            db.query(models.OpportunityMatchResult)
+            .join(models.OpportunityMatchRun)
+            .filter(
+                models.OpportunityMatchResult.id == match_result_id,
+                models.OpportunityMatchRun.user_id == user.id,
+                models.OpportunityMatchResult.opportunity_id == opp.id,
+            )
+            .first()
+        )
+        if mr:
+            fit_snapshot = build_fit_snapshot_for_study(mr)
+
+    study_payload = {
+        "industry": opp.sector,
+        "investment": investment_amount,
+        "budget_type": budget_type,
+        "budget_notes": budget_notes,
+        "opportunity_lineage": lineage,
+        "step_1": {
+            "notes": f"تم استيراد هذه الدراسة مباشرة من {opp.title_ar} - المصدر: {opp.source_owner}. ميزانية الاستثمار: {investment_amount:,.0f} ر.س ({budget_type})"
+        },
+    }
+    if fit_snapshot:
+        study_payload["opportunity_fit_snapshot"] = fit_snapshot
+
     study = models.FeasibilityStudy(
         project_id=project.id,
         title=project_name[:255],
@@ -1617,16 +1648,7 @@ def create_study_from_opportunity(
         source_opportunity_id=opp.id,
         source_opportunity_version=opp.data_version,
         source_opportunity_lineage=lineage,
-        payload={
-            "industry": opp.sector,
-            "investment": investment_amount,
-            "budget_type": budget_type,
-            "budget_notes": budget_notes,
-            "opportunity_lineage": lineage,
-            "step_1": {
-                "notes": f"تم استيراد هذه الدراسة مباشرة من {opp.title_ar} - المصدر: {opp.source_owner}. ميزانية الاستثمار: {investment_amount:,.0f} ر.س ({budget_type})"
-            },
-        },
+        payload=study_payload,
     )
     db.add(study)
     db.flush()
@@ -1654,6 +1676,7 @@ def create_study_from_opportunity(
                 "project_id": project.id,
                 "budget_type": budget_type,
                 "investment": investment_amount,
+                "match_result_id": match_result_id,
             },
         )
     )
@@ -1668,4 +1691,5 @@ def create_study_from_opportunity(
         "title": study.title,
         "opportunity_id": opp.id,
         "lineage": lineage,
+        "fit_snapshot": fit_snapshot,
     }

@@ -99,6 +99,7 @@ class VerifiedOpportunityDetailOut(VerifiedOpportunityOut):
 class CreateStudyFromOpportunityIn(BaseModel):
     custom_budget: Optional[float] = Field(default=None, ge=0)
     study_title: Optional[str] = Field(default=None, max_length=255)
+    match_result_id: Optional[int] = Field(default=None)
 
 
 class CreateStudyFromOpportunityOut(BaseModel):
@@ -107,6 +108,7 @@ class CreateStudyFromOpportunityOut(BaseModel):
     title: str
     opportunity_id: int
     lineage: Dict[str, Any]
+    fit_snapshot: Optional[Dict[str, Any]] = None
 
 
 class OpportunityCreateIn(BaseModel):
@@ -254,6 +256,7 @@ def create_study(
             opportunity_id=opportunity_id,
             custom_budget=data.custom_budget,
             study_title=data.study_title,
+            match_result_id=data.match_result_id,
         )
         return result
     except ValueError as e:

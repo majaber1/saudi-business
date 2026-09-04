@@ -9,9 +9,16 @@ import {
   getVerifiedOpportunity,
   compareVerifiedOpportunities,
   createStudyFromOpportunity,
+  getOpportunityFitProfile,
+  saveOpportunityFitProfile,
+  evaluateOpportunityFit,
+  getOpportunityFitResults,
   getToken,
   type VerifiedOpportunity,
   type OpportunityComparisonItem,
+  type FitProfile,
+  type OpportunityMatchItem,
+  type MatchRunResponse,
 } from "@/lib/api";
 
 const SECTOR_OPTIONS = [
@@ -45,15 +52,14 @@ export default function OpportunitiesPage() {
   const ar = locale === "ar";
   const router = useRouter();
 
-  // Active view tab: "all" | "BUSINESS_OPPORTUNITY" | "FRANCHISE" | "compare"
-  const [activeTab, setActiveTab] = useState<"all" | "BUSINESS_OPPORTUNITY" | "FRANCHISE" | "compare">("all");
+  // Active view tab
+  const [activeTab, setActiveTab] = useState<"all" | "BUSINESS_OPPORTUNITY" | "FRANCHISE" | "compare" | "my-fit">("all");
 
-  // Filter states
+  // Registry filter states
   const [sector, setSector] = useState("");
   const [geography, setGeography] = useState("");
   const [budget, setBudget] = useState<string>("");
   const [search, setSearch] = useState("");
-  // Data states
   const [items, setItems] = useState<VerifiedOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -84,6 +90,25 @@ export default function OpportunitiesPage() {
   const [customBudget, setCustomBudget] = useState<string>("");
   const [creatingStudy, setCreatingStudy] = useState(false);
   const [createStudyError, setCreateStudyError] = useState("");
+  const [studyMatchResultId, setStudyMatchResultId] = useState<number | undefined>(undefined);
+
+  // Fit & Matching states (Wave 3B)
+  const [fitProfile, setFitProfile] = useState<FitProfile>({
+    available_capital: 450000,
+    capital_constraint_type: "HARD",
+    preferred_sectors: ["food_beverage"],
+    excluded_sectors: [],
+    preferred_opportunity_types: ["FRANCHISE"],
+    opportunity_type_constraint: "PREFERENCE",
+    target_region: "KSA_NATIONAL",
+    target_city: "",
+    notes: "",
+  });
+  const [matchRun, setMatchRun] = useState<MatchRunResponse | null>(null);
+  const [evaluatingFit, setEvaluatingFit] = useState(false);
+  const [fitLoading, setFitLoading] = useState(false);
+  const [fitError, setFitError] = useState("");
+  const [selectedMatchForExplain, setSelectedMatchForExplain] = useState<OpportunityMatchItem | null>(null);
 
   // Fetch opportunities matching current filters
   useEffect(() => {
@@ -91,8 +116,7 @@ export default function OpportunitiesPage() {
     setLoading(true);
     setError("");
 
-    const parsedBudget = parseFloat(budget);
-    const filterType = activeTab === "all" || activeTab === "compare" ? undefined : activeTab;
+    const filterType = activeTab === "all" || activeTab === "compare" || activeTab === "my-fit" ? undefined : activeTab;
 
     listVerifiedOpportunities({
       type: filterType,
@@ -114,6 +138,36 @@ export default function OpportunitiesPage() {
       cancelled = true;
     };
   }, [activeTab, sector, geography, budget, search]);
+
+  // Fetch Fit Profile and Latest Match Run if authenticated
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    setFitLoading(true);
+
+    Promise.all([
+      getOpportunityFitProfile(token).catch(() => null),
+      getOpportunityFitResults(token).catch(() => null),
+    ])
+      .then(([prof, run]) => {
+        if (prof) {
+          setFitProfile((prev) => ({
+            ...prev,
+            ...prof,
+            available_capital: prof.available_capital ?? prev.available_capital,
+            preferred_sectors: prof.preferred_sectors?.length ? prof.preferred_sectors : prev.preferred_sectors,
+            excluded_sectors: prof.excluded_sectors ?? [],
+            preferred_opportunity_types: prof.preferred_opportunity_types?.length ? prof.preferred_opportunity_types : prev.preferred_opportunity_types,
+          }));
+        }
+        if (run) {
+          setMatchRun(run);
+        }
+      })
+      .finally(() => {
+        setFitLoading(false);
+      });
+  }, []);
 
   // Load comparison data when compare tab is opened or selectedIds change
   useEffect(() => {
@@ -155,16 +209,23 @@ export default function OpportunitiesPage() {
   };
 
   // Prepare create study modal
-  const openCreateStudy = (opp: VerifiedOpportunity) => {
+  const openCreateStudy = (opp: VerifiedOpportunity, matchResultId?: number) => {
     const token = getToken();
     if (!token) {
       router.push(`/login?next=${encodeURIComponent("/opportunities")}`);
       return;
     }
     setTargetForStudy(opp);
+    setStudyMatchResultId(matchResultId);
     setStudyTitle(ar ? (opp.brand_name ? `دراسة امتياز: ${opp.brand_name}` : `دراسة: ${opp.title_ar}`) : `Study: ${opp.title_en}`);
-    // Never invent 250,000 SAR; if source minimum is absent, start empty and require user assumption
-    setCustomBudget(opp.investment_min ? String(opp.investment_min) : "");
+    // If investment is unannounced in source, pre-fill with investor available capital or empty
+    if (opp.investment_min) {
+      setCustomBudget(String(opp.investment_min));
+    } else if (fitProfile.available_capital && fitProfile.available_capital > 0) {
+      setCustomBudget(String(fitProfile.available_capital));
+    } else {
+      setCustomBudget("");
+    }
     setCreateStudyError("");
   };
 
@@ -194,13 +255,73 @@ export default function OpportunitiesPage() {
       const res = await createStudyFromOpportunity(token, targetForStudy.id, {
         study_title: studyTitle.trim() || undefined,
         custom_budget: !Number.isNaN(parsedBudget) && parsedBudget > 0 ? parsedBudget : undefined,
+        match_result_id: studyMatchResultId,
       });
 
-      // Navigate to the newly created study workspace!
       router.push(`/projects/${res.project_id}/studies/${res.study_id}`);
     } catch (err) {
       setCreateStudyError(err instanceof Error ? err.message : String(err));
       setCreatingStudy(false);
+    }
+  };
+
+  // Save profile and trigger evaluation
+  const handleEvaluateFit = async () => {
+    const token = getToken();
+    if (!token) {
+      router.push(`/login?next=${encodeURIComponent("/opportunities")}`);
+      return;
+    }
+
+    setEvaluatingFit(true);
+    setFitError("");
+
+    try {
+      // 1. Save profile
+      await saveOpportunityFitProfile(token, fitProfile);
+      // 2. Evaluate fit
+      const run = await evaluateOpportunityFit(token);
+      setMatchRun(run);
+    } catch (err) {
+      setFitError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEvaluatingFit(false);
+    }
+  };
+
+  const getMatchStateBadge = (state: string) => {
+    switch (state) {
+      case "MATCH":
+        return {
+          bg: "bg-emerald-100 text-emerald-800 border-emerald-300",
+          text_ar: "تطابق تام (MATCH)",
+          text_en: "Verified Fit (MATCH)",
+        };
+      case "POSSIBLE_MATCH":
+        return {
+          bg: "bg-amber-100 text-amber-800 border-amber-300",
+          text_ar: "تطابق محتمل (POSSIBLE_MATCH)",
+          text_en: "Possible Fit (POSSIBLE_MATCH)",
+        };
+      case "NEEDS_INFORMATION":
+        return {
+          bg: "bg-blue-100 text-blue-800 border-blue-300",
+          text_ar: "يتطلب معلومات إضافية (NEEDS_INFORMATION)",
+          text_en: "Needs Info (NEEDS_INFORMATION)",
+        };
+      case "NOT_MATCHED":
+        return {
+          bg: "bg-rose-100 text-rose-800 border-rose-300",
+          text_ar: "غير متطابق مع القيود (NOT_MATCHED)",
+          text_en: "Not Matched (NOT_MATCHED)",
+        };
+      case "NOT_EVALUATED":
+      default:
+        return {
+          bg: "bg-slate-100 text-slate-700 border-slate-300",
+          text_ar: "غير خاضعة للتقييم (NOT_EVALUATED)",
+          text_en: "Not Evaluated (NOT_EVALUATED)",
+        };
     }
   };
 
@@ -262,101 +383,95 @@ export default function OpportunitiesPage() {
                 <span className="font-mono font-medium text-slate-900">
                   {opp.franchise_fee !== null && opp.franchise_fee !== undefined
                     ? fmtSAR(opp.franchise_fee, locale)
-                    : (ar ? "غير معلن في البوابة العامة" : "Unannounced")}
+                    : (ar ? "غير معلنة في البوابة العامة" : "Unannounced in Public Portal")}
                 </span>
               </div>
             )}
 
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">{ar ? "المساحة التشغيلية:" : "Space:"}</span>
-              <span className="text-slate-800">
-                {opp.required_space || (ar ? "غير معلن - حسب نموذج الموقع" : "Site-specific")}
+              <span className="text-slate-500">{ar ? "النطاق الجغرافي:" : "Geography:"}</span>
+              <span className="font-medium text-slate-700">
+                {opp.city ? `${opp.city} (${opp.region || ""})` : (ar ? "تغطية وطنية شاملة" : "Nationwide KSA")}
               </span>
             </div>
 
-            <div className="flex items-center justify-between border-t border-slate-200/60 pt-1.5 text-[11px]">
-              <span className="text-slate-500">{ar ? "المصدر الرسمي:" : "Source:"}</span>
-              <span className="truncate text-slate-700" title={opp.source_owner}>
-                {opp.source_owner}
-              </span>
+            <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
+              <span className="text-slate-500">{ar ? "المصدر المعتمد:" : "Source:"}</span>
+              <a
+                href={opp.official_source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-brand-700 hover:underline"
+              >
+                <span>{opp.source_owner}</span>
+                <span className="text-[10px]">↗</span>
+              </a>
             </div>
           </div>
         </div>
 
-        {/* Action buttons */}
-        <div className="mt-5 border-t border-slate-100 pt-4">
-          <div className="grid grid-cols-2 gap-2">
+        {/* Card Actions */}
+        <div className="mt-6 flex flex-col gap-2 pt-2">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => openDetail(opp.id)}
-              className="rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+              className="flex-1 rounded-xl border border-slate-200 bg-white py-2 text-center text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
             >
-              {ar ? "التفاصيل والأدلة" : "Details & Evidence"}
+              {ar ? "عرض التفاصيل والأدلة" : "View Evidence"}
             </button>
-            <button
-              onClick={() => openCreateStudy(opp)}
-              className="rounded-xl bg-brand-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-700"
-            >
-              {ar ? "إنشاء دراسة جدوى" : "Create Study"}
-            </button>
-          </div>
-
-          <div className="mt-2.5 flex items-center justify-between text-xs">
             <button
               onClick={() => toggleComparison(opp.id)}
-              className={`text-[11px] font-medium transition ${
-                isCompared ? "font-bold text-brand-700" : "text-slate-500 hover:text-slate-800"
+              className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                isCompared
+                  ? "border-brand-600 bg-brand-50 text-brand-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               }`}
             >
-              {isCompared ? (ar ? "✓ مضاف للمقارنة" : "✓ In Compare") : (ar ? "+ إضافة للمقارنة" : "+ Add to Compare")}
+              {isCompared ? (ar ? "✓ مضاف للمقارنة" : "✓ Added") : (ar ? "+ إضافة للمقارنة" : "+ Compare")}
             </button>
-
-            <a
-              href={opp.official_source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[11px] text-slate-400 hover:text-slate-700 hover:underline"
-            >
-              {ar ? "رابط المصدر ↗" : "Official Link ↗"}
-            </a>
           </div>
+
+          <button
+            onClick={() => openCreateStudy(opp)}
+            className="w-full rounded-xl bg-brand-600 py-2.5 text-center text-xs font-semibold text-white shadow-sm transition hover:bg-brand-700"
+          >
+            {ar ? "بدء دراسة الجدوى من هذه الفرصة" : "Start Feasibility Study"}
+          </button>
         </div>
       </div>
     );
   };
 
   return (
-    <main className="min-h-screen bg-[#f8faf9] pb-24 pt-8 text-slate-900">
-      <div className="container-page">
-        {/* Header / Hero */}
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="min-h-screen bg-slate-50/50 py-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-                  {ar ? "الموجة 3: سجل الفرص والامتياز الموثق" : "Wave 3: Verified Opportunity Registry"}
+                <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">
+                  {ar ? "سجل الفرص والامتياز المعتمد" : "Verified Opportunities Registry"}
                 </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                  {ar ? "بيانات حقيقية بمصدر رسمي" : "Authentic Sourced Data"}
+                <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                  {ar ? "أدلة موثقة 100%" : "100% Source Backed"}
                 </span>
               </div>
-              <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                {ar ? "مركز الفرص الاستثمارية والامتياز التجاري" : "Opportunities & Franchise Center"}
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                {ar ? "الفرص الاستثمارية والامتياز التجاري المعتمد" : "Verified Opportunities & Franchise Hub"}
               </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
+              <p className="mt-2 max-w-3xl text-xs leading-relaxed text-slate-600 sm:text-sm">
                 {ar
-                  ? "استكشف الفرص الاستثمارية وعلامات الامتياز التجاري المعتمدة في المملكة العربية السعودية. جميع البيانات مستمدة مباشرة من بوابات رسمية (.gov.sa) وإفصاحات العلامات التجارية دون أي افتراضات أو أرقام غير موثقة."
-                  : "Explore verified business and franchise opportunities in Saudi Arabia. Sourced directly from official portals (.gov.sa) and franchisor disclosures with zero fabricated financials."}
+                  ? "بوابة استكشاف ومطابقة الفرص الاستثمارية وحزم الامتياز التجاري في المملكة العربية السعودية، مبنية على وثائق الجهات الرسمية المنشورة دون أرقام مفبركة أو نقاط ترجيح اصطناعية."
+                  : "Explore verified business and franchise opportunities across Saudi Arabia backed by authoritative official sources without synthetic scores."}
               </p>
             </div>
 
-            {/* Selection Tray Indicator */}
+            {/* Quick Actions / Compare summary */}
             {selectedIds.length > 0 && (
-              <div className="flex items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-4">
-                <div>
-                  <p className="text-xs font-medium text-brand-900">
-                    {ar ? `محدد للمقارنة: ${selectedIds.length} فرصة` : `${selectedIds.length} selected to compare`}
-                  </p>
-                  <p className="text-[11px] text-brand-700">{ar ? "مقارنة موضوعية مبنية على الحقائق" : "Fact-based side-by-side"}</p>
+              <div className="flex items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50/50 p-3">
+                <div className="text-xs text-brand-900">
+                  <span className="font-bold">{selectedIds.length}</span> {ar ? "فرص محددة" : "selected"}
                 </div>
                 <button
                   onClick={() => setActiveTab("compare")}
@@ -374,7 +489,7 @@ export default function OpportunitiesPage() {
             )}
           </div>
 
-          {/* Official Provenance Badges Banner */}
+          {/* Official Provenance Authorities Banner */}
           <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4 text-xs text-slate-500">
             <span className="font-medium text-slate-700">{ar ? "الجهات المرجعية الرسمية:" : "Official Source Authorities:"}</span>
             <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-slate-700">الهيئة العامة للمنشآت (منشآت)</span>
@@ -411,11 +526,21 @@ export default function OpportunitiesPage() {
           >
             {ar ? "فرص الامتياز التجاري (الفرانشايز)" : "Franchise Brands"}
           </button>
+          <button
+            data-testid="my-fit-tab"
+            onClick={() => setActiveTab("my-fit")}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition ${
+              activeTab === "my-fit" ? "bg-brand-600 text-white shadow-sm" : "bg-brand-50 text-brand-900 hover:bg-brand-100"
+            }`}
+          >
+            <span>🎯</span>
+            <span>{ar ? "فرص تناسبني (My Fit)" : "My Fit & Matching"}</span>
+          </button>
           {selectedIds.length > 0 && (
             <button
               onClick={() => setActiveTab("compare")}
               className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                activeTab === "compare" ? "bg-brand-700 text-white shadow-sm" : "bg-brand-50 text-brand-800 hover:bg-brand-100"
+                activeTab === "compare" ? "bg-purple-700 text-white shadow-sm" : "bg-purple-50 text-purple-800 hover:bg-purple-100"
               }`}
             >
               {ar ? `المقارنة المباشرة (${selectedIds.length})` : `Side-by-side Compare (${selectedIds.length})`}
@@ -423,8 +548,377 @@ export default function OpportunitiesPage() {
           )}
         </div>
 
-        {/* Comparison View */}
-        {activeTab === "compare" ? (
+        {/* MY FIT TAB (WAVE 3B) */}
+        {activeTab === "my-fit" ? (
+          <div className="mt-6 space-y-6">
+            {/* Fit Profile Setup Form */}
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="border-b border-slate-100 pb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">
+                      {ar ? "أهدافي وقيودي الاستثمارية (Investor Profile & Constraints)" : "Investor Fit Profile & Constraints"}
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {ar
+                        ? "حدد رأس المال المتاح والقطاعات المستهدفة والمستبعدة لتحديد الفرص المتوافقة معك بدقة وحتمية دون نسب مئوية وهمية."
+                        : "Define your capital, preferred sectors, and hard exclusions for deterministic fit matching."}
+                    </p>
+                  </div>
+                  {fitProfile.version && (
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-mono text-slate-600">
+                      {ar ? `إصدار الملف: v${fitProfile.version}` : `Profile v${fitProfile.version}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {/* Available Capital */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "رأس المال المتاح للاستثمار (ر.س)" : "Available Capital (SAR)"}
+                  </label>
+                  <input
+                    data-testid="capital-input"
+                    type="number"
+                    min={0}
+                    step={10000}
+                    value={fitProfile.available_capital ?? ""}
+                    onChange={(e) =>
+                      setFitProfile({
+                        ...fitProfile,
+                        available_capital: e.target.value ? parseFloat(e.target.value) : null,
+                      })
+                    }
+                    placeholder="450,000"
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 p-2.5 font-mono text-xs outline-none focus:border-brand-500"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {ar ? "يُعامل كقيد مقارنة مع الحد الأدنى المنشور رسميّاً" : "Compared against published minimum"}
+                  </p>
+                </div>
+
+                {/* Capital Constraint Type */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "طبيعة قيد رأس المال" : "Capital Constraint Strictness"}
+                  </label>
+                  <select
+                    data-testid="capital-strength-select"
+                    value={fitProfile.capital_constraint_type ?? "HARD"}
+                    onChange={(e) => setFitProfile({ ...fitProfile, capital_constraint_type: e.target.value })}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs outline-none focus:border-brand-500"
+                  >
+                    <option value="HARD">{ar ? "قيد حتمي صارم (HARD) - لا يتجاوز رأس المال" : "Strict (HARD) - No Overrun"}</option>
+                    <option value="FLEXIBLE_10">{ar ? "مرن حتى 10% إضافية (FLEXIBLE_10)" : "Flexible up to +10%"}</option>
+                    <option value="FLEXIBLE_20">{ar ? "مرن حتى 20% إضافية (FLEXIBLE_20)" : "Flexible up to +20%"}</option>
+                  </select>
+                </div>
+
+                {/* Preferred Sectors */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "القطاع المفضل الرئيسي" : "Primary Preferred Sector"}
+                  </label>
+                  <select
+                    data-testid="preferred-sectors-select"
+                    value={fitProfile.preferred_sectors?.[0] ?? ""}
+                    onChange={(e) =>
+                      setFitProfile({
+                        ...fitProfile,
+                        preferred_sectors: e.target.value ? [e.target.value] : [],
+                      })
+                    }
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs outline-none focus:border-brand-500"
+                  >
+                    {SECTOR_OPTIONS.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {ar ? s.label_ar : s.label_en}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Excluded Sectors (Hard Failure) */}
+                <div>
+                  <label className="block text-xs font-semibold text-rose-700">
+                    {ar ? "قطاعات مستبعدة تماماً (قيد حتمي مستبعد)" : "Excluded Sectors (Hard Exclusion)"}
+                  </label>
+                  <select
+                    data-testid="excluded-sectors-select"
+                    value={fitProfile.excluded_sectors?.[0] ?? ""}
+                    onChange={(e) =>
+                      setFitProfile({
+                        ...fitProfile,
+                        excluded_sectors: e.target.value ? [e.target.value] : [],
+                      })
+                    }
+                    className="mt-1.5 w-full rounded-xl border border-rose-300 bg-white p-2.5 text-xs outline-none focus:border-rose-500"
+                  >
+                    <option value="">{ar ? "لا يوجد قطاع مستبعد" : "None (No Exclusions)"}</option>
+                    {SECTOR_OPTIONS.filter((s) => s.value).map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {ar ? s.label_ar : s.label_en}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-rose-500">
+                    {ar ? "أي فرصة في هذا القطاع سيتم استبعادها كـ NOT_MATCHED" : "Opportunities here become NOT_MATCHED"}
+                  </p>
+                </div>
+
+                {/* Preferred Opportunity Type */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "نوع الفرصة المفضل" : "Preferred Opportunity Type"}
+                  </label>
+                  <select
+                    data-testid="opp-type-select"
+                    value={fitProfile.preferred_opportunity_types?.[0] ?? "FRANCHISE"}
+                    onChange={(e) =>
+                      setFitProfile({
+                        ...fitProfile,
+                        preferred_opportunity_types: e.target.value ? [e.target.value] : [],
+                      })
+                    }
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs outline-none focus:border-brand-500"
+                  >
+                    <option value="FRANCHISE">{ar ? "امتياز تجاري (FRANCHISE)" : "Franchise"}</option>
+                    <option value="BUSINESS_OPPORTUNITY">{ar ? "فرصة مستقلة (BUSINESS_OPPORTUNITY)" : "Business Opportunity"}</option>
+                  </select>
+                </div>
+
+                {/* Target Region */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "المنطقة المستهدفة" : "Target Region"}
+                  </label>
+                  <input
+                    data-testid="target-region-input"
+                    type="text"
+                    value={fitProfile.target_region ?? ""}
+                    onChange={(e) => setFitProfile({ ...fitProfile, target_region: e.target.value })}
+                    placeholder={ar ? "مثال: الرياض أو KSA_NATIONAL" : "e.g. Riyadh Region"}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 p-2.5 text-xs outline-none focus:border-brand-500"
+                  />
+                </div>
+
+                {/* Target City */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "المدينة المستهدفة" : "Target City"}
+                  </label>
+                  <input
+                    data-testid="target-city-input"
+                    type="text"
+                    value={fitProfile.target_city ?? ""}
+                    onChange={(e) => setFitProfile({ ...fitProfile, target_city: e.target.value })}
+                    placeholder={ar ? "مثال: الرياض / جدة" : "e.g. Riyadh / Jeddah"}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 p-2.5 text-xs outline-none focus:border-brand-500"
+                  />
+                </div>
+
+                {/* Notes */}
+                <div className="sm:col-span-2 lg:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {ar ? "ملاحظات إضافية وتفضيلات استثمارية" : "Additional Investor Notes"}
+                  </label>
+                  <input
+                    data-testid="fit-notes-input"
+                    type="text"
+                    value={fitProfile.notes ?? ""}
+                    onChange={(e) => setFitProfile({ ...fitProfile, notes: e.target.value })}
+                    placeholder={ar ? "سجل أي اعتبارات خاصة ترغب بأخذها في الحسبان" : "Any special notes..."}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 p-2.5 text-xs outline-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+
+              {fitError && (
+                <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-xs text-red-700">
+                  {fitError}
+                </p>
+              )}
+
+              <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+                <button
+                  data-testid="evaluate-fit-btn"
+                  onClick={handleEvaluateFit}
+                  disabled={evaluatingFit}
+                  className="flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 text-xs font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-50"
+                >
+                  <span>⚡</span>
+                  <span>{evaluatingFit ? (ar ? "جارٍ تقييم المطابقة..." : "Evaluating Fit...") : (ar ? "حفظ وتشغيل المطابقة الحتمية" : "Save & Run Deterministic Fit")}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Match Run Results Section */}
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="flex flex-col justify-between gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-center">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    {ar ? "نتائج مطابقة الفرص المعتمدة" : "Verified Opportunities Match Results"}
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {ar
+                      ? "المطابقة تتم وفق قواعد حتمية واضحة وموثقة دون أرقام أو احتمالات اصطناعية."
+                      : "Deterministic criteria evaluation without artificial weights or synthetic scores."}
+                  </p>
+                </div>
+                {matchRun && (
+                  <div className="text-xs text-slate-500">
+                    {ar ? `تم التقييم: ${matchRun.evaluated_at ? new Date(matchRun.evaluated_at).toLocaleTimeString() : ""}` : `Evaluated: ${matchRun.evaluated_at ?? ""}`}
+                  </div>
+                )}
+              </div>
+
+              {!matchRun ? (
+                <div className="py-16 text-center text-sm text-slate-500">
+                  {fitLoading ? (
+                    <span>{ar ? "جارٍ تحميل الملف والمطابقة..." : "Loading profile..."}</span>
+                  ) : (
+                    <div>
+                      <p>{ar ? "لم يتم تشغيل المطابقة بعد. اضغط على زر 'حفظ وتشغيل المطابقة' أعلاه لعرض الفرص المتوافقة مع أهدافك." : "Click 'Save & Run Deterministic Fit' above to evaluate opportunities."}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                  {matchRun.results.map((item) => {
+                    const badge = getMatchStateBadge(item.match_state);
+                    const originalOpp = items.find((o) => o.id === item.opportunity_id);
+
+                    return (
+                      <div
+                        key={item.result_id}
+                        data-testid="opportunity-card"
+                        className="flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:shadow-md"
+                      >
+                        <div>
+                          {/* Match State Badge */}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`rounded-full border px-3 py-1 text-xs font-bold ${badge.bg}`}>
+                              {ar ? badge.text_ar : badge.text_en}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600">
+                              {item.verification_status}
+                            </span>
+                          </div>
+
+                          {/* Title & Brand */}
+                          <h4 data-testid="opportunity-card-title" className="mt-3 text-base font-bold text-slate-900">
+                            {ar ? item.title_ar : item.title_en}
+                          </h4>
+                          {item.brand_name && (
+                            <p className="mt-0.5 text-xs font-semibold text-brand-700">{item.brand_name}</p>
+                          )}
+                          <p className="mt-1 text-xs text-slate-500">
+                            {item.sector} · {item.opportunity_type === "FRANCHISE" ? (ar ? "امتياز تجاري" : "Franchise") : (ar ? "فرصة تجارية" : "Business")}
+                          </p>
+
+                          {/* Summary Reason */}
+                          <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">
+                            <span className="font-bold text-slate-900">{ar ? "تعليل المطابقة: " : "Evaluation Reason: "}</span>
+                            <span>{item.summary_reason}</span>
+                          </div>
+
+                          {/* Missing Information Alerts (Wave 3B Integrity) */}
+                          {item.missing_information && item.missing_information.length > 0 && (
+                            <div className="mt-3 rounded-2xl bg-amber-50/70 p-3 text-xs text-amber-900">
+                              <p className="font-bold text-amber-950">{ar ? "معلومات مطلوب استيفاؤها:" : "Missing Information:"}</p>
+                              <ul className="mt-1 list-inside list-disc space-y-0.5 text-[11px]">
+                                {item.missing_information.map((m, idx) => (
+                                  <li key={idx}>{m}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Investment Facts */}
+                          <div className="mt-4 space-y-1 rounded-2xl border border-slate-100 bg-slate-50/50 p-3 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">{ar ? "الاستثمار المطلوب المنشور:" : "Published Investment:"}</span>
+                              <span className="font-mono font-medium text-slate-900">
+                                {item.investment_min
+                                  ? `${fmtSAR(item.investment_min, locale)} – ${fmtSAR(item.investment_max, locale)}`
+                                  : (ar ? "غير معلن في المصدر الرسمي" : "Unannounced in Official Source")}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">{ar ? "رأس مالك المحدد:" : "Your Budget:"}</span>
+                              <span className="font-mono font-medium text-brand-700">
+                                {fmtSAR(matchRun.fit_profile_snapshot.available_capital, locale)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="mt-6 flex flex-col gap-2 pt-2">
+                          <button
+                            data-testid="explain-fit-btn"
+                            onClick={() => setSelectedMatchForExplain(item)}
+                            className="w-full rounded-xl border border-slate-300 bg-white py-2 text-center text-xs font-semibold text-slate-800 transition hover:bg-slate-50"
+                          >
+                            {ar ? "🔍 شرح الملاءمة التفصيلي (Explain Fit)" : "🔍 Explain Fit Details"}
+                          </button>
+
+                          {item.match_state !== "NOT_EVALUATED" ? (
+                            <button
+                              data-testid="start-study-btn"
+                              onClick={() => {
+                                if (originalOpp) {
+                                  openCreateStudy(originalOpp, item.result_id);
+                                } else {
+                                  // Construct minimum object to launch study
+                                  openCreateStudy(
+                                    {
+                                      id: item.opportunity_id,
+                                      slug: item.slug,
+                                      title_ar: item.title_ar,
+                                      title_en: item.title_en,
+                                      opportunity_type: item.opportunity_type === "BUSINESS_OPPORTUNITY" ? "BUSINESS_OPPORTUNITY" : "FRANCHISE",
+                                      brand_name: item.brand_name,
+                                      sector: item.sector,
+                                      investment_min: item.investment_min ?? null,
+                                      investment_max: item.investment_max ?? null,
+                                      franchise_fee: item.franchise_fee ?? null,
+                                      geography: item.geography || "KSA_NATIONAL",
+                                      source_owner: "Official Verified Authority",
+                                      source_type: "PRIMARY_PORTAL",
+                                      official_source_url: item.official_source_url || "",
+                                      verification_status: item.verification_status,
+                                      is_active: item.is_active,
+                                      data_version: String(item.opportunity_version_at_eval),
+                                      first_seen_at: "",
+                                      last_checked_at: "",
+                                      last_verified_at: "",
+                                    },
+                                    item.result_id
+                                  );
+                                }
+                              }}
+                              className="w-full rounded-xl bg-brand-600 py-2.5 text-center text-xs font-semibold text-white shadow-sm transition hover:bg-brand-700"
+                            >
+                              {ar ? "بدء دراسة الجدوى مع نتائج المطابقة" : "Start Study with Fit Snapshot"}
+                            </button>
+                          ) : (
+                            <div className="rounded-xl bg-slate-100 py-2 text-center text-[11px] font-medium text-slate-500">
+                              {ar ? "غير متاح لبدء دراسة (سجل غير موثق)" : "Study disabled (Unverified)"}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeTab === "compare" ? (
+          /* Comparison View */
           <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
@@ -475,6 +969,27 @@ export default function OpportunitiesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
+                    {/* Match State Row (if match run exists) */}
+                    {matchRun && (
+                      <tr className="bg-brand-50/30">
+                        <td className="p-3 font-bold text-brand-900">{ar ? "حالة المطابقة الحتمية" : "Deterministic Fit State"}</td>
+                        {comparisonItems.map((i) => {
+                          const m = matchRun.results.find((r) => r.opportunity_id === i.id);
+                          const b = m ? getMatchStateBadge(m.match_state) : null;
+                          return (
+                            <td key={i.id} className="p-3">
+                              {b ? (
+                                <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-bold ${b.bg}`}>
+                                  {ar ? b.text_ar : b.text_en}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    )}
                     <tr>
                       <td className="bg-slate-50/50 p-3 font-medium text-slate-600">{ar ? "نوع الفرصة" : "Type"}</td>
                       {comparisonItems.map((i) => (
@@ -551,6 +1066,27 @@ export default function OpportunitiesPage() {
                       ))}
                     </tr>
                     <tr>
+                      <td className="bg-slate-50/50 p-3 font-medium text-slate-600">{ar ? "حالة الملاءمة (Wave 3B)" : "Fit Status (Wave 3B)"}</td>
+                      {comparisonItems.map((i) => {
+                        const fit = matchRun?.results?.find((e: OpportunityMatchItem) => e.opportunity_id === i.id);
+                        if (!fit) {
+                          return (
+                            <td key={i.id} className="p-3 text-xs text-slate-400">
+                              {ar ? "لم يتم التقييم" : "Not Evaluated"}
+                            </td>
+                          );
+                        }
+                        const badge = getMatchStateBadge(fit.match_state);
+                        return (
+                          <td key={i.id} className="p-3">
+                            <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${badge.bg}`}>
+                              {ar ? badge.text_ar : badge.text_en}
+                            </span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    <tr>
                       <td className="bg-slate-50/50 p-3 font-medium text-slate-600">{ar ? "إجراء اتخاذ القرار" : "Action"}</td>
                       {comparisonItems.map((i) => {
                         const original = items.find((o) => o.id === i.id);
@@ -574,6 +1110,7 @@ export default function OpportunitiesPage() {
             )}
           </div>
         ) : (
+          /* Normal List View */
           <>
             {/* Filters Bar */}
             <div className="mt-6 grid gap-4 rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -608,97 +1145,212 @@ export default function OpportunitiesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700">{ar ? "ميزانيتي المتاحة (ر.س)" : "Available Budget (SAR)"}</label>
+                <label className="block text-xs font-medium text-slate-700">
+                  {ar ? "الحد الأقصى للميزانية (ر.س)" : "Max Budget (SAR)"}
+                </label>
                 <input
                   type="number"
-                  min={0}
-                  placeholder={ar ? "مثال: 500,000" : "e.g. 500,000"}
                   value={budget}
                   onChange={(e) => setBudget(e.target.value)}
+                  placeholder={ar ? "أدخل سقف ميزانيتك (مثال: 500,000)" : "e.g. 500,000"}
                   className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-brand-500 focus:bg-white"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700">{ar ? "بحث بالاسم أو العلامة" : "Search"}</label>
+                <label className="block text-xs font-medium text-slate-700">{ar ? "بحث باسم العلامة أو الكلمة" : "Search"}</label>
                 <input
                   type="text"
-                  placeholder={ar ? "اكتب للبحث..." : "Search..."}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  placeholder={ar ? "بحث بالاسم، العلامة..." : "Search title or brand..."}
                   className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-brand-500 focus:bg-white"
                 />
               </div>
             </div>
 
-            {/* Opportunities List */}
+            {/* Strict Filter Semantics Banner (Rule C) */}
+            {hasBudget && (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-xs leading-relaxed text-amber-900">
+                <div className="font-bold">
+                  {ar ? "توضيح معايير التصفية المالية الصارمة:" : "Strict Financial Filter Notice:"}
+                </div>
+                <p className="mt-1">
+                  {ar
+                    ? `الفرص التي يقل حدها الأدنى الموثق عن ${parsedBudget.toLocaleString()} ر.س تظهر كفرص متطابقة ماليّاً (${budgetFitItems.length} فرصة). الفرص التي لا تعلن ميزانيتها في المصدر الرسمي (${budgetUnknownItems.length} فرصة) لا تُعتبر متطابقة آلياً منعاً للتضليل، وتتطلب إدخال ميزانية مقترحة بافتراض منك.`
+                    : `Opportunities with verified minimum capex within ${parsedBudget.toLocaleString()} SAR are shown (${budgetFitItems.length} items). Opportunities with unannounced capex (${budgetUnknownItems.length} items) are classified as unknown, not auto-fit.`}
+                </p>
+              </div>
+            )}
+
+            {/* Opportunities Cards Grid */}
             {loading ? (
-              <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {[0, 1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="h-64 animate-pulse rounded-3xl border border-slate-200 bg-white" />
-                ))}
+              <div className="py-24 text-center text-sm text-slate-500">
+                {ar ? "جارٍ تحميل الفرص المعتمدة من السجل..." : "Loading verified opportunities..."}
               </div>
             ) : error ? (
-              <div className="mt-8 rounded-2xl bg-red-50 p-6 text-center text-sm text-red-700">{error}</div>
-            ) : items.length === 0 ? (
-              <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-600">
-                {ar ? "لا توجد فرص مطابقة للشروط المحددة حالياً." : "No matching opportunities found."}
+              <div role="alert" className="mt-8 rounded-2xl bg-red-50 p-6 text-center text-sm text-red-700">
+                {error}
               </div>
             ) : hasBudget ? (
-              <div className="mt-8 space-y-10">
-                {/* Section 1: Known Budget Fit */}
+              <div className="mt-8 space-y-8">
+                {/* Group 1: Budget Fit Items */}
                 <div>
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-bold text-slate-900">
-                      {ar ? `الفرص المتوافقة مع الميزانية (${fmtSAR(parsedBudget, locale)})` : `Budget-Fit Opportunities (${fmtSAR(parsedBudget, locale)})`}
-                    </h2>
-                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-                      {budgetFitItems.length} {ar ? "فرص متوافقة" : "Fit"}
-                    </span>
-                  </div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {ar ? `فرص متطابقة مع ميزانيتك (أقل من ${parsedBudget.toLocaleString()} ر.س):` : `Opportunities within budget:`}
+                  </h3>
                   {budgetFitItems.length === 0 ? (
-                    <div data-testid="budget-fit-empty" className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-6 text-center text-xs text-slate-600">
-                      {ar ? "لا توجد فرص ذات تكلفة استثمارية معلنة تناسب هذه الميزانية حالياً." : "No opportunities with announced investment fit this budget currently."}
+                    <div data-testid="budget-fit-empty" className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
+                      {ar ? "لا توجد فرص منشورة بحد أدنى استثماري معلن يقع ضمن هذه الميزانية." : "No opportunities with announced capex fit this budget."}
                     </div>
                   ) : (
-                    <div data-testid="budget-fit-group" className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                      {budgetFitItems.map(renderCard)}
+                    <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                      {budgetFitItems.map((opp) => renderCard(opp))}
                     </div>
                   )}
                 </div>
 
-                {/* Section 2: Budget Unknown (Clearly Separated) */}
-                {budgetUnknownItems.length > 0 && (
-                  <div data-testid="budget-unknown-group" className="border-t border-slate-200 pt-8">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-lg font-bold text-slate-900">
-                        {ar ? "فرص غير معلنة الميزانية رسمياً — تتطلب افتراض ميزانية" : "Unannounced Budget Opportunities — Investor Assumption Required"}
-                      </h2>
-                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-                        {budgetUnknownItems.length} {ar ? "غير معلن" : "Unknown Budget"}
-                      </span>
-                    </div>
-                    <div data-testid="budget-unknown-notice" className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 leading-relaxed">
-                      <strong>{ar ? "تنبيه الشفافية والموثوقية:" : "Transparency Notice:"}</strong>{" "}
-                      {ar
-                        ? "هذه الفرص موثقة رسمياً لكن الحد الأدنى للاستثمار لم يُنشر في مصادرها المعلنة، ولذا لا تُعد متوافقة مع ميزانيتك تلقائياً حتى يتم تحديد افتراض مالي مستقل."
-                        : "These opportunities are officially verified but their minimum investment is unannounced, so they are NOT classified as matching your budget until you provide an assumption."}
-                    </div>
-                    <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                      {budgetUnknownItems.map(renderCard)}
-                    </div>
+                {/* Group 2: Budget Unknown Items (Isolated) */}
+                <div data-testid="budget-unknown-group" className="border-t border-slate-200 pt-6">
+                  <div data-testid="budget-unknown-notice" className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-xs text-amber-900">
+                    <span className="font-bold">{ar ? "فرص استثمارية غير محددة الميزانية بالمصدر الرسمي:" : "Opportunities with unannounced capex:"}</span>
+                    <p className="mt-1">
+                      {ar ? "هذه الفرص لم تعلن حداً أدنى للاستثمار في مصادرها الرسمية الموثقة، ولذلك لا تُعتبر متطابقة آلياً منعاً للتضليل المالي." : "These opportunities do not disclose capital requirements in official sources and are separated to prevent misleading auto-fit."}
+                    </p>
                   </div>
-                )}
+                  <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                    {budgetUnknownItems.map((opp) => renderCard(opp))}
+                  </div>
+                </div>
+              </div>
+            ) : items.length === 0 ? (
+              <div className="py-24 text-center text-sm text-slate-500">
+                {ar ? "لا توجد فرص استثمارية معتمدة تطابق معايير التصفية الحالية." : "No opportunities match current criteria."}
               </div>
             ) : (
               <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {items.map(renderCard)}
+                {items.map((opp) => renderCard(opp))}
               </div>
             )}
           </>
         )}
 
-        {/* DETAIL MODAL / DRAWER */}
+        {/* EXPLAIN FIT MODAL (WAVE 3B) */}
+        {selectedMatchForExplain && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            data-testid="explain-fit-modal"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          >
+            <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-md bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700">
+                      {ar ? "شرح الملاءمة الحتمية" : "Deterministic Fit Breakdown"}
+                    </span>
+                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${getMatchStateBadge(selectedMatchForExplain.match_state).bg}`}>
+                      {ar ? getMatchStateBadge(selectedMatchForExplain.match_state).text_ar : getMatchStateBadge(selectedMatchForExplain.match_state).text_en}
+                    </span>
+                  </div>
+                  <h3 className="mt-2 text-xl font-bold text-slate-900">
+                    {ar ? selectedMatchForExplain.title_ar : selectedMatchForExplain.title_en}
+                  </h3>
+                  {selectedMatchForExplain.brand_name && (
+                    <p className="text-xs font-semibold text-brand-700">{selectedMatchForExplain.brand_name}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSelectedMatchForExplain(null)}
+                  className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Overall Decision Context */}
+              <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-xs leading-relaxed text-slate-700">
+                <span className="font-bold text-slate-900">{ar ? "خلاصة القرار: " : "Decision Summary: "}</span>
+                <span>{selectedMatchForExplain.summary_reason}</span>
+              </div>
+
+              {/* Evaluated Criteria Table */}
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full border-collapse text-right text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-100/70 text-slate-700">
+                      <th className="p-3 font-semibold">{ar ? "المعيار" : "Criterion"}</th>
+                      <th className="p-3 font-semibold">{ar ? "نوع القيد" : "Strength"}</th>
+                      <th className="p-3 font-semibold">{ar ? "مدخل المستثمر" : "Investor Input"}</th>
+                      <th className="p-3 font-semibold">{ar ? "الحقيقة المنشورة" : "Sourced Fact"}</th>
+                      <th className="p-3 font-semibold">{ar ? "النتيجة" : "Result"}</th>
+                      <th className="p-3 font-semibold">{ar ? "التعليل التفصيلي" : "Reason"}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {Object.entries(selectedMatchForExplain.criteria_evaluations).map(([key, c]) => {
+                      let resBadge = "bg-slate-100 text-slate-700";
+                      if (c.result === "PASS") resBadge = "bg-emerald-100 text-emerald-800";
+                      else if (c.result === "FAIL") resBadge = "bg-rose-100 text-rose-800";
+                      else if (c.result === "UNKNOWN") resBadge = "bg-amber-100 text-amber-800";
+
+                      return (
+                        <tr key={key} className="hover:bg-slate-50/50">
+                          <td className="p-3 font-semibold text-slate-900">{c.label_ar || c.criterion}</td>
+                          <td className="p-3">
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                              c.constraint_strength === "HARD" ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-600"
+                            }`}>
+                              {c.constraint_strength === "HARD" ? (ar ? "حتمي (HARD)" : "HARD") : (ar ? "تفضيل (PREF)" : "PREF")}
+                            </span>
+                          </td>
+                          <td className="p-3 font-mono text-slate-700">
+                            {Array.isArray(c.user_value) ? c.user_value.join(", ") : String(c.user_value ?? "—")}
+                          </td>
+                          <td className="p-3 font-mono text-slate-700">
+                            {Array.isArray(c.opportunity_value) ? c.opportunity_value.join(", ") : String(c.opportunity_value ?? "—")}
+                          </td>
+                          <td className="p-3">
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${resBadge}`}>
+                              {c.result}
+                            </span>
+                          </td>
+                          <td className="max-w-xs p-3 leading-relaxed text-slate-600">
+                            {c.reason}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Source Verification Footer */}
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
+                <div>
+                  <span className="font-semibold text-slate-700">{ar ? "المصدر المعتمد: " : "Source: "}</span>
+                  <a
+                    href={selectedMatchForExplain.official_source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-brand-700 hover:underline"
+                  >
+                    {selectedMatchForExplain.official_source_url} ↗
+                  </a>
+                </div>
+                <button
+                  onClick={() => setSelectedMatchForExplain(null)}
+                  className="rounded-xl bg-slate-100 px-5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                >
+                  {ar ? "إغلاق" : "Close"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* OPPORTUNITY DETAIL MODAL */}
         {detailItem && (
           <div
             role="dialog"
@@ -706,147 +1358,98 @@ export default function OpportunitiesPage() {
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
           >
             <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
-              <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-800">
+                    <span className="rounded-md bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-800">
                       {detailItem.opportunity_type === "FRANCHISE" ? (ar ? "امتياز تجاري" : "Franchise") : (ar ? "فرصة استثمارية" : "Business Opportunity")}
                     </span>
-                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
                       {detailItem.verification_status}
                     </span>
                   </div>
-                  <h2 className="mt-2 text-xl font-bold text-slate-900">
+                  <h3 className="mt-2 text-xl font-bold text-slate-900">
                     {ar ? detailItem.title_ar : detailItem.title_en}
-                  </h2>
+                  </h3>
                   {detailItem.brand_name && (
-                    <p className="text-sm font-semibold text-brand-700">{detailItem.brand_name}</p>
+                    <p className="text-xs font-semibold text-brand-700">{detailItem.brand_name}</p>
                   )}
                 </div>
                 <button
                   onClick={() => setDetailItem(null)}
-                  className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 >
                   ✕
                 </button>
               </div>
 
-              {/* Description */}
-              <div className="mt-4">
-                <p className="text-xs leading-relaxed text-slate-700">
-                  {ar ? detailItem.description_ar : detailItem.description_en}
-                </p>
-              </div>
-
-              {/* Verified Facts vs Unknowns Breakdown */}
-              <div className="mt-6 space-y-4">
-                <h3 className="text-sm font-bold text-slate-900">
-                  {ar ? "تصنيف الحقائق والمعلومات (منهجية عدم التزييف)" : "Facts Classification"}
-                </h3>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {/* Published Facts */}
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
-                      <span>✓</span>
-                      <span>{ar ? "معلومات منشورة وموثقة" : "Published Facts"}</span>
-                    </div>
-                    <ul className="mt-2 space-y-1.5 text-xs text-emerald-950">
-                      {detailItem.facts_breakdown?.published_facts?.map((fact, idx) => (
-                        <li key={idx} className="list-inside list-disc">{fact}</li>
-                      )) || <li className="text-slate-400">—</li>}
-                    </ul>
-                  </div>
-
-                  {/* Platform Normalized Facts */}
-                  <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900">
-                      <span>ℹ</span>
-                      <span>{ar ? "تصنيف المنصة المعياري" : "Platform-Normalized Facts"}</span>
-                    </div>
-                    <ul className="mt-2 space-y-1.5 text-xs text-blue-950">
-                      {detailItem.facts_breakdown?.platform_normalized_facts?.map((fact, idx) => (
-                        <li key={idx} className="list-inside list-disc">{fact}</li>
-                      )) || <li className="text-slate-400">—</li>}
-                    </ul>
-                  </div>
-
-                  {/* Unknown / Missing Info */}
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                      <span>?</span>
-                      <span>{ar ? "معلومات غير معلنة (تبقى غير معلنة)" : "Unknown / Unannounced Info"}</span>
-                    </div>
-                    <ul className="mt-2 space-y-1.5 text-xs text-amber-950">
-                      {detailItem.facts_breakdown?.unknowns?.map((fact, idx) => (
-                        <li key={idx} className="list-inside list-disc">{fact}</li>
-                      )) || <li className="text-slate-400">—</li>}
-                    </ul>
-                  </div>
-
-                  {/* User Assumptions Needed */}
-                  <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-4">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900">
-                      <span>✎</span>
-                      <span>{ar ? "افتراضات مطلوبة من المستثمر" : "User Assumptions Needed"}</span>
-                    </div>
-                    <ul className="mt-2 space-y-1.5 text-xs text-purple-950">
-                      {detailItem.facts_breakdown?.user_assumptions_needed?.map((fact, idx) => (
-                        <li key={idx} className="list-inside list-disc">{fact}</li>
-                      )) || <li className="text-slate-400">—</li>}
-                    </ul>
-                  </div>
+              {/* Facts and Provenance Details */}
+              <div className="mt-6 space-y-6 text-xs">
+                <div>
+                  <h4 className="font-bold text-slate-900">{ar ? "الوصف الرسمي الكامل:" : "Full Official Description:"}</h4>
+                  <p className="mt-2 leading-relaxed text-slate-700">
+                    {ar ? detailItem.description_ar : detailItem.description_en}
+                  </p>
                 </div>
-              </div>
 
-              {/* Provenance and Evidence Details */}
-              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs">
-                <h4 className="font-bold text-slate-800">{ar ? "بيانات السجل وتوثيق المصدر:" : "Source Provenance:"}</h4>
-                <div className="mt-3 grid gap-2 text-slate-600 sm:grid-cols-2">
-                  <div>
-                    <span className="font-medium text-slate-700">{ar ? "الجهة المصدرية:" : "Source Owner:"} </span>
-                    {detailItem.source_owner}
-                  </div>
-                  <div>
-                    <span className="font-medium text-slate-700">{ar ? "نوع التوثيق:" : "Source Type:"} </span>
-                    {detailItem.source_type}
-                  </div>
-                  <div>
-                    <span className="font-medium text-slate-700">{ar ? "إصدار البيانات:" : "Data Version:"} </span>
-                    {detailItem.data_version}
-                  </div>
-                  <div>
-                    <span className="font-medium text-slate-700">{ar ? "آخر تحقق رسمي:" : "Last Verified:"} </span>
-                    {detailItem.last_verified_at?.slice(0, 10)}
-                  </div>
-                  <div className="sm:col-span-2">
-                    <span className="font-medium text-slate-700">{ar ? "رابط المصدر:" : "Official URL:"} </span>
-                    <a
-                      href={detailItem.official_source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="break-all text-brand-700 hover:underline"
-                    >
-                      {detailItem.official_source_url}
-                    </a>
+                {/* 1. Published & Verified Facts */}
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+                  <h4 className="font-bold text-emerald-900">
+                    {ar ? "معلومات منشورة وموثقة:" : "Published and Verified Facts:"}
+                  </h4>
+                  <div className="mt-2 space-y-1.5 text-emerald-950">
+                    <p>• {ar ? "العلامة والنشاط موثقان رسمياً بسجل الفرص." : "Brand and activity are officially verified in registry."}</p>
+                    {detailItem.investment_min && (
+                      <p>• {ar ? `النطاق الاستثماري الموثق: ${fmtSAR(detailItem.investment_min, locale)} – ${fmtSAR(detailItem.investment_max, locale)}` : `Verified Capex: ${fmtSAR(detailItem.investment_min, locale)} – ${fmtSAR(detailItem.investment_max, locale)}`}</p>
+                    )}
+                    {detailItem.franchise_fee !== null && detailItem.franchise_fee !== undefined && (
+                      <p>• {ar ? `رسوم الامتياز الموثقة: ${fmtSAR(detailItem.franchise_fee, locale)}` : `Verified Franchise Fee: ${fmtSAR(detailItem.franchise_fee, locale)}`}</p>
+                    )}
                   </div>
                 </div>
 
-                {detailItem.source_evidence && (
-                  <div className="mt-3 border-t border-slate-200/60 pt-2 text-[11px] text-slate-600">
-                    <p className="font-medium text-slate-700">{ar ? "مقتطف التوثيق المرجعي:" : "Source Quotation:"}</p>
-                    <p className="mt-1 italic">
-                      &ldquo;{String(detailItem.source_evidence.quote_ar || detailItem.source_evidence.report_ref || "")}&rdquo;
-                    </p>
+                {/* 2. Platform Taxonomy */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h4 className="font-bold text-slate-900">
+                    {ar ? "تصنيف المنصة المعياري:" : "Platform Taxonomy:"}
+                  </h4>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-slate-700">
+                    <div><span className="text-slate-500">{ar ? "القطاع:" : "Sector:"}</span> {detailItem.sector}</div>
+                    <div><span className="text-slate-500">{ar ? "النوع:" : "Type:"}</span> {detailItem.opportunity_type}</div>
+                    <div><span className="text-slate-500">{ar ? "النطاق:" : "Geography:"}</span> {detailItem.city ? `${detailItem.city} (${detailItem.region || ""})` : (ar ? "وطني شامل" : "National")}</div>
                   </div>
-                )}
+                </div>
 
-                {/* Field-level Evidence Mapping */}
-                <div className="mt-4 rounded-xl border border-slate-200/80 bg-white p-3.5 text-xs">
-                  <h5 className="font-bold text-slate-800">
-                    {ar ? "توثيق الأدلة على مستوى الحقول (Field-Level Provenance):" : "Field-Level Provenance:"}
-                  </h5>
-                  <div className="mt-2.5 space-y-2">
+                {/* 3. Unannounced Facts */}
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
+                  <h4 className="font-bold text-amber-900">
+                    {ar ? "معلومات غير معلنة:" : "Unannounced Facts:"}
+                  </h4>
+                  <div className="mt-2 space-y-1 text-amber-950">
+                    {!detailItem.investment_min && (
+                      <p>• {ar ? "الحد الأدنى للاستثمار الرأسمالي (Capex) غير معلن في البوابة العامة للعلامة." : "Minimum capital investment (Capex) is not disclosed in the public portal."}</p>
+                    )}
+                    {(detailItem.franchise_fee === null || detailItem.franchise_fee === undefined) && detailItem.opportunity_type === "FRANCHISE" && (
+                      <p>• {ar ? "رسوم الفرانشايز التفصيلية غير معلنة وتتطلب تواصلاً مباشراً." : "Franchise fee details are unannounced and require direct brand outreach."}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4. Required Investor Assumptions */}
+                <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4">
+                  <h4 className="font-bold text-blue-900">
+                    {ar ? "افتراضات مطلوبة من المستثمر:" : "Required Investor Assumptions:"}
+                  </h4>
+                  <div className="mt-2 space-y-1 text-blue-950">
+                    <p>• {ar ? "تحديد ميزانية رأسمالية تقديرية لدراسة الجدوى المالية (افتراض مستثمر)." : "Specify estimated capital budget for financial feasibility (investor assumption)."}</p>
+                    <p>• {ar ? "اختيار المدينة وموقع الفرع وتكاليف الإيجار والتشغيل المحلي." : "Select target city, site, local rent, and operating assumptions."}</p>
+                  </div>
+                </div>
+
+                {/* Primary Source Provenance */}
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <h4 className="font-bold text-slate-900">{ar ? "وثائق المصدر الأولي وسلسلة الأصل:" : "Primary Source Lineage:"}</h4>
+                  <div className="mt-3 space-y-2">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
                       <span className="text-slate-600">{ar ? "توثيق وجود الفرصة بالمصدر الأولي:" : "Opportunity Existence Proof:"}</span>
                       <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
@@ -861,27 +1464,16 @@ export default function OpportunitiesPage() {
                           : (ar ? "غير معلن - يتطلب افتراض مستثمر" : "Unannounced (Requires Investor Assumption)")}
                       </span>
                     </div>
-                    {detailItem.opportunity_type === "FRANCHISE" && (
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                        <span className="text-slate-600">{ar ? "رسوم الامتياز (Franchise Fee):" : "Franchise Fee:"}</span>
-                        <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                          {detailItem.franchise_fee !== null && detailItem.franchise_fee !== undefined
-                            ? (ar ? "موثق من المصدر" : "Source-verified")
-                            : (ar ? "غير معلن في البوابة العامة" : "Unannounced in Public Portal")}
-                        </span>
-                      </div>
-                    )}
                     <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                      <span className="text-slate-600">{ar ? "تصنيف القطاع والنشاط:" : "Sector & Activity:"}</span>
-                      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                        {ar ? "موثق من المصدر الرسمي" : "Source-verified"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-600">{ar ? "النطاق الجغرافي والاشتراطات:" : "Geography & Rules:"}</span>
-                      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                        {ar ? "موثق من المصدر الرسمي" : "Source-verified"}
-                      </span>
+                      <span className="text-slate-600">{ar ? "المصدر المعتمد:" : "Official Source:"}</span>
+                      <a
+                        href={detailItem.official_source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-brand-700 hover:underline"
+                      >
+                        {detailItem.source_owner} ({detailItem.official_source_url}) ↗
+                      </a>
                     </div>
                   </div>
                 </div>
@@ -964,6 +1556,11 @@ export default function OpportunitiesPage() {
                   <p className="mt-1 text-[11px]">
                     {ar ? "القطاع:" : "Sector:"} {targetForStudy.sector} · {ar ? "المصدر:" : "Source:"} {targetForStudy.source_owner} · {ar ? "الإصدار:" : "Version:"} {targetForStudy.data_version}
                   </p>
+                  {studyMatchResultId && (
+                    <p className="mt-1 text-[11px] font-semibold text-brand-700">
+                      {ar ? "✓ سيتم إرفاق لقطة المطابقة (Fit Snapshot) في حمولة الدراسة" : "✓ Fit Snapshot will be attached to study payload"}
+                    </p>
+                  )}
                 </div>
 
                 {createStudyError && (

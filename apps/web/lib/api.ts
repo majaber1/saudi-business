@@ -1487,10 +1487,16 @@ export function compareVerifiedOpportunities(ids: number[]) {
   return request<OpportunityComparisonItem[]>(`/api/v1/opportunities/compare?ids=${ids.join(",")}`);
 }
 
+export interface CreateStudyFromOpportunityPayload {
+  custom_budget?: number;
+  study_title?: string;
+  match_result_id?: number;
+}
+
 export function createStudyFromOpportunity(
   token: string,
   opportunityId: number,
-  payload?: { custom_budget?: number; study_title?: string }
+  payload?: CreateStudyFromOpportunityPayload
 ) {
   return authedRequest<CreateStudyFromOpportunityResponse>(
     `/api/v1/opportunities/${opportunityId}/create-study`,
@@ -1500,5 +1506,99 @@ export function createStudyFromOpportunity(
       body: JSON.stringify(payload ?? {}),
     }
   );
+}
+
+export interface FitProfile {
+  id?: number;
+  user_id?: number;
+  available_capital?: number | null;
+  capital_constraint_type?: string;
+  preferred_sectors?: string[];
+  excluded_sectors?: string[];
+  preferred_opportunity_types?: string[];
+  opportunity_type_constraint?: string;
+  target_region?: string | null;
+  target_city?: string | null;
+  preferred_business_models?: string[];
+  target_customer?: string | null;
+  experience_sectors?: string[];
+  notes?: string | null;
+  version?: number;
+}
+
+export interface CriterionEvaluation {
+  criterion: string;
+  label_ar: string;
+  constraint_strength: "HARD" | "PREFERENCE";
+  user_value: any;
+  opportunity_value: any;
+  result: "PASS" | "FAIL" | "UNKNOWN" | "NOT_APPLICABLE";
+  reason: string;
+  source_type?: string;
+  source_url?: string;
+  source_version?: number;
+  provenance?: any;
+}
+
+export interface OpportunityMatchItem {
+  result_id: number;
+  opportunity_id: number;
+  slug: string;
+  title_ar: string;
+  title_en: string;
+  brand_name?: string | null;
+  sector: string;
+  opportunity_type: string;
+  investment_min?: number | null;
+  investment_max?: number | null;
+  franchise_fee?: number | null;
+  geography?: string;
+  official_source_url?: string;
+  verification_status: string;
+  verification_status_at_eval?: string;
+  is_active: boolean;
+  match_state: "MATCH" | "POSSIBLE_MATCH" | "NEEDS_INFORMATION" | "NOT_MATCHED" | "NOT_EVALUATED";
+  original_match_state: string;
+  is_version_stale: boolean;
+  summary_reason: string;
+  missing_information: string[];
+  criteria_evaluations: Record<string, CriterionEvaluation>;
+  opportunity_version_at_eval: number;
+  current_data_version: number;
+}
+
+export interface MatchRunResponse {
+  id: number;
+  evaluated_at?: string | null;
+  calculation_version: string;
+  fit_profile_version: number;
+  fit_profile_snapshot: FitProfile;
+  results_count: number;
+  results: OpportunityMatchItem[];
+}
+
+export function getOpportunityFitProfile(token: string) {
+  return authedRequest<FitProfile | null>("/api/v1/opportunities/fit-profile", token);
+}
+
+export function saveOpportunityFitProfile(token: string, data: FitProfile) {
+  return authedRequest<FitProfile>("/api/v1/opportunities/fit-profile", token, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function evaluateOpportunityFit(token: string) {
+  return authedRequest<MatchRunResponse>("/api/v1/opportunities/fit-evaluate", token, {
+    method: "POST",
+  });
+}
+
+export function getOpportunityFitResults(token: string) {
+  return authedRequest<MatchRunResponse | null>("/api/v1/opportunities/fit-results", token);
+}
+
+export function getOpportunitySingleFitResult(token: string, oppId: number) {
+  return authedRequest<any>(`/api/v1/opportunities/fit-results/${oppId}`, token);
 }
 
