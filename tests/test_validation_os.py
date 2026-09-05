@@ -155,6 +155,7 @@ def test_customer_interview_recording_and_hypothesis_support():
             "source_type": "USER_RECORDED",
             "source_owner": "أحمد الشمري - شركة نقليات الرياض",
             "evidence_strength": "STRONG",
+            "evidence_direction": "SUPPORTING",
             "is_simulated": False,
             "structured_payload": {
                 "segment": "B2B Logistics Operations",
@@ -200,6 +201,7 @@ def test_simulated_content_is_isolated_and_cannot_support_hypothesis():
             "source_type": "USER_RECORDED",
             "is_simulated": True,  # SIMULATED
             "evidence_strength": "STRONG",
+            "evidence_direction": "SUPPORTING",
             "structured_payload": {
                 "problem_confirmed": True,
                 "notes": "محاكاة نموذج ذكاء اصطناعي لاختبار الأسئلة فقط.",
@@ -330,7 +332,20 @@ def test_competitor_source_provenance_requires_valid_url():
     ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
     ws_id = ws["id"]
 
-    # Invalid URL -> 400 Bad Request
+    # 1. COMPETITOR_BENCHMARK without source_url -> 400 Bad Request
+    r_no_url = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "COMPETITOR_BENCHMARK",
+            "title": "مقارنة أسعار المنافسين في السوق",
+            "source_type": "COMPETITOR",
+        },
+        headers=headers,
+    )
+    assert r_no_url.status_code == 400
+    assert "source_url" in r_no_url.text or "رابط" in r_no_url.text
+
+    # 2. Invalid URL -> 400 Bad Request
     r_bad = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/evidence",
         json={
@@ -343,13 +358,13 @@ def test_competitor_source_provenance_requires_valid_url():
     )
     assert r_bad.status_code == 400
 
-    # Valid URL -> 201 Created
+    # 3. Valid URL -> 201 Created
     r_good = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/evidence",
         json={
-            "evidence_type": "URL_SOURCE",
+            "evidence_type": "COMPETITOR_BENCHMARK",
             "title": "قائمة أسعار المنافس المحلي",
-            "source_type": "URL_SOURCE",
+            "source_type": "COMPETITOR",
             "source_url": "https://competitor-cafe.sa/menu",
             "source_owner": "منافس محلي - فرع الرياض",
             "structured_payload": {
@@ -400,7 +415,36 @@ def test_immutable_validation_decisions_and_snapshot():
     ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
     ws_id = ws["id"]
 
-    # 1. GO_WITH_CONDITIONS without conditions -> 400
+    # 1. Attempting GO_WITH_CONDITIONS from NEEDS_EVIDENCE status -> 400 rejected!
+    r_dec_needs_ev = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={
+            "decision": DECISION_GO_WITH_CONDITIONS,
+            "decision_reason": "محاولة اتخاذ قرار مشروط قبل توفير أي أدلة",
+            "conditions": ["الحصول على خطابات نوايا مبدئية"],
+        },
+        headers=headers,
+    )
+    assert r_dec_needs_ev.status_code == 400
+    assert "PARTIALLY_VALIDATED" in r_dec_needs_ev.text or "مشروط" in r_dec_needs_ev.text
+
+    # Provide real supporting evidence for one hypothesis to transition workspace to PARTIALLY_VALIDATED
+    h_first = ws["hypotheses"][0]
+    r_first_ev = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "مقابلة مبدئية تدعم الفرضية الأولى",
+            "hypothesis_id": h_first["id"],
+            "evidence_strength": "STRONG",
+            "evidence_direction": "SUPPORTING",
+            "is_simulated": False,
+        },
+        headers=headers,
+    )
+    assert r_first_ev.status_code == 201
+
+    # 2. In PARTIALLY_VALIDATED: GO_WITH_CONDITIONS without conditions -> 400
     r_bad_cond = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/decision",
         json={"decision": DECISION_GO_WITH_CONDITIONS, "decision_reason": "سبب كافٍ للموافقة المشروطة", "conditions": []},
@@ -408,7 +452,7 @@ def test_immutable_validation_decisions_and_snapshot():
     )
     assert r_bad_cond.status_code == 400
 
-    # 2. Record GO_WITH_CONDITIONS version 1
+    # 3. In PARTIALLY_VALIDATED: Record GO_WITH_CONDITIONS version 1 -> 201
     r_dec1 = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/decision",
         json={
@@ -482,33 +526,49 @@ def test_immutable_validation_decisions_and_snapshot():
 # ==============================================================================
 
 def test_evidence_direction_validation_and_rejection():
-    """Gate 1: Test evidence_direction defaults to SUPPORTING, accepts REFUTING/NEUTRAL, rejects invalid."""
+    """Gate 1: Test evidence_direction defaults to NEUTRAL for unlinked, is required for hypotheses, and rejects invalid."""
     _, tok = _register_and_login("direction_test")
     headers = _auth(tok)
     _, study_id = _create_project_and_study(tok, "مشروع اختبار اتجاه الأدلة")
 
     ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
     ws_id = ws["id"]
+    h_sample = ws["hypotheses"][0]
 
-    # 1. Default direction is SUPPORTING
+    # 1. Default direction for unlinked evidence is NEUTRAL (never SUPPORTING)
     r_def = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/evidence",
         json={
             "evidence_type": "INTERVIEW",
-            "title": "مقابلة افتراضية بالاتجاه التلقائي",
+            "title": "مقابلة عامة بدون ربط بالاتجاه التلقائي",
             "source_type": "USER_RECORDED",
         },
         headers=headers,
     )
     assert r_def.status_code == 201
-    assert r_def.json()["evidence_direction"] == "SUPPORTING"
+    assert r_def.json()["evidence_direction"] == "NEUTRAL"
 
-    # 2. Explicit REFUTING
+    # 2. Hypothesis-linked evidence WITHOUT direction -> 422 rejected!
+    r_no_dir = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "دليل مرتبط بفرضية بدون تحديد أثر",
+            "hypothesis_id": h_sample["id"],
+            "source_type": "USER_RECORDED",
+        },
+        headers=headers,
+    )
+    assert r_no_dir.status_code == 422
+    assert "أثر الدليل" in r_no_dir.text or "direction" in r_no_dir.text.lower()
+
+    # 3. Explicit REFUTING
     r_ref = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/evidence",
         json={
             "evidence_type": "INTERVIEW",
             "title": "مقابلة تثبت عدم رغبة العملاء بالمنتج",
+            "hypothesis_id": h_sample["id"],
             "evidence_direction": "REFUTING",
             "source_type": "USER_RECORDED",
         },
@@ -517,12 +577,13 @@ def test_evidence_direction_validation_and_rejection():
     assert r_ref.status_code == 201
     assert r_ref.json()["evidence_direction"] == "REFUTING"
 
-    # 3. Explicit NEUTRAL
+    # 4. Explicit NEUTRAL
     r_neu = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/evidence",
         json={
             "evidence_type": "INTERVIEW",
             "title": "مقابلة محايدة غير حاسمة",
+            "hypothesis_id": h_sample["id"],
             "evidence_direction": "NEUTRAL",
             "source_type": "USER_RECORDED",
         },
@@ -531,7 +592,26 @@ def test_evidence_direction_validation_and_rejection():
     assert r_neu.status_code == 201
     assert r_neu.json()["evidence_direction"] == "NEUTRAL"
 
-    # 4. Invalid direction -> rejected
+    # 5. STRONG evidence with NEUTRAL direction must NOT auto-support a hypothesis
+    h_second = ws["hypotheses"][1]
+    r_strong_neu = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "دليل قوي لكنه محايد في اتجاهه",
+            "hypothesis_id": h_second["id"],
+            "evidence_strength": "STRONG",
+            "evidence_direction": "NEUTRAL",
+            "source_type": "USER_RECORDED",
+        },
+        headers=headers,
+    )
+    assert r_strong_neu.status_code == 201
+    ws_after_neu = client.get(f"/api/v1/validation/workspaces/{ws_id}", headers=headers).json()
+    h_second_checked = next(h for h in ws_after_neu["hypotheses"] if h["id"] == h_second["id"])
+    assert h_second_checked["status"] != STATUS_SUPPORTED
+
+    # 6. Invalid direction -> rejected
     r_inv = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/evidence",
         json={
@@ -599,6 +679,7 @@ def test_cross_workspace_ownership_rejection():
             "evidence_type": "INTERVIEW",
             "title": "دليل عابر لمساحة العمل",
             "hypothesis_id": h_ws1,
+            "evidence_direction": "SUPPORTING",
             "source_type": "USER_RECORDED",
         },
         headers=headers,
@@ -793,18 +874,89 @@ def test_go_with_conditions_gate_with_refuted_assumptions():
     )
     assert r_bad.status_code == 400
 
-    # 2. Attempt GO_WITH_CONDITIONS with explicit condition mitigating the refuted hypothesis -> 201
-    r_ok = client.post(
+    # 2. Attempt GO_WITH_CONDITIONS with conditions when critical hypothesis is NOT_SUPPORTED -> 400 BLOCKED!
+    r_blocked = client.post(
         f"/api/v1/validation/workspaces/{ws_id}/decision",
         json={
             "decision": DECISION_GO_WITH_CONDITIONS,
-            "decision_reason": "موافقة مشروطة شريطة تقديم نموذج تسعير بديل يعالج رفض العملاء",
+            "decision_reason": "محاولة الموافقة المشروطة رغم دحض فرضية حرجة",
             "conditions": ["تعديل باقة التسعير وإعادة اختبارها مع 20 عميل جديد"],
         },
         headers=headers,
     )
-    assert r_ok.status_code == 201
-    assert r_ok.json()["decision"] == DECISION_GO_WITH_CONDITIONS
+    assert r_blocked.status_code == 400
+    assert "NOT_VALIDATED" in r_blocked.text or "فرضيات حرجة" in r_blocked.text or "مشروط" in r_blocked.text
+
+    # 3. PIVOT succeeds when critical hypotheses are refuted
+    r_pivot = client.post(
+        f"/api/v1/validation/workspaces/{ws_id}/decision",
+        json={
+            "decision": DECISION_PIVOT,
+            "decision_reason": "تغيير مسار نموذج العمل بالكامل نظراً لرفض العملاء الفرضية الجوهرية",
+        },
+        headers=headers,
+    )
+    assert r_pivot.status_code == 201
+    assert r_pivot.json()["decision"] == DECISION_PIVOT
+
+    # 4. In a separate workspace that reaches PARTIALLY_VALIDATED without refuted critical hypotheses:
+    _, tok2 = _register_and_login("cond_pass")
+    _, study2 = _create_project_and_study(tok2, "مشروع مشروط ناجح")
+    ws2 = client.get(f"/api/v1/validation/study/{study2}", headers=_auth(tok2)).json()
+    ws2_id = ws2["id"]
+
+    # Add supporting evidence for one hypothesis
+    client.post(
+        f"/api/v1/validation/workspaces/{ws2_id}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "مقابلة داعمة أولية",
+            "hypothesis_id": ws2["hypotheses"][0]["id"],
+            "evidence_strength": "STRONG",
+            "evidence_direction": "SUPPORTING",
+            "is_simulated": False,
+        },
+        headers=_auth(tok2),
+    )
+
+    # Now GO_WITH_CONDITIONS succeeds with conditions
+    r_cond_ok = client.post(
+        f"/api/v1/validation/workspaces/{ws2_id}/decision",
+        json={
+            "decision": DECISION_GO_WITH_CONDITIONS,
+            "decision_reason": "موافقة مشروطة مع استمرار اختبار بقية الفرضيات",
+            "conditions": ["استكمال اختبار التسعير قبل التوسع"],
+        },
+        headers=_auth(tok2),
+    )
+    assert r_cond_ok.status_code == 201
+    assert r_cond_ok.json()["decision"] == DECISION_GO_WITH_CONDITIONS
+
+
+def test_evaluate_workspace_status_cannot_be_validated_without_real_evidence():
+    """Gate 8: Stored hypothesis status cannot artificially show VALIDATED without genuine non-simulated evidence."""
+    from app.services.validation import evaluate_workspace_status
+
+    _, tok = _register_and_login("eval_gate")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع فحص دقة الحالة")
+    ws_json = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    ws_id = ws_json["id"]
+
+    db_session = next(app_db.get_db())
+    ws_obj = db_session.query(models.ValidationWorkspace).filter_by(id=ws_id).first()
+
+    # Manually set all hypotheses to SUPPORTED in the database without adding any real evidence
+    for h in ws_obj.hypotheses:
+        h.status = STATUS_SUPPORTED
+    db_session.commit()
+    db_session.refresh(ws_obj)
+
+    # evaluate_workspace_status MUST NOT return VALIDATED because real supporting evidence does not exist!
+    eval_res = evaluate_workspace_status(ws_obj)
+    assert eval_res["status"] != WS_STATUS_VALIDATED
+    assert eval_res["critical_supported"] == 0
+    assert eval_res["status"] in (WS_STATUS_PARTIALLY_VALIDATED, WS_STATUS_NEEDS_EVIDENCE)
 
 
 def test_decision_snapshot_immutability():

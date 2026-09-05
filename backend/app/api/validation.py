@@ -70,7 +70,7 @@ class EvidenceCreateIn(BaseModel):
     raw_value: Optional[float] = None
     unit: Optional[str] = None
     evidence_strength: str = "MODERATE"
-    evidence_direction: str = Field("SUPPORTING", description="SUPPORTING, REFUTING, NEUTRAL")
+    evidence_direction: Optional[str] = Field(None, description="SUPPORTING, REFUTING, NEUTRAL")
     is_simulated: bool = False
     structured_payload: Dict[str, Any] = Field(default_factory=dict)
 
@@ -137,7 +137,7 @@ def _serialize_workspace(ws: models.ValidationWorkspace, db_session: Session) ->
                 "unit": ev.unit,
                 "captured_at": ev.captured_at.isoformat() if ev.captured_at else None,
                 "evidence_strength": ev.evidence_strength,
-                "evidence_direction": getattr(ev, "evidence_direction", "SUPPORTING"),
+                "evidence_direction": getattr(ev, "evidence_direction", "NEUTRAL") or "NEUTRAL",
                 "is_simulated": ev.is_simulated,
                 "structured_payload": ev.structured_payload or {},
             }
@@ -349,6 +349,11 @@ def create_evidence(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مساحة التحقق غير موجودة")
     if ws.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="غير مصرح بالوصول إلى هذه المساحة")
+    if data.hypothesis_id and not data.evidence_direction:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="يجب تحديد أثر الدليل على الفرضية بشكل صريح (SUPPORTING, REFUTING, NEUTRAL).",
+        )
     try:
         ev = record_evidence(
             db=db_session,
@@ -380,7 +385,7 @@ def create_evidence(
             "raw_value": ev.raw_value,
             "unit": ev.unit,
             "evidence_strength": ev.evidence_strength,
-            "evidence_direction": getattr(ev, "evidence_direction", "SUPPORTING"),
+            "evidence_direction": getattr(ev, "evidence_direction", "NEUTRAL") or "NEUTRAL",
             "is_simulated": ev.is_simulated,
             "structured_payload": ev.structured_payload,
             "captured_at": ev.captured_at.isoformat() if ev.captured_at else None,

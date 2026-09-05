@@ -1199,7 +1199,7 @@ class ValidationEvidence(TimestampMixin, Base):
     # STRONG | MODERATE | WEAK
     evidence_strength: Mapped[str] = mapped_column(String(20), default="MODERATE", nullable=False)
     # SUPPORTING | REFUTING | NEUTRAL
-    evidence_direction: Mapped[str] = mapped_column(String(20), default="SUPPORTING", nullable=False)
+    evidence_direction: Mapped[str] = mapped_column(String(20), default="NEUTRAL", nullable=False)
     # If simulated (e.g. AI personas/drafts), flagged true and excluded from validation proof
     is_simulated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Detailed factual payload (interview responses, survey samples/numerators, conversion counts, quotes)

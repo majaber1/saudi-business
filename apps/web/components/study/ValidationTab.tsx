@@ -119,8 +119,8 @@ export default function ValidationTab({
   const [newEvTitle, setNewEvTitle] = useState("");
   const [newEvHypoId, setNewEvHypoId] = useState<number | undefined>(undefined);
   const [newEvExpId, setNewEvExpId] = useState<number | undefined>(undefined);
-  const [newEvStrength, setNewEvStrength] = useState("STRONG");
-  const [newEvDirection, setNewEvDirection] = useState<"SUPPORTING" | "REFUTING" | "NEUTRAL">("SUPPORTING");
+  const [newEvStrength, setNewEvStrength] = useState<"STRONG" | "MODERATE" | "WEAK">("MODERATE");
+  const [newEvDirection, setNewEvDirection] = useState<"SUPPORTING" | "REFUTING" | "NEUTRAL" | "">("");
   const [newEvSimulated, setNewEvSimulated] = useState(false);
   const [newEvNotes, setNewEvNotes] = useState("");
   const [evInterviewRole, setEvInterviewRole] = useState("");
@@ -250,13 +250,23 @@ export default function ValidationTab({
         payload.competitor_name = evCompetitorName;
       }
 
+      if (newEvHypoId && !newEvDirection) {
+        setError(ar ? "يجب اختيار أثر الدليل على الفرضية بشكل صريح (يدعم / يدحض / محايد)" : "Please select the evidence direction for the linked hypothesis");
+        return;
+      }
+
+      if (newEvType === "COMPETITOR_BENCHMARK" && (!evCompetitorUrl || !evCompetitorUrl.trim())) {
+        setError(ar ? "أدلة المقارنة التنافسية تتطلب توفير رابط ويب صالح (source_url)" : "Competitor benchmark requires a valid source URL");
+        return;
+      }
+
       await recordValidationEvidence(token, workspace.id, {
         evidence_type: newEvType,
         title: newEvTitle,
         hypothesis_id: newEvHypoId || null,
         experiment_id: newEvExpId || null,
         evidence_strength: newEvStrength,
-        evidence_direction: newEvDirection,
+        evidence_direction: newEvDirection ? (newEvDirection as "SUPPORTING" | "REFUTING" | "NEUTRAL") : undefined,
         is_simulated: newEvSimulated,
         source_url: newEvType === "COMPETITOR_BENCHMARK" ? evCompetitorUrl : null,
         notes: newEvNotes,
@@ -266,6 +276,8 @@ export default function ValidationTab({
       setShowEvidenceModal(false);
       setNewEvTitle("");
       setNewEvNotes("");
+      setNewEvDirection("");
+      setNewEvStrength("MODERATE");
       setEvCompetitorUrl("");
       setActionSuccess(ar ? "تم توثيق الدليل الميداني بنجاح" : "Evidence recorded successfully");
       await loadData();
@@ -830,7 +842,25 @@ export default function ValidationTab({
               </div>
 
               {selectedDecision === "GO_WITH_CONDITIONS" && (
-                <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+                <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4 space-y-3">
+                  {workspace?.evaluation?.status !== "PARTIALLY_VALIDATED" && workspace?.evaluation?.status !== "VALIDATED" && (
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                      <p className="font-bold">
+                        {ar
+                          ? "تنبيه حوكمة: لا يمكن اتخاذ قرار مشروط (GO_WITH_CONDITIONS) عندما تكون الحالة يحتاج لأدلة أو غير مثبت. يتطلب إثباتاً جزئياً أو كلياً."
+                          : "Governance Notice: Conditional GO requires PARTIALLY_VALIDATED or VALIDATED status."}
+                      </p>
+                    </div>
+                  )}
+                  {(workspace?.evaluation?.critical_not_supported ?? 0) > 0 && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-800">
+                      <p className="font-bold">
+                        {ar
+                          ? "تنبيه حوكمة: توجد فرضيات حرجة مدحوضة بالأدلة. لا يمكن اتخاذ قرار مشروط، ويجب تغيير المسار (PIVOT) أو الإيقاف (STOP)."
+                          : "Governance Notice: Refuted critical hypotheses exist. PIVOT or STOP is required."}
+                      </p>
+                    </div>
+                  )}
                   <label className="block text-sm font-bold text-blue-900">
                     {ar ? "الشروط الملزمة للانطلاق (شرط واحد على الأقل):" : "Mandatory Conditions:"}
                   </label>
@@ -1282,11 +1312,12 @@ export default function ValidationTab({
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700">{ar ? "رابط المصدر الميداني / الموقع (http/https):" : "Source URL:"}</label>
+                    <label className="block font-medium text-slate-700">{ar ? "رابط المصدر الميداني / الموقع (http/https) *:" : "Source URL *:"}</label>
                     <input
                       type="url"
                       value={evCompetitorUrl}
                       onChange={(e) => setEvCompetitorUrl(e.target.value)}
+                      required={newEvType === "COMPETITOR_BENCHMARK"}
                       placeholder="https://example.com/pricing"
                       className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"
                       data-testid="evidence-source-url"
@@ -1311,6 +1342,51 @@ export default function ValidationTab({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* DIRECTION AND STRENGTH SELECTION */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-700">
+                    {ar ? "أثر الدليل على الفرضية:" : "Evidence Direction:"}
+                    {newEvHypoId && <span className="text-red-500 mr-1">*</span>}
+                  </label>
+                  <select
+                    value={newEvDirection}
+                    onChange={(e) => setNewEvDirection(e.target.value as any)}
+                    required={Boolean(newEvHypoId)}
+                    className={`mt-1 w-full rounded-xl border p-2.5 ${
+                      newEvHypoId && !newEvDirection ? "border-amber-400 bg-amber-50/50" : "border-slate-300"
+                    }`}
+                    data-testid="evidence-direction-select"
+                  >
+                    <option value="">{ar ? "-- اختر أثر الدليل على الفرضية --" : "-- Select evidence direction --"}</option>
+                    <option value="SUPPORTING">{ar ? "يدعم الفرضية (SUPPORTING)" : "Supports Hypothesis (SUPPORTING)"}</option>
+                    <option value="REFUTING">{ar ? "يدحض / يناقض الفرضية (REFUTING)" : "Refutes Hypothesis (REFUTING)"}</option>
+                    <option value="NEUTRAL">{ar ? "محايد / غير حاسم (NEUTRAL)" : "Neutral / Inconclusive (NEUTRAL)"}</option>
+                  </select>
+                  {newEvHypoId && !newEvDirection && (
+                    <p className="mt-1 text-xs text-amber-600">
+                      {ar ? "اختر أثر الدليل على الفرضية قبل الحفظ" : "Select evidence direction before saving"}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block font-medium text-slate-700">
+                    {ar ? "قوة الدليل الميداني:" : "Evidence Strength:"}
+                  </label>
+                  <select
+                    value={newEvStrength}
+                    onChange={(e) => setNewEvStrength(e.target.value as any)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 p-2.5"
+                    data-testid="evidence-strength-select"
+                  >
+                    <option value="STRONG">{ar ? "قوي (STRONG)" : "Strong (STRONG)"}</option>
+                    <option value="MODERATE">{ar ? "متوسط (MODERATE)" : "Moderate (MODERATE)"}</option>
+                    <option value="WEAK">{ar ? "ضعيف (WEAK)" : "Weak (WEAK)"}</option>
+                  </select>
+                </div>
               </div>
 
               {/* SIMULATION CHECKBOX */}
@@ -1350,7 +1426,12 @@ export default function ValidationTab({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-emerald-600 px-4 py-2 font-medium text-white hover:bg-emerald-700"
+                  disabled={Boolean(newEvHypoId && !newEvDirection)}
+                  className={`rounded-xl px-4 py-2 font-medium text-white transition-all ${
+                    newEvHypoId && !newEvDirection
+                      ? "bg-slate-300 cursor-not-allowed text-slate-500"
+                      : "bg-emerald-600 hover:bg-emerald-700"
+                  }`}
                   data-testid="confirm-record-evidence-btn"
                 >
                   {ar ? "حفظ الدليل" : "Save Evidence"}

@@ -113,8 +113,21 @@ def test_validation_decision_gate_blocks_stop_and_pivot():
     assert r_pivot.status_code == 422
     assert "تعديل المسار" in r_pivot.text or "PIVOT" in r_pivot.text
 
-    # 3. Record GO_WITH_CONDITIONS decision
+    # 3. Add supporting evidence to reach PARTIALLY_VALIDATED, then record GO_WITH_CONDITIONS decision
     client.post(
+        f"/api/v1/validation/workspaces/{val_ws['id']}/evidence",
+        json={
+            "evidence_type": "INTERVIEW",
+            "title": "مقابلة داعمة أولية",
+            "hypothesis_id": val_ws["hypotheses"][0]["id"],
+            "evidence_strength": "STRONG",
+            "evidence_direction": "SUPPORTING",
+            "is_simulated": False,
+        },
+        headers=headers,
+    )
+
+    r_dec = client.post(
         f"/api/v1/validation/workspaces/{val_ws['id']}/decision",
         json={
             "decision": "GO_WITH_CONDITIONS",
@@ -123,6 +136,7 @@ def test_validation_decision_gate_blocks_stop_and_pivot():
         },
         headers=headers,
     )
+    assert r_dec.status_code == 201
 
     # Now launch workspace creation succeeds!
     r_ok = client.get(f"/api/v1/launch/study/{study_id}", headers=headers)

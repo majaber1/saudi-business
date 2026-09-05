@@ -146,15 +146,29 @@ def evaluate_workspace_status(workspace: models.ValidationWorkspace) -> Dict[str
     critical_total = 0
 
     for h in hypotheses:
-        counts[h.status] = counts.get(h.status, 0) + 1
+        # Check for genuine non-simulated supporting evidence
+        real_supporting = [
+            e for e in (h.evidence or [])
+            if not getattr(e, "is_simulated", False)
+            and getattr(e, "evidence_direction", DIRECTION_NEUTRAL) == DIRECTION_SUPPORTING
+        ]
+        has_real_support = len(real_supporting) > 0
+
+        effective_status = h.status
+        # If hypothesis claims to be SUPPORTED or PARTIALLY_SUPPORTED but lacks genuine empirical supporting evidence,
+        # it cannot be counted as supported for workspace validation health.
+        if effective_status in (STATUS_SUPPORTED, STATUS_PARTIALLY_SUPPORTED) and not has_real_support:
+            effective_status = STATUS_TESTING
+
+        counts[effective_status] = counts.get(effective_status, 0) + 1
         if h.importance == "CRITICAL":
             critical_total += 1
-            if h.status in (STATUS_NOT_TESTED, STATUS_INCONCLUSIVE):
-                critical_untested += 1
-            elif h.status == STATUS_NOT_SUPPORTED:
+            if h.status == STATUS_NOT_SUPPORTED:
                 critical_not_supported += 1
-            elif h.status == STATUS_SUPPORTED:
+            elif h.status == STATUS_SUPPORTED and has_real_support:
                 critical_supported += 1
+            else:
+                critical_untested += 1
 
     if critical_not_supported > 0:
         overall_status = WS_STATUS_NOT_VALIDATED
@@ -234,7 +248,7 @@ def update_hypothesis(
         # Strict evidence rule: verify at least one non-simulated SUPPORTING evidence exists
         real_supporting = [
             e for e in h.evidence
-            if not e.is_simulated and getattr(e, "evidence_direction", DIRECTION_SUPPORTING) == DIRECTION_SUPPORTING
+            if not e.is_simulated and getattr(e, "evidence_direction", DIRECTION_NEUTRAL) == DIRECTION_SUPPORTING
         ]
         if not real_supporting:
             raise ValueError(
@@ -244,7 +258,7 @@ def update_hypothesis(
         # Strict evidence rule: verify at least one non-simulated REFUTING evidence exists
         real_refuting = [
             e for e in h.evidence
-            if not e.is_simulated and getattr(e, "evidence_direction", DIRECTION_SUPPORTING) == DIRECTION_REFUTING
+            if not e.is_simulated and getattr(e, "evidence_direction", DIRECTION_NEUTRAL) == DIRECTION_REFUTING
         ]
         if not real_refuting:
             raise ValueError(
@@ -355,7 +369,7 @@ def record_evidence(
     raw_value: Optional[float] = None,
     unit: Optional[str] = None,
     evidence_strength: str = "MODERATE",
-    evidence_direction: str = DIRECTION_SUPPORTING,
+    evidence_direction: Optional[str] = None,
     is_simulated: bool = False,
     structured_payload: Optional[Dict[str, Any]] = None,
 ) -> models.ValidationEvidence:
@@ -380,8 +394,16 @@ def record_evidence(
             raise ValueError("لا يمكن ربط دليل بتجربة تابعة لمساحة عمل أخرى (Cross-workspace linking is prohibited)")
 
     # Direction validation
-    if not evidence_direction or evidence_direction not in VALID_DIRECTIONS:
-        raise ValueError(f"Invalid evidence_direction: '{evidence_direction}'. Must be one of {VALID_DIRECTIONS}")
+    if hypothesis_id:
+        if not evidence_direction:
+            raise ValueError("يجب تحديد أثر الدليل على الفرضية بشكل صريح (SUPPORTING, REFUTING, NEUTRAL).")
+        if evidence_direction not in VALID_DIRECTIONS:
+            raise ValueError(f"Invalid evidence_direction: '{evidence_direction}'. Must be one of {VALID_DIRECTIONS}")
+    else:
+        if not evidence_direction:
+            evidence_direction = DIRECTION_NEUTRAL
+        elif evidence_direction not in VALID_DIRECTIONS:
+            raise ValueError(f"Invalid evidence_direction: '{evidence_direction}'. Must be one of {VALID_DIRECTIONS}")
 
     payload = dict(structured_payload or {})
 
@@ -389,7 +411,7 @@ def record_evidence(
     if payload.get("problem_confirmed") is False or payload.get("hypothesis_supported") is False:
         evidence_direction = DIRECTION_REFUTING
 
-    # URL Source validation
+    # URL Source & Competitor validation
     if source_url is not None:
         source_url = source_url.strip()
         if source_url and not (source_url.startswith("http://") or source_url.startswith("https://")):
@@ -397,9 +419,19 @@ def record_evidence(
         if not source_url:
             source_url = None
 
-    if evidence_type == "URL_SOURCE" or source_type == "URL_SOURCE":
+    is_competitor = (
+        evidence_type in ("COMPETITOR_BENCHMARK", "URL_SOURCE")
+        or source_type in ("COMPETITOR", "URL_SOURCE")
+        or "competitor" in evidence_type.lower()
+        or "competitor" in (source_type or "").lower()
+        or "competitor" in title.lower()
+        or "منافس" in title
+    )
+    if is_competitor:
         if not source_url:
-            raise ValueError("مصدر الرابط (URL_SOURCE) يتطلب توفير رابط ويب صحيح.")
+            raise ValueError(
+                "أدلة المنافسين والمصادر الخارجية تتطلب توفير رابط ويب موثق وصحيح (source_url) يبدأ بـ http:// أو https://"
+            )
 
     # Survey validation: derive percentages ONLY if denominator > 0
     if evidence_type in ("SURVEY", "SURVEY_RESULT"):
@@ -516,7 +548,7 @@ def record_validation_decision(
             if h.importance == "CRITICAL":
                 real_supporting = [
                     e for e in h.evidence
-                    if not e.is_simulated and getattr(e, "evidence_direction", DIRECTION_SUPPORTING) == DIRECTION_SUPPORTING
+                    if not e.is_simulated and getattr(e, "evidence_direction", DIRECTION_NEUTRAL) == DIRECTION_SUPPORTING
                 ]
                 if not real_supporting:
                     raise ValueError(
@@ -525,11 +557,17 @@ def record_validation_decision(
 
     # Gate 2: GO_WITH_CONDITIONS GATE
     elif decision == DECISION_GO_WITH_CONDITIONS:
+        if eval_res["status"] not in (WS_STATUS_PARTIALLY_VALIDATED, WS_STATUS_VALIDATED):
+            raise ValueError(
+                f"لا يمكن اتخاذ قرار مشروط (GO_WITH_CONDITIONS) عندما تكون حالة مساحة التحقق '{eval_res['status']}'. "
+                "يتطلب القرار المشروط أن تكون مساحة العمل مثبتة جزئياً (PARTIALLY_VALIDATED) أو مثبتة (VALIDATED)."
+            )
         if not conditions_list:
             raise ValueError("القرار المشروط (GO_WITH_CONDITIONS) يتطلب تحديد شرط واضح واحد على الأقل.")
-        if critical_not_supported > 0 and len(conditions_list) < critical_not_supported:
+        if critical_not_supported > 0:
             raise ValueError(
-                "لا يمكن المضي بقرار مشروط مع وجود فرضيات حرجة مدحوضة دون تقديم شروط معالجة صريحة لكل فرضية مدحوضة."
+                f"لا يمكن اتخاذ قرار مشروط (GO_WITH_CONDITIONS) مع وجود {critical_not_supported} فرضيات حرجة غير مثبتة أو مدحوضة. "
+                "يجب تغيير مسار المشروع (PIVOT) أو إيقافه (STOP) أو إطلاق دورة اختبار جديدة."
             )
 
     # Comprehensive immutable snapshot
@@ -569,7 +607,7 @@ def record_validation_decision(
             "source_url": ev.source_url,
             "source_owner": ev.source_owner,
             "evidence_strength": ev.evidence_strength,
-            "evidence_direction": getattr(ev, "evidence_direction", DIRECTION_SUPPORTING),
+            "evidence_direction": getattr(ev, "evidence_direction", DIRECTION_NEUTRAL) or DIRECTION_NEUTRAL,
             "is_simulated": ev.is_simulated,
             "captured_at": ev.captured_at.isoformat() if ev.captured_at else None,
         }
