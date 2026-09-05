@@ -91,6 +91,7 @@ export default function GrowthTab({
   const [fundingScenarioId, setFundingScenarioId] = useState<number | null>(null);
   const [scenarioFunding, setScenarioFunding] = useState<GrowthFundingContext | null>(null);
   const [loadingFunding, setLoadingFunding] = useState(false);
+  const [fundingError, setFundingError] = useState<string | null>(null);
 
   // Scenario form state
   const [scenarioName, setScenarioName] = useState("");
@@ -146,18 +147,30 @@ export default function GrowthTab({
   }, [studyId, token]);
 
   const loadScenarioFunding = useCallback(async (scenarioId: number | null) => {
+    // Immediately clear previous scenario data and errors to prevent stale numbers
+    setScenarioFunding(null);
+    setFundingError(null);
+    if (!scenarioId) {
+      setLoadingFunding(false);
+      return;
+    }
     try {
       setLoadingFunding(true);
-      const res = await getGrowthFundingContext(token, studyId, scenarioId ?? undefined);
+      const res = await getGrowthFundingContext(token, studyId, scenarioId);
       setScenarioFunding(res.funding_context);
     } catch (err: any) {
-      // Keep existing data or silent fallback
+      // Strictly set error; never leave stale scenario data or invent numbers
+      setScenarioFunding(null);
+      setFundingError(err?.message || "تعذر تحميل سياق التمويل للسيناريو المحدد");
     } finally {
       setLoadingFunding(false);
     }
   }, [studyId, token]);
 
   const handleScenarioFundingChange = (scenarioId: number | null) => {
+    // Immediately clear previous scenario data and errors on switch
+    setScenarioFunding(null);
+    setFundingError(null);
     setFundingScenarioId(scenarioId);
     loadScenarioFunding(scenarioId);
   };
@@ -933,18 +946,20 @@ export default function GrowthTab({
 
       {/* SUB-TAB 7: GROWTH FUNDING CONTEXT */}
       {subTab === "funding" && (() => {
-        const effectiveFunding: any = scenarioFunding || growth_funding;
-        const invNeed = effectiveFunding.growth_investment_need?.amount;
-        const availCash = effectiveFunding.current_available_cash?.amount;
-        const ownerEq = effectiveFunding.confirmed_funding?.owner_equity;
-        const confFac = effectiveFunding.confirmed_funding?.confirmed_credit_facilities;
-        const totConf = effectiveFunding.confirmed_funding?.total_confirmed;
-        const gapStatus = effectiveFunding.funding_gap_status || effectiveFunding.funding_gap?.status || "NOT_AVAILABLE";
-        const gapAmt = effectiveFunding.funding_gap?.gap_amount;
-        const unknowns = effectiveFunding.unknown_components || [];
+        // When a specific scenario is chosen: MUST show ONLY that scenario's context. Never fall back to default or stale numbers.
+        const isScenarioMode = Boolean(fundingScenarioId);
+        const effectiveFunding: any = isScenarioMode ? scenarioFunding : growth_funding;
+        const invNeed = effectiveFunding?.growth_investment_need?.amount;
+        const availCash = effectiveFunding?.current_available_cash?.amount;
+        const ownerEq = effectiveFunding?.confirmed_funding?.owner_equity;
+        const confFac = effectiveFunding?.confirmed_funding?.confirmed_credit_facilities;
+        const totConf = effectiveFunding?.confirmed_funding?.total_confirmed;
+        const gapStatus = effectiveFunding?.funding_gap_status || effectiveFunding?.funding_gap?.status || "NOT_AVAILABLE";
+        const gapAmt = effectiveFunding?.funding_gap?.gap_amount;
+        const unknowns = effectiveFunding?.unknown_components || [];
 
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" data-testid="growth-funding-section">
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="border-b border-slate-100 pb-4">
                 <h3 className="text-lg font-bold text-slate-900">سياق التمويل للنمو (Growth Funding Context)</h3>
@@ -954,9 +969,11 @@ export default function GrowthTab({
               </div>
 
               {/* Strict Governance Disclaimer */}
-              <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs font-semibold text-amber-900">
-                ⚠️ {effectiveFunding.disclaimer_ar}
-              </div>
+              {effectiveFunding?.disclaimer_ar && (
+                <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs font-semibold text-amber-900">
+                  ⚠️ {effectiveFunding.disclaimer_ar}
+                </div>
+              )}
 
               {/* Scenario Selector */}
               <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50/60 p-4">
@@ -991,149 +1008,184 @@ export default function GrowthTab({
                 </div>
               </div>
 
-              {/* Unknown Components Alert Banner */}
-              {unknowns.length > 0 && (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                  <span className="font-bold">⚠️ بنود تمويلية مجهولة (Unknown Components): </span>
-                  <span>توجد عناصر تمويلية غير مسجلة تمنع احتساب الفجوة التمويلية بشكل نهائي: </span>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {unknowns.map((u: string, idx: number) => {
-                      const labels: Record<string, string> = {
-                        cash_on_hand: "السيولة النقدية المتاحة (cash_on_hand)",
-                        owner_equity: "مساهمة المالك (owner_equity)",
-                        confirmed_facilities: "التسهيلات المعتمدة (confirmed_facilities)",
-                        growth_investment: "الاستثمار المطلوب للسيناريو (growth_investment)",
-                      };
-                      return (
-                        <span key={idx} className="rounded-md bg-amber-200/80 px-2 py-0.5 text-[11px] font-semibold text-amber-950">
-                          {labels[u] || u}
-                        </span>
-                      );
-                    })}
+              {/* Loading State for Scenario Switch */}
+              {loadingFunding && (
+                <div className="mt-6 flex min-h-[140px] items-center justify-center rounded-xl border border-blue-100 bg-blue-50/30">
+                  <div className="flex items-center gap-3">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                    <span className="text-xs font-semibold text-blue-900">
+                      جارٍ جلب سياق التمويل الدقيق للسيناريو المحدد...
+                    </span>
                   </div>
                 </div>
               )}
 
-              {/* 4 Funding Key Metrics Cards */}
-              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {/* 1. Growth Investment Need */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-500">الاحتياج الاستثماري للتوسع</span>
-                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
-                      {effectiveFunding.growth_investment_need?.status || "UNKNOWN"}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-lg font-bold text-slate-900">
-                    {invNeed != null ? formatSAR(invNeed) : "مجهول / غير محدد"}
-                  </p>
-                  <p className="mt-1 text-[10px] text-slate-500 truncate">
-                    {effectiveFunding.growth_investment_need?.source || "حدد سيناريو"}
+              {/* Explicit Error / Unavailable State */}
+              {!loadingFunding && fundingError && isScenarioMode && (
+                <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800" role="alert" data-testid="funding-scenario-error">
+                  <p className="font-bold">⚠️ تعذر استرجاع بيانات التمويل للسيناريو المحدد:</p>
+                  <p className="mt-1">{fundingError}</p>
+                  <p className="mt-2 text-[11px] text-red-600">
+                    تم إيقاف عرض أرقام السيناريو السابق منعاً لعرض بيانات مضللة أو قديمة (Stale Context).
                   </p>
                 </div>
+              )}
 
-                {/* 2. Actual Available Cash */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-500">السيولة النقدية الفعلية</span>
-                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
-                      {effectiveFunding.current_available_cash?.status || "UNKNOWN"}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-lg font-bold text-slate-900">
-                    {availCash != null ? formatSAR(availCash) : "غير متوفرة"}
-                  </p>
-                  <p className="mt-1 text-[10px] text-slate-500 truncate">
-                    {effectiveFunding.current_available_cash?.source || "آخر دورة فعلية"}
-                  </p>
+              {/* Empty / Not Found Scenario State */}
+              {!loadingFunding && !fundingError && isScenarioMode && !scenarioFunding && (
+                <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-600">
+                  بيانات التمويل لهذا السيناريو غير متوفرة حالياً.
                 </div>
+              )}
 
-                {/* 3. Confirmed Funding */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-500">التمويل المؤكد المتاح</span>
-                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
-                      {effectiveFunding.confirmed_funding?.status || "UNKNOWN"}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-lg font-bold text-slate-900">
-                    {totConf != null ? formatSAR(totConf) : "مجهول"}
-                  </p>
-                  <p className="mt-1 text-[10px] text-slate-500">
-                    {ownerEq != null ? `رأس مال: ${formatSAR(ownerEq)}` : "رأس مال: مجهول"}
-                    {" • "}
-                    {confFac != null ? `تسهيلات: ${formatSAR(confFac)}` : "تسهيلات: مجهول"}
-                  </p>
-                </div>
-
-                {/* 4. Funding Gap */}
-                <div className={`rounded-xl border p-4 ${gapStatus === "CALCULATED" ? (gapAmt === 0 ? "border-emerald-200 bg-emerald-50/60" : "border-red-200 bg-red-50/60") : "border-slate-200 bg-slate-50"}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-500">الفجوة التمويلية (Funding Gap)</span>
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${gapStatus === "CALCULATED" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                      {gapStatus}
-                    </span>
-                  </div>
-                  <p className={`mt-2 text-lg font-bold ${gapStatus === "CALCULATED" && gapAmt != null ? (gapAmt === 0 ? "text-emerald-800" : "text-red-700") : "text-slate-600"}`}>
-                    {gapStatus === "CALCULATED" && gapAmt != null ? formatSAR(gapAmt) : "غير متاحة / يلزم بيانات"}
-                  </p>
-                  <p className="mt-1 text-[10px] text-slate-500 truncate">
-                    {gapStatus === "CALCULATED" && gapAmt === 0 ? "التمويل المتاح يغطي متطلبات السيناريو" : (gapStatus === "CALCULATED" ? "عجز تمويلي يتطلب تغطية إضافية" : "مجهولة لوجود مدخلات ناقصة")}
-                  </p>
-                </div>
-              </div>
-
-              {/* Wave 2 Matched Programs */}
-              <div className="mt-8">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-800">
-                    البرامج التمويلية المتطابقة (من محرك Wave 2): {effectiveFunding.wave2_matched_programs_count}
-                  </h4>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    حالات المطابقة مثبتة بدقة وتخضع للاشتراطات الرسمية
-                  </span>
-                </div>
-                <div className="mt-3 space-y-3">
-                  {effectiveFunding.wave2_matched_programs && effectiveFunding.wave2_matched_programs.length > 0 ? (
-                    effectiveFunding.wave2_matched_programs.map((p: any, idx: number) => {
-                      const fitColors: Record<string, string> = {
-                        MATCH: "bg-emerald-50 text-emerald-800 border-emerald-200",
-                        POSSIBLE_MATCH: "bg-blue-50 text-blue-800 border-blue-200",
-                        NEEDS_INFORMATION: "bg-amber-50 text-amber-800 border-amber-200",
-                        NOT_MATCHED: "bg-slate-50 text-slate-600 border-slate-200",
-                        NOT_EVALUATED: "bg-slate-50 text-slate-500 border-slate-200",
-                      };
-                      return (
-                        <div key={idx} className="rounded-xl border border-slate-200 bg-white p-4">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-900">{p.program_name_ar}</span>
-                            <span className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${fitColors[p.fit_status] || "bg-slate-50 text-slate-700"}`}>
-                              {p.fit_status}
+              {/* Scenario Context or Default Context Details */}
+              {!loadingFunding && !fundingError && effectiveFunding && (
+                <>
+                  {/* Unknown Components Alert Banner */}
+                  {unknowns.length > 0 && (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                      <span className="font-bold">⚠️ بنود تمويلية مجهولة (Unknown Components): </span>
+                      <span>توجد عناصر تمويلية غير مسجلة تمنع احتساب الفجوة التمويلية بشكل نهائي: </span>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {unknowns.map((u: string, idx: number) => {
+                          const labels: Record<string, string> = {
+                            cash_on_hand: "السيولة النقدية المتاحة (cash_on_hand)",
+                            owner_equity: "مساهمة المالك (owner_equity)",
+                            confirmed_facilities: "التسهيلات المعتمدة (confirmed_facilities)",
+                            growth_investment: "الاستثمار المطلوب للسيناريو (growth_investment)",
+                          };
+                          return (
+                            <span key={idx} className="rounded-md bg-amber-200/80 px-2 py-0.5 text-[11px] font-semibold text-amber-950">
+                              {labels[u] || u}
                             </span>
-                          </div>
-                          <div className="mt-2 text-xs text-slate-600">
-                            <span>الجهة الراعية: </span>
-                            <span className="font-bold text-slate-800">{p.sponsor_name_ar}</span>
-                            <span className="mx-2">•</span>
-                            <span>نوع التمويل: </span>
-                            <span className="font-bold text-slate-800">{p.funding_type}</span>
-                            {p.status_reason_ar && (
-                              <>
-                                <span className="mx-2">•</span>
-                                <span className="text-slate-500">{p.status_reason_ar}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-500">
-                      لا توجد برامج تمويلية متطابقة مع المعطيات الحالية للسيناريو.
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
-                </div>
-              </div>
+
+                  {/* 4 Funding Key Metrics Cards */}
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {/* 1. Growth Investment Need */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-500">الاحتياج الاستثماري للتوسع</span>
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                          {effectiveFunding.growth_investment_need?.status || "UNKNOWN"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-lg font-bold text-slate-900">
+                        {invNeed != null ? formatSAR(invNeed) : "مجهول / غير محدد"}
+                      </p>
+                      <p className="mt-1 text-[10px] text-slate-500 truncate">
+                        {effectiveFunding.growth_investment_need?.source || "حدد سيناريو"}
+                      </p>
+                    </div>
+
+                    {/* 2. Actual Available Cash */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-500">السيولة النقدية الفعلية</span>
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                          {effectiveFunding.current_available_cash?.status || "UNKNOWN"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-lg font-bold text-slate-900">
+                        {availCash != null ? formatSAR(availCash) : "غير متوفرة"}
+                      </p>
+                      <p className="mt-1 text-[10px] text-slate-500 truncate">
+                        {effectiveFunding.current_available_cash?.source || "آخر دورة فعلية"}
+                      </p>
+                    </div>
+
+                    {/* 3. Confirmed Funding */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-500">التمويل المؤكد المتاح</span>
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                          {effectiveFunding.confirmed_funding?.status || "UNKNOWN"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-lg font-bold text-slate-900">
+                        {totConf != null ? formatSAR(totConf) : "مجهول"}
+                      </p>
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        {ownerEq != null ? `رأس مال: ${formatSAR(ownerEq)}` : "رأس مال: مجهول"}
+                        {" • "}
+                        {confFac != null ? `تسهيلات: ${formatSAR(confFac)}` : "تسهيلات: مجهول"}
+                      </p>
+                    </div>
+
+                    {/* 4. Funding Gap */}
+                    <div className={`rounded-xl border p-4 ${gapStatus === "CALCULATED" ? (gapAmt === 0 ? "border-emerald-200 bg-emerald-50/60" : "border-red-200 bg-red-50/60") : "border-slate-200 bg-slate-50"}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-500">الفجوة التمويلية (Funding Gap)</span>
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${gapStatus === "CALCULATED" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                          {gapStatus}
+                        </span>
+                      </div>
+                      <p className={`mt-2 text-lg font-bold ${gapStatus === "CALCULATED" && gapAmt != null ? (gapAmt === 0 ? "text-emerald-800" : "text-red-700") : "text-slate-600"}`}>
+                        {gapStatus === "CALCULATED" && gapAmt != null ? formatSAR(gapAmt) : "غير متاحة / يلزم بيانات"}
+                      </p>
+                      <p className="mt-1 text-[10px] text-slate-500 truncate">
+                        {gapStatus === "CALCULATED" && gapAmt === 0 ? "التمويل المتاح يغطي متطلبات السيناريو" : (gapStatus === "CALCULATED" ? "عجز تمويلي يتطلب تغطية إضافية" : "مجهولة لوجود مدخلات ناقصة")}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Wave 2 Matched Programs */}
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-800">
+                        البرامج التمويلية المتطابقة (من محرك Wave 2): {effectiveFunding.wave2_matched_programs_count}
+                      </h4>
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        حالات المطابقة مثبتة بدقة وتخضع للاشتراطات الرسمية
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      {effectiveFunding.wave2_matched_programs && effectiveFunding.wave2_matched_programs.length > 0 ? (
+                        effectiveFunding.wave2_matched_programs.map((p: any, idx: number) => {
+                          const fitColors: Record<string, string> = {
+                            MATCH: "bg-emerald-50 text-emerald-800 border-emerald-200",
+                            POSSIBLE_MATCH: "bg-blue-50 text-blue-800 border-blue-200",
+                            NEEDS_INFORMATION: "bg-amber-50 text-amber-800 border-amber-200",
+                            NOT_MATCHED: "bg-slate-50 text-slate-600 border-slate-200",
+                            NOT_EVALUATED: "bg-slate-50 text-slate-500 border-slate-200",
+                          };
+                          return (
+                            <div key={idx} className="rounded-xl border border-slate-200 bg-white p-4">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-900">{p.program_name_ar}</span>
+                                <span className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${fitColors[p.fit_status] || "bg-slate-50 text-slate-700"}`}>
+                                  {p.fit_status}
+                                </span>
+                              </div>
+                              <div className="mt-2 text-xs text-slate-600">
+                                <span>الجهة الراعية: </span>
+                                <span className="font-bold text-slate-800">{p.sponsor_name_ar}</span>
+                                <span className="mx-2">•</span>
+                                <span>نوع التمويل: </span>
+                                <span className="font-bold text-slate-800">{p.funding_type}</span>
+                                {p.status_reason_ar && (
+                                  <>
+                                    <span className="mx-2">•</span>
+                                    <span className="text-slate-500">{p.status_reason_ar}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-500">
+                          لا توجد برامج تمويلية متطابقة مع المعطيات الحالية للسيناريو.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         );

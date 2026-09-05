@@ -1409,3 +1409,97 @@ def test_pivot_current_validation_cycle_and_history_preserved():
     assert r_launch.status_code == 200
 
 
+def test_current_validation_cycle_authoritative_for_launch_gate():
+    """Test 38: Regression test - Current validation cycle is authoritative for launch workspace creation.
+    - Cycle 1 = GO
+    - Growth PIVOT creates Cycle 2
+    - Cycle 2 has no GO yet
+    - creating LaunchWorkspace MUST FAIL (historical Cycle 1 GO does not override)
+    - Cycle 2 obtains GO
+    - LaunchWorkspace creation PASS.
+    """
+    _, tok = _register_and_login("curgate")
+    headers = _auth(tok)
+    pid, sid = _create_project_and_study(tok, title="مشروع اختبار بوابة الإطلاق")
+
+    # Cycle 1: Submit evidence and record GO
+    r_v1 = client.get(f"/api/v1/validation/study/{sid}", headers=headers)
+    assert r_v1.status_code == 200
+    v1_data = r_v1.json()
+    for h in v1_data.get("hypotheses", []):
+        if h.get("importance") == "CRITICAL":
+            client.post(
+                f"/api/v1/validation/workspaces/{v1_data['id']}/evidence",
+                json={
+                    "evidence_type": "INTERVIEW",
+                    "title": f"دليل تحقق للدورة 1 فرضية {h['id']}",
+                    "hypothesis_id": h["id"],
+                    "evidence_strength": "STRONG",
+                    "evidence_direction": "SUPPORTING",
+                    "is_simulated": False,
+                },
+                headers=headers,
+            )
+    r_dec1 = client.post(
+        f"/api/v1/validation/workspaces/{v1_data['id']}/decision",
+        json={"decision": "GO", "decision_reason": "اعتماد الدورة الأولى"},
+        headers=headers,
+    )
+    assert r_dec1.status_code == 201
+
+    # Growth PIVOT creates Cycle 2
+    growth_ws = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]
+    r_piv = client.post(
+        f"/api/v1/growth/workspaces/{growth_ws['id']}/decisions",
+        json={
+            "decision": "PIVOT",
+            "decision_reason": "تحول استراتيجي يتطلب دورة تحقق جديدة",
+        },
+        headers=headers,
+    )
+    assert r_piv.status_code == 201
+    cycle2_id = r_piv.json()["decision"]["pivot_validation_workspace_id"]
+    assert cycle2_id is not None
+
+    # Verify Cycle 2 is active and has no decision
+    r_v2 = client.get(f"/api/v1/validation/study/{sid}", headers=headers)
+    assert r_v2.status_code == 200
+    v2_data = r_v2.json()
+    assert v2_data["id"] == cycle2_id
+    assert v2_data["cycle_number"] == 2
+    assert len(v2_data.get("decisions", [])) == 0
+
+    # Creating LaunchWorkspace MUST FAIL: historical GO from Cycle 1 must NOT override
+    r_launch_fail = client.get(f"/api/v1/launch/workspaces/study/{sid}", headers=headers)
+    assert r_launch_fail.status_code in (400, 422)
+    assert "دورة التحقق الحالية" in r_launch_fail.text or "قرار تحقق ميداني رسمي معتمد" in r_launch_fail.text
+
+    # Cycle 2 now obtains GO
+    for h in v2_data.get("hypotheses", []):
+        if h.get("importance") == "CRITICAL":
+            client.post(
+                f"/api/v1/validation/workspaces/{cycle2_id}/evidence",
+                json={
+                    "evidence_type": "INTERVIEW",
+                    "title": f"دليل تحقق للدورة 2 فرضية {h['id']}",
+                    "hypothesis_id": h["id"],
+                    "evidence_strength": "STRONG",
+                    "evidence_direction": "SUPPORTING",
+                    "is_simulated": False,
+                },
+                headers=headers,
+            )
+    r_dec2 = client.post(
+        f"/api/v1/validation/workspaces/{cycle2_id}/decision",
+        json={"decision": "GO", "decision_reason": "اعتماد الدورة الثانية بعد التحول"},
+        headers=headers,
+    )
+    assert r_dec2.status_code == 201
+
+    # LaunchWorkspace creation now SUCCEEDS (PASS)
+    r_launch_pass = client.get(f"/api/v1/launch/workspaces/study/{sid}", headers=headers)
+    assert r_launch_pass.status_code == 200
+    assert r_launch_pass.json()["status"] == "PLANNED"
+
+
+

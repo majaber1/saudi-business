@@ -107,30 +107,23 @@ def get_or_create_launch_workspace(
     if ws:
         return ws
 
-    # Check Validation Decision Gate across validation cycles
-    val_workspaces = db.query(models.ValidationWorkspace).filter_by(study_id=study_id).order_by(models.ValidationWorkspace.id.asc()).all()
-    approved_decision = None
-    for v_ws in val_workspaces:
-        if v_ws.decisions:
-            d = v_ws.decisions[0]
-            if d.decision in ("GO", "GO_WITH_CONDITIONS"):
-                approved_decision = d
-                break
+    # Check Validation Decision Gate on the CURRENT (latest) validation cycle
+    val_workspaces = db.query(models.ValidationWorkspace).filter_by(study_id=study_id).order_by(models.ValidationWorkspace.id.desc()).all()
+    current_val_ws = val_workspaces[0] if val_workspaces else None
 
-    if not approved_decision:
-        if not val_workspaces or not any(v.decisions for v in val_workspaces):
-            raise ValueError(
-                "لا يمكن تفعيل مساحة الإطلاق دون وجود قرار تحقق ميداني رسمي معتمد (GO أو GO_WITH_CONDITIONS). "
-                "لم يتم توثيق أي قرار تحقق رسمي حتى الآن."
-            )
-        latest_dec = val_workspaces[-1].decisions[0] if val_workspaces[-1].decisions else None
-        dec_name = latest_dec.decision if latest_dec else "UNKNOWN"
+    if not current_val_ws or not current_val_ws.decisions:
         raise ValueError(
-            f"لا يمكن بدء مساحة الإطلاق بناءً على قرار '{dec_name}'. "
-            "يتطلب الإطلاق قرار انطلاق كامل (GO) أو انطلاق مشروط (GO_WITH_CONDITIONS) معتمد."
+            "لا يمكن تفعيل مساحة الإطلاق دون وجود قرار تحقق ميداني رسمي معتمد (GO أو GO_WITH_CONDITIONS) في دورة التحقق الحالية. "
+            "لم يتم توثيق أي قرار تحقق رسمي في الدورة الحالية حتى الآن."
         )
 
-    latest_dec = approved_decision
+    latest_dec = current_val_ws.decisions[0]
+    if latest_dec.decision not in ("GO", "GO_WITH_CONDITIONS"):
+        dec_name = latest_dec.decision or "UNKNOWN"
+        raise ValueError(
+            f"لا يمكن بدء مساحة الإطلاق بناءً على قرار '{dec_name}' في دورة التحقق الحالية. "
+            "يتطلب الإطلاق قرار انطلاق كامل (GO) أو انطلاق مشروط (GO_WITH_CONDITIONS) معتمد في الدورة الحالية النشطة."
+        )
 
     if not ws:
         ws = models.LaunchWorkspace(
