@@ -2119,4 +2119,315 @@ export function createLaunchReforecast(
   });
 }
 
+// ==============================================================================
+// WAVE 6: GROWTH OS TYPES AND CLIENT APIS
+// ==============================================================================
+
+export type GrowthWorkspaceData = {
+  workspace: {
+    id: number;
+    study_id: number;
+    project_id: number;
+    user_id: number;
+    status: string;
+    current_health_state: string;
+    current_health_summary_ar: string;
+    created_at: string;
+    updated_at: string;
+  };
+  business_health: {
+    health_state: "HEALTHY" | "WATCH" | "AT_RISK" | "INSUFFICIENT_DATA";
+    health_name_ar: string;
+    health_summary_ar: string;
+    recommendation_ar: string;
+    calculation_version: string;
+    supporting_metrics: Record<string, any>;
+    evaluated_at: string;
+  };
+  trends: {
+    evaluation_status: string;
+    evaluation_summary_ar: string;
+    periods_analyzed: number;
+    metrics: Record<
+      string,
+      {
+        metric: string;
+        metric_name_ar: string;
+        direction: string;
+        direction_ar: string;
+        period_range: string;
+        first_value: number | null;
+        latest_value: number | null;
+        absolute_change: number | null;
+        percentage_change: number | null;
+      }
+    >;
+  };
+  unit_economics: {
+    calculation_status: string;
+    calculation_summary_ar: string;
+    period_label: string;
+    metrics: Record<
+      string,
+      {
+        name_ar: string;
+        value: number | null;
+        unit: string;
+        is_known: boolean;
+        formula_ar: string;
+        note_ar?: string;
+      }
+    >;
+  };
+  risks: Array<{
+    risk_type: string;
+    risk_title_ar: string;
+    level: "LOW" | "WATCH" | "HIGH" | "UNKNOWN";
+    level_ar: string;
+    evidence_ar: string;
+    remedy_ar: string;
+  }>;
+  expansion_readiness: {
+    readiness_state: "READY" | "CONDITIONALLY_READY" | "NOT_READY" | "NEEDS_INFORMATION";
+    readiness_name_ar: string;
+    summary_ar: string;
+    prerequisites: Array<{
+      code: string;
+      name_ar: string;
+      status: "PASS" | "FAIL" | "UNKNOWN" | "NOT_APPLICABLE";
+      reason_ar: string;
+    }>;
+    capacity_exhaustion_identified: boolean;
+    operational_stability_confirmed: boolean;
+    cash_runway_sufficient: boolean;
+  };
+  growth_funding: {
+    context_type: string;
+    summary_ar: string;
+    feasibility_reference: {
+      funding_needed: number | null;
+      capital_structure: any;
+      recommended_structure: any;
+    };
+    wave2_matched_programs_count: number;
+    wave2_matched_programs: Array<{
+      program_id: number;
+      program_name_ar: string;
+      sponsor_name_ar: string;
+      funding_type: string;
+      fit_status: string;
+    }>;
+    disclaimer_ar: string;
+  };
+  actual_periods_count: number;
+  scenarios: Array<{
+    id: number;
+    workspace_id: number;
+    name: string;
+    scenario_type: string;
+    description: string | null;
+    target_horizon_months: number;
+    capex_required: number | null;
+    additional_monthly_opex: number | null;
+    expected_monthly_revenue_uplift: number | null;
+    target_capacity_increase_pct: number | null;
+    user_assumptions: Record<string, any>;
+    is_active: boolean;
+    created_at: string;
+  }>;
+  what_if_models: Array<{
+    id: number;
+    workspace_id: number;
+    scenario_id: number | null;
+    scenario_name: string;
+    assumptions_summary: Record<string, any>;
+    baseline_snapshot: Record<string, any>;
+    derived_monthly_projections: Array<Record<string, any>>;
+    estimated_cash_payback_months: number | null;
+    estimated_net_runway_impact_months: number | null;
+    minimum_cash_required: number | null;
+    provenance: Record<string, any>;
+    created_at: string;
+  }>;
+  monthly_reviews: Array<{
+    id: number;
+    workspace_id: number;
+    review_period: string;
+    review_version: number;
+    frozen_metrics: Record<string, any>;
+    review_notes: string | null;
+    target_next_month: string | null;
+    created_at: string;
+  }>;
+  decisions: Array<{
+    id: number;
+    workspace_id: number;
+    decision: "SCALE" | "FIX" | "PIVOT" | "HOLD" | "STOP" | "NEEDS_INFORMATION";
+    decision_version: number;
+    decision_reason: string;
+    supporting_facts: string[];
+    contradicting_facts: string[];
+    unknowns: string[];
+    user_assumptions: Record<string, any>;
+    risks: string[];
+    conditions: string[];
+    recommended_next_actions: string[];
+    pivot_validation_workspace_id: number | null;
+    re_evaluation_date: string | null;
+    decided_at: string;
+  }>;
+  actions: Array<{
+    id: number;
+    workspace_id: number;
+    decision_id: number | null;
+    title: string;
+    action_type: string;
+    category: string;
+    priority: string;
+    status: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+    owner_name: string | null;
+    due_date: string | null;
+    notes: string | null;
+    created_at: string;
+    completed_at: string | null;
+  }>;
+};
+
+export function getGrowthWorkspace(token: string, studyId: number) {
+  return authedRequest<GrowthWorkspaceData>(`/api/v1/growth/study/${studyId}`, token);
+}
+
+export function createGrowthScenario(
+  token: string,
+  workspaceId: number,
+  data: {
+    name: string;
+    scenario_type: string;
+    description?: string;
+    target_horizon_months?: number;
+    capex_required?: number | null;
+    additional_monthly_opex?: number | null;
+    expected_monthly_revenue_uplift?: number | null;
+    target_capacity_increase_pct?: number | null;
+    user_assumptions?: Record<string, any>;
+  }
+) {
+  return authedRequest<{ message: string; scenario: any }>(
+    `/api/v1/growth/workspaces/${workspaceId}/scenarios`,
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export function runGrowthWhatIf(
+  token: string,
+  workspaceId: number,
+  data: {
+    scenario_id?: number | null;
+    scenario_name: string;
+    scenario_type: string;
+    target_horizon_months?: number;
+    capex_required?: number | null;
+    additional_monthly_opex?: number | null;
+    expected_monthly_revenue_uplift?: number | null;
+    target_capacity_increase_pct?: number | null;
+    user_assumptions?: Record<string, any>;
+  }
+) {
+  return authedRequest<{ message: string; model: any }>(
+    `/api/v1/growth/workspaces/${workspaceId}/what-if`,
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export function createGrowthReview(
+  token: string,
+  workspaceId: number,
+  data: {
+    review_period: string;
+    review_notes?: string;
+    target_next_month?: string;
+  }
+) {
+  return authedRequest<{ message: string; review: any }>(
+    `/api/v1/growth/workspaces/${workspaceId}/reviews`,
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export function recordGrowthDecision(
+  token: string,
+  workspaceId: number,
+  data: {
+    decision: string;
+    decision_reason: string;
+    user_assumptions?: Record<string, any>;
+    conditions?: string[];
+    re_evaluation_date?: string | null;
+  }
+) {
+  return authedRequest<{ message: string; decision: any }>(
+    `/api/v1/growth/workspaces/${workspaceId}/decisions`,
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export function createGrowthAction(
+  token: string,
+  workspaceId: number,
+  data: {
+    title: string;
+    action_type?: string;
+    category?: string;
+    priority?: string;
+    owner_name?: string;
+    due_date?: string;
+    decision_id?: number | null;
+  }
+) {
+  return authedRequest<{ message: string; action: any }>(
+    `/api/v1/growth/workspaces/${workspaceId}/actions`,
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export function updateGrowthAction(
+  token: string,
+  actionId: number,
+  data: {
+    status?: string;
+    notes?: string;
+    due_date?: string;
+    owner_name?: string;
+  }
+) {
+  return authedRequest<{ message: string; action: any }>(
+    `/api/v1/growth/actions/${actionId}`,
+    token,
+    {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }
+  );
+}
+
 

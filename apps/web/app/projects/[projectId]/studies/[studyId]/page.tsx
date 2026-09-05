@@ -10,6 +10,7 @@ import BusinessProfileTab from "@/components/study/BusinessProfileTab";
 import FundingTab from "@/components/study/FundingTab";
 import ValidationTab from "@/components/study/ValidationTab";
 import LaunchTab from "@/components/study/LaunchTab";
+import GrowthTab from "@/components/study/GrowthTab";
 
 const sections = [
   "overview",
@@ -23,6 +24,7 @@ const sections = [
   "funding",
   "validation",
   "launch",
+  "growth",
   "compliance",
   "report",
   "sources",
@@ -42,6 +44,7 @@ const labels = {
     "التمويل",
     "التحقق الميداني والافتراضات",
     "تنفيذ الإطلاق والأداء الفعلي",
+    "نمو وتوسع الأعمال (Growth OS)",
     "الامتثال والتراخيص",
     "التقرير",
     "المصادر",
@@ -59,6 +62,7 @@ const labels = {
     "Funding",
     "Market Validation",
     "Launch & Actuals",
+    "Growth OS",
     "Compliance & licensing",
     "Report",
     "Sources",
@@ -312,6 +316,8 @@ export default function StudyWorkspacePage({ params }: { params: Promise<{ proje
             <ValidationTab token={token} studyId={study.id} locale={locale} />
           ) : active === "launch" ? (
             <LaunchTab token={token} studyId={study.id} locale={locale} />
+          ) : active === "growth" ? (
+            <GrowthTab token={token} studyId={study.id} locale={locale} />
           ) : active === "sources" && lineage ? (
             <div className="mt-5 space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">

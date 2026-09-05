@@ -474,6 +474,7 @@ def record_actual_period(
     period_order: int,
     actual_revenue: Optional[float] = None,
     transactions_count: Optional[int] = None,
+    acquired_customers_count: Optional[int] = None,
     average_ticket_size: Optional[float] = None,
     actual_capex: Optional[float] = None,
     actual_opex_salaries: Optional[float] = None,
@@ -544,6 +545,7 @@ def record_actual_period(
         existing.period_label = period_label
         existing.actual_revenue = actual_revenue
         existing.transactions_count = transactions_count
+        existing.acquired_customers_count = acquired_customers_count
         existing.average_ticket_size = aov
         existing.actual_capex = actual_capex
         existing.actual_opex_salaries = actual_opex_salaries
@@ -567,6 +569,7 @@ def record_actual_period(
             period_order=period_order,
             actual_revenue=actual_revenue,
             transactions_count=transactions_count,
+            acquired_customers_count=acquired_customers_count,
             average_ticket_size=aov,
             actual_capex=actual_capex,
             actual_opex_salaries=actual_opex_salaries,

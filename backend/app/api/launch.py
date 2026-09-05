@@ -90,6 +90,7 @@ class ActualPeriodIn(BaseModel):
     period_order: int = Field(..., ge=1)
     actual_revenue: Optional[float] = None
     transactions_count: Optional[int] = None
+    acquired_customers_count: Optional[int] = None
     average_ticket_size: Optional[float] = None
     actual_capex: Optional[float] = None
     actual_opex_salaries: Optional[float] = None
@@ -527,6 +528,7 @@ def record_actuals(
             period_order=payload.period_order,
             actual_revenue=payload.actual_revenue,
             transactions_count=payload.transactions_count,
+            acquired_customers_count=payload.acquired_customers_count,
             average_ticket_size=payload.average_ticket_size,
             actual_capex=payload.actual_capex,
             actual_opex_salaries=payload.actual_opex_salaries,
@@ -547,6 +549,7 @@ def record_actuals(
             "period_order": p.period_order,
             "actual_revenue": p.actual_revenue,
             "transactions_count": p.transactions_count,
+            "acquired_customers_count": p.acquired_customers_count,
             "average_ticket_size": p.average_ticket_size,
             "actual_capex": p.actual_capex,
             "total_actual_opex": p.total_actual_opex,

@@ -1376,6 +1376,7 @@ class LaunchActualPeriod(TimestampMixin, Base):
     period_order: Mapped[int] = mapped_column(Integer, nullable=False)
     actual_revenue: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     transactions_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    acquired_customers_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     average_ticket_size: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     actual_capex: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     actual_opex_salaries: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
@@ -1419,6 +1420,198 @@ class LaunchReforecast(TimestampMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     workspace: Mapped["LaunchWorkspace"] = relationship(back_populates="reforecasts")
+
+
+# ==============================================================================
+# WAVE 6 — GROWTH OS MODELS
+# ==============================================================================
+
+class GrowthWorkspace(TimestampMixin, Base):
+    """Growth and scaling operating workspace for an operating business (Wave 6)."""
+
+    __tablename__ = "growth_workspaces"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    study_id: Mapped[int] = mapped_column(
+        ForeignKey("feasibility_studies.id", ondelete="CASCADE"), unique=True, index=True, nullable=False
+    )
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # ACTIVE | PAUSED | PIVOTED | STOPPED
+    status: Mapped[str] = mapped_column(String(50), default="ACTIVE", nullable=False)
+
+    study: Mapped["FeasibilityStudy"] = relationship()
+    project: Mapped["Project"] = relationship()
+    user: Mapped["User"] = relationship()
+
+    scenarios: Mapped[list["GrowthScenario"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="GrowthScenario.id.desc()"
+    )
+    what_if_models: Mapped[list["GrowthWhatIfModel"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="GrowthWhatIfModel.id.desc()"
+    )
+    monthly_reviews: Mapped[list["GrowthMonthlyReview"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="GrowthMonthlyReview.version_number.desc()"
+    )
+    decisions: Mapped[list["GrowthDecision"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="GrowthDecision.decision_version.desc()"
+    )
+    actions: Mapped[list["GrowthAction"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="GrowthAction.id.asc()"
+    )
+
+
+class GrowthScenario(TimestampMixin, Base):
+    """Persisted growth or expansion proposal (not a predictive forecast guarantee)."""
+
+    __tablename__ = "growth_scenarios"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("growth_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # NEW_BRANCH | NEW_CITY | NEW_REGION | NEW_PRODUCT | NEW_SERVICE | CAPACITY_EXPANSION | HIRING | MARKETING_EXPANSION | FRANCHISE_EXPANSION | OTHER
+    scenario_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    location_region: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # Unknown values remain NULL; never generate default or synthetic investment
+    investment_required: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    capacity_assumptions: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    revenue_assumptions: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    cost_assumptions: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    dependencies: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    risks: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    evidence_references: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # DRAFT | PROPOSED | EVALUATED | ACCEPTED | REJECTED
+    status: Mapped[str] = mapped_column(String(50), default="PROPOSED", nullable=False)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    workspace: Mapped["GrowthWorkspace"] = relationship(back_populates="scenarios")
+    what_if_models: Mapped[list["GrowthWhatIfModel"]] = relationship(back_populates="scenario")
+
+
+class GrowthWhatIfModel(TimestampMixin, Base):
+    """Deterministic what-if execution record strictly separating facts from user assumptions."""
+
+    __tablename__ = "growth_what_if_models"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("growth_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    scenario_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("growth_scenarios.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    # BASE | DOWNSIDE | UPSIDE | CUSTOM
+    model_type: Mapped[str] = mapped_column(String(50), default="CUSTOM", nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Component containers explicitly labeled
+    user_assumptions: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)  # USER_ASSUMPTION
+    baseline_inputs: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)   # BASELINE
+    actual_inputs: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)     # ACTUAL
+    derived_outputs: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)   # PLATFORM_DERIVED
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    workspace: Mapped["GrowthWorkspace"] = relationship(back_populates="what_if_models")
+    scenario: Mapped[Optional["GrowthScenario"]] = relationship(back_populates="what_if_models")
+
+
+class GrowthMonthlyReview(TimestampMixin, Base):
+    """Immutable monthly business review snapshot freezing operational metrics and decisions."""
+
+    __tablename__ = "growth_monthly_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("growth_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    review_period: Mapped[str] = mapped_column(String(50), nullable=False)  # "2026-M01", "M03"
+    version_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    actual_periods_covered: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # HEALTHY | WATCH | AT_RISK | INSUFFICIENT_DATA
+    health_state: Mapped[str] = mapped_column(String(50), nullable=False)
+    health_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    trend_summary: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    unit_economics_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    risks_snapshot: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    variances_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    cash_runway_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    open_actions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    scenarios_evaluated: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    missing_information: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    review_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    workspace: Mapped["GrowthWorkspace"] = relationship(back_populates="monthly_reviews")
+
+
+class GrowthDecision(TimestampMixin, Base):
+    """Immutable strategic decision explicitly confirmed by the business owner."""
+
+    __tablename__ = "growth_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("growth_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # SCALE | FIX | PIVOT | HOLD | STOP | NEEDS_INFORMATION
+    decision: Mapped[str] = mapped_column(String(50), nullable=False)
+    decision_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    decision_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    supporting_facts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    contradicting_facts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    unknowns: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    user_assumptions: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    risks: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    conditions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    recommended_next_actions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # Linked Wave 4 validation workspace for PIVOT decisions
+    pivot_validation_workspace_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("validation_workspaces.id", ondelete="SET NULL"), nullable=True
+    )
+    re_evaluation_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    decided_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    workspace: Mapped["GrowthWorkspace"] = relationship(back_populates="decisions")
+    pivot_validation_workspace: Mapped[Optional["ValidationWorkspace"]] = relationship()
+    actions: Mapped[list["GrowthAction"]] = relationship(back_populates="decision")
+
+
+class GrowthAction(TimestampMixin, Base):
+    """Actionable remediation or expansion implementation task."""
+
+    __tablename__ = "growth_actions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("growth_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    decision_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("growth_decisions.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # REMEDIATION | EXPANSION_STEP | INFORMATION_GATHERING
+    action_type: Mapped[str] = mapped_column(String(50), default="REMEDIATION", nullable=False)
+    # OPERATIONS | FINANCIAL | MARKETING | GOVERNANCE
+    category: Mapped[str] = mapped_column(String(50), default="OPERATIONS", nullable=False)
+    owner_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    due_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    priority: Mapped[Optional[str]] = mapped_column(String(50), default="MEDIUM", nullable=True)
+    # PENDING | IN_PROGRESS | COMPLETED | CANCELLED
+    status: Mapped[str] = mapped_column(String(50), default="PENDING", nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    workspace: Mapped["GrowthWorkspace"] = relationship(back_populates="actions")
+    decision: Mapped[Optional["GrowthDecision"]] = relationship(back_populates="actions")
+
 
 
 
