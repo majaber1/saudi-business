@@ -364,6 +364,19 @@ def test_09_what_if_provenance_separation():
     pid, sid, launch_id = _setup_launch_ready_study(tok)
     headers = _auth(tok)
 
+    # Record actuals to provide authentic baseline inputs
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={
+            "period_order": 1,
+            "period_label": "2026-M01",
+            "actual_revenue": 100000.0,
+            "total_actual_opex": 60000.0,
+            "closing_cash_balance": 200000.0,
+        },
+        headers=headers,
+    )
+
     ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
 
     res = client.post(
@@ -394,6 +407,19 @@ def test_10_what_if_payback_and_runway_calculation():
     _, tok = _register_and_login("whatif_calc")
     pid, sid, launch_id = _setup_launch_ready_study(tok)
     headers = _auth(tok)
+
+    # Record actuals to provide baseline
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={
+            "period_order": 1,
+            "period_label": "2026-M01",
+            "actual_revenue": 100000.0,
+            "total_actual_opex": 60000.0,
+            "closing_cash_balance": 200000.0,
+        },
+        headers=headers,
+    )
 
     ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
 
@@ -535,11 +561,16 @@ def test_16_scale_decision_guardrail_rejected_when_needs_info():
     headers = _auth(tok)
 
     ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
+    scen = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/scenarios",
+        json={"name": "سيناريو تجريبي", "scenario_type": "NEW_BRANCH", "capex_required": 50000.0},
+        headers=headers,
+    ).json()["scenario"]
 
     # No actuals recorded -> readiness is NEEDS_INFORMATION
     r = client.post(
         f"/api/v1/growth/workspaces/{ws_id}/decisions",
-        json={"decision": "SCALE", "decision_reason": "نرغب في التوسع مباشرة"},
+        json={"decision": "SCALE", "growth_scenario_id": scen["id"], "decision_reason": "نرغب في التوسع مباشرة"},
         headers=headers,
     )
     assert r.status_code == 400, r.text
@@ -566,10 +597,15 @@ def test_17_scale_decision_guardrail_rejected_when_not_ready():
     )
 
     ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
+    scen = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/scenarios",
+        json={"name": "سيناريو عجز", "scenario_type": "NEW_BRANCH", "capex_required": 50000.0},
+        headers=headers,
+    ).json()["scenario"]
 
     r = client.post(
         f"/api/v1/growth/workspaces/{ws_id}/decisions",
-        json={"decision": "SCALE", "decision_reason": "رغم العجز نرغب بالتوسع"},
+        json={"decision": "SCALE", "growth_scenario_id": scen["id"], "decision_reason": "رغم العجز نرغب بالتوسع"},
         headers=headers,
     )
     assert r.status_code == 400, r.text
@@ -876,11 +912,33 @@ def test_26_end_to_end_growth_lifecycle():
     ).json()["model"]
     assert sim["estimated_cash_payback_months"] == 4
 
-    # 4. Record Strategic Decision (SCALE succeeds because health is HEALTHY and runway is solid)
+    # 4. Create scenario and record Strategic Decision (SCALE succeeds because health is HEALTHY and runway is solid)
+    scen = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/scenarios",
+        json={
+            "name": "توسع فرع ثانٍ",
+            "scenario_type": "NEW_BRANCH",
+            "capex_required": 100000.0,
+            "additional_monthly_opex": 15000.0,
+            "expected_monthly_revenue_uplift": 40000.0,
+        },
+        headers=headers,
+    ).json()["scenario"]
+
+    # Provide confirmed funding assumptions so funding gap is calculated
+    session = app_db.SessionLocal()
+    try:
+        session.add(models.StudyAssumption(study_id=sid, key="owner_contribution", label_en="Owner Contribution", label_ar="مساهمة المالك", origin="USER", value_number=150000.0, is_active=True))
+        session.add(models.StudyAssumption(study_id=sid, key="existing_available_facilities", label_en="Existing Available Facilities", label_ar="التسهيلات المتاحة", origin="USER", value_number=50000.0, is_active=True))
+        session.commit()
+    finally:
+        session.close()
+
     dec_res = client.post(
         f"/api/v1/growth/workspaces/{ws_id}/decisions",
         json={
             "decision": "SCALE",
+            "growth_scenario_id": scen["id"],
             "decision_reason": "تحقيق أرباح مستقرة لشهرين متتاليين وتوفر سيولة تتجاوز 200 ألف ريال",
         },
         headers=headers,
@@ -888,7 +946,315 @@ def test_26_end_to_end_growth_lifecycle():
     assert dec_res.status_code == 201, dec_res.text
     dec = dec_res.json()["decision"]
     assert dec["decision"] == "SCALE"
+    assert dec["growth_scenario_id"] == scen["id"]
 
     # 5. Verify Workspace Status is ACTIVE
     ws_final = client.get(f"/api/v1/growth/workspaces/{ws_id}", headers=headers).json()["workspace"]
     assert ws_final["status"] == "ACTIVE"
+
+
+# ==============================================================================
+# 12 FAILURE PATH INTEGRITY TESTS (A through L)
+# ==============================================================================
+
+def test_failure_path_a_no_actual_no_baseline_what_if_needs_information():
+    """A. no actual + no baseline what-if -> no 100000/60000 -> NEEDS_INFORMATION."""
+    _, tok = _register_and_login("whatif_no_base")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+
+    ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
+    r = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/what-if",
+        json={"scenario_name": "محاكاة بدون بيانات", "target_horizon_months": 6},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    m = r.json()["model"]
+    # No synthetic defaults 100000 or 60000
+    assert m["baseline_inputs"]["base_revenue"] is None
+    assert m["baseline_inputs"]["base_opex"] is None
+    assert m["derived_outputs"]["status"] == "NEEDS_INFORMATION"
+    assert m["derived_outputs"]["simulated_monthly_revenue"] is None
+    assert m["derived_outputs"]["simulated_monthly_opex"] is None
+    assert m["derived_outputs"]["simulated_net_monthly"] is None
+
+
+def test_failure_path_b_no_wave2_funding_match_no_fake_matched_program():
+    """B. no wave 2 funding match -> no fake MATCHED program."""
+    _, tok = _register_and_login("no_fake_match")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+
+    res = client.get(f"/api/v1/growth/study/{sid}/funding-context", headers=headers)
+    assert res.status_code == 200, res.text
+    ctx = res.json()["funding_context"]
+
+    # Must NOT blindly claim programs are MATCHED without real rules pass
+    matched = [p for p in ctx["wave2_matched_programs"] if p["fit_status"] == "MATCH"]
+    assert ctx["wave2_matched_programs_count"] == len(matched)
+    for p in ctx["wave2_matched_programs"]:
+        assert p["fit_status"] in ("MATCH", "POSSIBLE_MATCH", "NEEDS_INFORMATION", "NOT_MATCHED", "NOT_EVALUATED")
+
+
+def test_failure_path_c_wave2_possible_match_preserved():
+    """C. wave 2 POSSIBLE_MATCH preserved as POSSIBLE_MATCH."""
+    from app.services.growth import get_growth_funding_context
+    from unittest.mock import patch
+
+    session = app_db.SessionLocal()
+    try:
+        study = session.query(models.FeasibilityStudy).first()
+        if not study:
+            pytest.skip("No study available")
+        mock_eval = {
+            "matches_count": 0,
+            "possible_matches_count": 1,
+            "matches": [
+                {
+                    "program_id": 999,
+                    "program_name_ar": "برنامج ممكن",
+                    "overall_match_status": "POSSIBLE_MATCH",
+                    "status_reason_ar": "مؤهل مبدئياً",
+                }
+            ],
+        }
+        with patch("app.services.growth.evaluate_study_funding_matches", return_value=mock_eval):
+            ctx = get_growth_funding_context(study)
+            assert len(ctx["wave2_matched_programs"]) == 1
+            assert ctx["wave2_matched_programs"][0]["fit_status"] == "POSSIBLE_MATCH"
+            assert ctx["wave2_matched_programs_count"] == 0
+    finally:
+        session.close()
+
+
+def test_failure_path_d_unknown_cash_funding_gap_not_available():
+    """D. unknown cash -> funding gap NOT_AVAILABLE."""
+    _, tok = _register_and_login("unknown_cash_gap")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+
+    ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
+    scen = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/scenarios",
+        json={"name": "توسع جديد", "scenario_type": "NEW_BRANCH", "capex_required": 150000.0},
+        headers=headers,
+    ).json()["scenario"]
+
+    # No actuals recorded -> closing_cash_balance is unknown
+    res = client.get(f"/api/v1/growth/study/{sid}/funding-context?scenario_id={scen['id']}", headers=headers)
+    assert res.status_code == 200, res.text
+    ctx = res.json()["funding_context"]
+    assert ctx["funding_gap_status"] == "NOT_AVAILABLE"
+    assert ctx["funding_gap"]["gap_amount"] is None
+    assert "cash_on_hand" in ctx["unknown_components"]
+
+
+def test_failure_path_e_unknown_confirmed_facility_not_coerced_to_zero():
+    """E. unknown confirmed facility -> not coerced to zero."""
+    _, tok = _register_and_login("unknown_facility")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+
+    res = client.get(f"/api/v1/growth/study/{sid}/funding-context", headers=headers)
+    assert res.status_code == 200, res.text
+    ctx = res.json()["funding_context"]
+    assert "confirmed_facilities" in ctx["unknown_components"]
+    assert ctx["confirmed_funding"]["confirmed_credit_facilities"] is None
+
+
+def test_failure_path_f_previous_revenue_zero_risk_unknown():
+    """F. previous revenue zero -> risk UNKNOWN."""
+    _, tok = _register_and_login("prev_rev_zero")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+
+    # Period 1 with revenue 0.0, Period 2 with revenue 50,000.0
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={"period_order": 1, "period_label": "2026-M01", "actual_revenue": 0.0, "total_actual_opex": 10000.0},
+        headers=headers,
+    )
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={"period_order": 2, "period_label": "2026-M02", "actual_revenue": 50000.0, "total_actual_opex": 20000.0},
+        headers=headers,
+    )
+
+    g_res = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()
+    rev_risk = next(r for r in g_res["risks"] if r["risk_type"] == "REVENUE_CONTRACTION")
+    assert rev_risk["level"] == "UNKNOWN"
+    assert rev_risk["input_value"] is None
+
+
+def test_failure_path_g_missing_fixed_cost_inputs_risk_unknown():
+    """G. missing fixed-cost inputs -> risk UNKNOWN."""
+    _, tok = _register_and_login("missing_fixed_cost")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+
+    # Missing salaries or rent
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={"period_order": 1, "period_label": "2026-M01", "actual_revenue": 50000.0, "total_actual_opex": 30000.0, "actual_opex_salaries": None, "actual_opex_rent": None},
+        headers=headers,
+    )
+
+    g_res = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()
+    cost_risk = next(r for r in g_res["risks"] if r["risk_type"] == "FIXED_COST_OVERHANG")
+    assert cost_risk["level"] == "UNKNOWN"
+
+
+def test_failure_path_h_cash_and_opex_without_valid_burn_runway_not_available():
+    """H. cash + OPEX without valid burn -> runway NOT_AVAILABLE."""
+    _, tok = _register_and_login("runway_noburn")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+
+    # Cash and OPEX exist, but net_cashflow is None (cannot determine burn)
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={"period_order": 1, "period_label": "2026-M01", "closing_cash_balance": 100000.0, "total_actual_opex": 50000.0, "actual_revenue": None},
+        headers=headers,
+    )
+
+    g_res = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()
+    cash_risk = next(r for r in g_res["risks"] if r["risk_type"] == "CASH_RUNWAY_DEPLETION")
+    assert cash_risk["level"] == "UNKNOWN"
+    assert cash_risk["input_value"] is None
+    assert cash_risk.get("status") == "NOT_AVAILABLE"
+
+
+def test_failure_path_i_scale_without_scenario_rejected():
+    """I. SCALE without scenario -> REJECT."""
+    _, tok = _register_and_login("scale_no_scen")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+    ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
+
+    r = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/decisions",
+        json={"decision": "SCALE", "decision_reason": "محاولة توسع بدون سيناريو"},
+        headers=headers,
+    )
+    assert r.status_code == 400, r.text
+    assert "سيناريو نمو معتمد" in r.json()["detail"]
+
+
+def test_failure_path_j_scale_with_foreign_workspace_scenario_rejected():
+    """J. SCALE with foreign-workspace scenario -> REJECT."""
+    _, tok1 = _register_and_login("scale_user1")
+    pid1, sid1, launch_id1 = _setup_launch_ready_study(tok1)
+    headers1 = _auth(tok1)
+    ws1 = client.get(f"/api/v1/growth/study/{sid1}", headers=headers1).json()["workspace"]["id"]
+    scen1 = client.post(
+        f"/api/v1/growth/workspaces/{ws1}/scenarios",
+        json={"name": "سيناريو مساحة 1", "scenario_type": "NEW_BRANCH", "capex_required": 50000.0},
+        headers=headers1,
+    ).json()["scenario"]
+
+    # User 2 creates study
+    _, tok2 = _register_and_login("scale_user2")
+    pid2, sid2, launch_id2 = _setup_launch_ready_study(tok2)
+    headers2 = _auth(tok2)
+    ws2 = client.get(f"/api/v1/growth/study/{sid2}", headers=headers2).json()["workspace"]["id"]
+
+    # Attempt to scale User 2's workspace using User 1's scenario
+    r = client.post(
+        f"/api/v1/growth/workspaces/{ws2}/decisions",
+        json={"decision": "SCALE", "growth_scenario_id": scen1["id"], "decision_reason": "محاولة استخدام سيناريو مساحة أخرى"},
+        headers=headers2,
+    )
+    assert r.status_code == 400, r.text
+    assert "لا ينتمي إلى نفس مساحة عمل النمو" in r.json()["detail"]
+
+
+def test_failure_path_k_scale_with_unknown_investment_requirement_rejected():
+    """K. SCALE with unknown investment requirement -> REJECT."""
+    _, tok = _register_and_login("scale_no_capex")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+    ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
+
+    # Create scenario with NO investment_required (capex_required = None)
+    scen = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/scenarios",
+        json={"name": "سيناريو بدون تكلفة", "scenario_type": "CUSTOM", "capex_required": None},
+        headers=headers,
+    ).json()["scenario"]
+
+    r = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/decisions",
+        json={"decision": "SCALE", "growth_scenario_id": scen["id"], "decision_reason": "محاولة توسع بدون ميزانية استثمار"},
+        headers=headers,
+    )
+    assert r.status_code == 400, r.text
+    assert "متطلبات الاستثمار" in r.json()["detail"] or "capex" in r.json()["detail"]
+
+
+def test_failure_path_l_scale_with_valid_scenario_and_readiness_permitted():
+    """L. valid same-workspace scenario + known requirement + valid readiness -> SCALE permitted."""
+    _, tok = _register_and_login("scale_permitted")
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+    headers = _auth(tok)
+
+    # Record 2 healthy actual periods with solid cash and revenue
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={
+            "period_order": 1,
+            "period_label": "2026-M01",
+            "actual_revenue": 80000.0,
+            "total_actual_opex": 40000.0,
+            "actual_opex_salaries": 15000.0,
+            "actual_opex_rent": 5000.0,
+            "closing_cash_balance": 180000.0,
+            "net_cashflow": 40000.0,
+        },
+        headers=headers,
+    )
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={
+            "period_order": 2,
+            "period_label": "2026-M02",
+            "actual_revenue": 100000.0,
+            "total_actual_opex": 45000.0,
+            "actual_opex_salaries": 15000.0,
+            "actual_opex_rent": 5000.0,
+            "closing_cash_balance": 235000.0,
+            "net_cashflow": 55000.0,
+        },
+        headers=headers,
+    )
+
+    ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
+    scen = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/scenarios",
+        json={"name": "توسع مستوفي الشروط", "scenario_type": "NEW_BRANCH", "capex_required": 120000.0},
+        headers=headers,
+    ).json()["scenario"]
+
+    # Also make sure assumptions have confirmed facilities or owner equity so funding gap is calculated
+    session = app_db.SessionLocal()
+    try:
+        session.add(models.StudyAssumption(study_id=sid, key="owner_contribution", label_en="Owner Contribution", label_ar="مساهمة المالك", origin="USER", value_number=150000.0, is_active=True))
+        session.add(models.StudyAssumption(study_id=sid, key="existing_available_facilities", label_en="Existing Available Facilities", label_ar="التسهيلات المتاحة", origin="USER", value_number=50000.0, is_active=True))
+        session.commit()
+    finally:
+        session.close()
+
+    r = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/decisions",
+        json={
+            "decision": "SCALE",
+            "growth_scenario_id": scen["id"],
+            "decision_reason": "تحقيق أرباح مستمرة وسيولة كافية تغطي الاستثمار",
+        },
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    dec = r.json()["decision"]
+    assert dec["decision"] == "SCALE"
+    assert dec["growth_scenario_id"] == scen["id"]
+

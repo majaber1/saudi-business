@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.services.launch import evaluate_workspace_variances
+from app.services.funding_matching import evaluate_study_funding_matches
 
 CALCULATION_VERSION = "v1.0.0-growth-os"
 
@@ -94,6 +95,7 @@ SCENARIO_TYPES = {
     "MARKETING_EXPANSION",
     "FRANCHISE_EXPANSION",
     "DIGITAL_TRANSFORMATION",
+    "CUSTOM",
     "OTHER",
 }
 
@@ -445,8 +447,75 @@ def calculate_unit_economics(period: Optional[models.LaunchActualPeriod]) -> Dic
 
 
 # ==============================================================================
-# 3. DETERMINISTIC BUSINESS HEALTH ENGINE
+# 3. DETERMINISTIC BUSINESS HEALTH & RUNWAY ENGINE
 # ==============================================================================
+
+def calculate_actual_runway(launch_ws: Optional[models.LaunchWorkspace]) -> Dict[str, Any]:
+    """Calculates cash runway reusing Wave 5 semantics:
+    Requires explicit known cash balance + actual negative burn rate from net cashflow history.
+    If burn cannot be determined: runway = NOT_AVAILABLE, status = NOT_AVAILABLE.
+    """
+    if not launch_ws or not launch_ws.actual_periods:
+        return {
+            "status": "NOT_AVAILABLE",
+            "runway_months": None,
+            "current_cash": None,
+            "monthly_burn": None,
+            "is_burning_cash": False,
+            "reason_ar": "لا توجد دورات تشغيلية فعلية لتحديد معدل الحرق النقدي أو رصيد النقدية.",
+        }
+
+    periods = sorted(launch_ws.actual_periods, key=lambda x: x.period_order)
+    latest = periods[-1]
+    current_cash = latest.closing_cash_balance
+
+    # Burn rate: Periods where net_cashflow (or revenue - opex) is negative
+    cfs = []
+    for p in periods:
+        cf = p.net_cashflow
+        if cf is None and p.actual_revenue is not None and p.total_actual_opex is not None:
+            cf = round(p.actual_revenue - p.total_actual_opex, 2)
+        if cf is not None:
+            cfs.append(cf)
+
+    monthly_burn: Optional[float] = None
+    negative_cfs = [abs(cf) for cf in cfs if cf < 0]
+    if negative_cfs:
+        monthly_burn = round(sum(negative_cfs) / len(negative_cfs), 2)
+    elif cfs:
+        # All known periods have net_cashflow >= 0; burn rate is 0 (not burning cash)
+        monthly_burn = 0.0
+
+    if current_cash is None or monthly_burn is None:
+        return {
+            "status": "NOT_AVAILABLE",
+            "runway_months": None,
+            "current_cash": current_cash,
+            "monthly_burn": monthly_burn,
+            "is_burning_cash": False,
+            "reason_ar": "يتطلب احتساب مدرج السيولة رصيد نقدية معلوم ومعدل حرق نقدي تاريخي محدد.",
+        }
+
+    if monthly_burn > 0:
+        runway_months = round(current_cash / monthly_burn, 1)
+        return {
+            "status": "CALCULATED",
+            "runway_months": runway_months,
+            "current_cash": current_cash,
+            "monthly_burn": monthly_burn,
+            "is_burning_cash": True,
+            "reason_ar": f"مدرج السيولة المتبقي {runway_months} أشهر استناداً إلى متوسط حرق شهري فعلي {monthly_burn:,.2f} ر.س.",
+        }
+    else:
+        return {
+            "status": "NOT_BURNING_CASH",
+            "runway_months": None,
+            "current_cash": current_cash,
+            "monthly_burn": 0.0,
+            "is_burning_cash": False,
+            "reason_ar": "النشاط يحقق تدفقاً نقدياً موجباً أو متعادلاً ولا يعاني من حرق نقدي.",
+        }
+
 
 def evaluate_business_health(
     growth_ws_or_launch_ws: Any = None,
@@ -584,22 +653,22 @@ def evaluate_business_health(
             "calculation_version": CALCULATION_VERSION,
         })
 
-    # 3. Cash Position & Runway
+    # 3. Cash Position & Runway (reusing Wave 5 burn-rate semantics)
+    runway_info = calculate_actual_runway(target_launch_ws)
     cash_bal = latest_p.closing_cash_balance
-    opex_val = latest_p.total_actual_opex
-    if cash_bal is not None and opex_val is not None and opex_val > 0:
-        runway = round(cash_bal / opex_val, 1)
+    if runway_info["status"] == "CALCULATED":
+        runway = runway_info["runway_months"]
         if runway < 1.5:
             res = "CRITICAL"
             critical_risks += 1
-            reason = f"مخاطر سيولة مرتفعة: مدرج السيولة المتبقي {runway} أشهر فقط (أقل من 1.5 شهر تغطية)."
+            reason = f"مخاطر سيولة مرتفعة: مدرج السيولة المتبقي {runway} أشهر فقط (أقل من 1.5 شهر استناداً لمعدل الحرق الفعلي)."
         elif runway < 3.0:
             res = "WARNING"
             watch_count += 1
-            reason = f"مدرج السيولة متحفظ: {runway} أشهر (بين 1.5 شهر و 3 أشهر)."
+            reason = f"مدرج السيولة متحفظ: {runway} أشهر حرق نقدي (بين 1.5 شهر و 3 أشهر)."
         else:
             res = "POSITIVE"
-            reason = f"مدرج سيولة مريح: يغطي {runway} أشهر من النفقات التشغيلية الحالية."
+            reason = f"مدرج سيولة مريح: يغطي {runway} أشهر من معدل الحرق النقدي الفعلي."
         factors.append({
             "metric": "cash_runway",
             "metric_name_ar": "مدرج السيولة المتبقي (أشهر)",
@@ -612,6 +681,19 @@ def evaluate_business_health(
             "data_period": latest_p.period_label,
             "calculation_version": CALCULATION_VERSION,
         })
+    elif runway_info["status"] == "NOT_BURNING_CASH":
+        factors.append({
+            "metric": "cash_runway",
+            "metric_name_ar": "مدرج السيولة المتبقي (أشهر)",
+            "current_value": None,
+            "comparison_value": 3.0,
+            "comparison_period": "الحد الآمن",
+            "result": "POSITIVE",
+            "reason": "النشاط يحقق تدفقاً نقدياً موجباً أو متعادلاً ولا يوجد حرق نقدي.",
+            "data_source": latest_p.source_type,
+            "data_period": latest_p.period_label,
+            "calculation_version": CALCULATION_VERSION,
+        })
     elif cash_bal is not None:
         factors.append({
             "metric": "cash_balance",
@@ -620,7 +702,7 @@ def evaluate_business_health(
             "comparison_value": None,
             "comparison_period": None,
             "result": "RECORDED",
-            "reason": f"الرصيد النقدي الفعلي المسجل هو {cash_bal:,.2f} ر.س (المدرج غير محسوب لعدم تحديد إجمالي المصروفات).",
+            "reason": f"الرصيد النقدي الفعلي المسجل هو {cash_bal:,.2f} ر.س (المدرج غير متاح لعدم توفر تاريخ حرق نقدي).",
             "data_source": latest_p.source_type,
             "data_period": latest_p.period_label,
             "calculation_version": CALCULATION_VERSION,
@@ -633,7 +715,7 @@ def evaluate_business_health(
             "current_value": None,
             "comparison_value": None,
             "result": "INSUFFICIENT_DATA",
-            "reason": "رصيد النقدية الختامي غير مدخل في سجل الأداء الفعلي.",
+            "reason": runway_info["reason_ar"],
             "data_source": "UNKNOWN",
             "data_period": latest_p.period_label,
             "calculation_version": CALCULATION_VERSION,
@@ -747,20 +829,49 @@ def detect_growth_risks(
     latest = periods[-1]
     prev = periods[-2] if len(periods) >= 2 else None
 
-    # Risk 1: CASH Runway Risk
-    cash = latest.closing_cash_balance
-    opex = latest.total_actual_opex
-    if cash is not None and opex is not None and opex > 0:
-        runway = round(cash / opex, 1)
+    # Risk 1: CASH Runway Risk (reusing Wave 5 burn-rate semantics)
+    runway_info = calculate_actual_runway(launch_ws)
+    if runway_info["status"] == "NOT_AVAILABLE":
+        risks.append({
+            "category": "CASH",
+            "risk_type": "CASH_RUNWAY_DEPLETION",
+            "risk_title_ar": "مخاطر استنزاف السيولة النقدية ومدرج التشغيل",
+            "level": RISK_UNKNOWN,
+            "trigger": "CASH_RUNWAY_MONTHS",
+            "input_value": None,
+            "status": "NOT_AVAILABLE",
+            "threshold_rule": "requires closing_cash_balance and historical net cashflow burn rate",
+            "reason_ar": runway_info["reason_ar"],
+            "period": latest.period_label,
+            "source": "UNKNOWN",
+            "calculation_version": CALCULATION_VERSION,
+        })
+    elif runway_info["status"] == "NOT_BURNING_CASH":
+        risks.append({
+            "category": "CASH",
+            "risk_type": "CASH_RUNWAY_DEPLETION",
+            "risk_title_ar": "مخاطر استنزاف السيولة النقدية ومدرج التشغيل",
+            "level": RISK_LOW,
+            "trigger": "CASH_RUNWAY_MONTHS",
+            "input_value": None,
+            "status": "NOT_BURNING_CASH",
+            "threshold_rule": "no cash burn detected (net cashflow >= 0)",
+            "reason_ar": runway_info["reason_ar"],
+            "period": latest.period_label,
+            "source": latest.source_type,
+            "calculation_version": CALCULATION_VERSION,
+        })
+    else:
+        runway = runway_info["runway_months"]
         if runway < 2.0:
             lvl = RISK_HIGH
-            reason = f"رصيد النقدية الحالي {cash:,.2f} ر.س يغطي أقل من شهرين ({runway} شهر) نفقات تشغيلية."
+            reason = f"رصيد النقدية الحالي يغطي أقل من شهرين ({runway} شهر) استناداً إلى متوسط الحرق الشهري الفعلي ({runway_info['monthly_burn']:,.2f} ر.س)."
         elif runway < 3.0:
             lvl = RISK_WATCH
             reason = f"رصيد النقدية يغطي {runway} أشهر، وهو أقل من عازل الأمان الموصى به (3 أشهر)."
         else:
             lvl = RISK_LOW
-            reason = f"مدرج السيولة آمن ({runway} أشهر تغطية)."
+            reason = f"مدرج السيولة آمن ({runway} أشهر تغطية حرق نقدي)."
         risks.append({
             "category": "CASH",
             "risk_type": "CASH_RUNWAY_DEPLETION",
@@ -768,76 +879,99 @@ def detect_growth_risks(
             "level": lvl,
             "trigger": "CASH_RUNWAY_MONTHS",
             "input_value": runway,
+            "status": "CALCULATED",
             "threshold_rule": "HIGH: < 2.0 months | WATCH: < 3.0 months | LOW: >= 3.0 months",
             "reason_ar": reason,
             "period": latest.period_label,
             "source": latest.source_type,
             "calculation_version": CALCULATION_VERSION,
         })
-    else:
-        risks.append({
-            "category": "CASH",
-            "risk_type": "CASH_RUNWAY_DEPLETION",
-            "risk_title_ar": "مخاطر استنزاف السيولة النقدية",
-            "level": RISK_UNKNOWN,
-            "trigger": "CASH_RUNWAY_MONTHS",
-            "input_value": None,
-            "threshold_rule": "requires closing_cash_balance and total_actual_opex",
-            "reason_ar": "بيانات النقدية أو إجمالي المصاريف غير مكتملة في الدورة الأخيرة.",
-            "period": latest.period_label,
-            "source": "UNKNOWN",
-            "calculation_version": CALCULATION_VERSION,
-        })
 
     # Risk 2: Fixed Cost Overhang (> 70% of total opex)
-    salaries = latest.actual_opex_salaries or 0.0
-    rent = latest.actual_opex_rent or 0.0
-    fixed_costs = salaries + rent
-    if opex and opex > 0 and (fixed_costs / opex) > 0.70:
-        fixed_pct = round((fixed_costs / opex) * 100, 1)
+    # Missing salary or rent input strictly results in UNKNOWN
+    salaries = latest.actual_opex_salaries
+    rent = latest.actual_opex_rent
+    opex = latest.total_actual_opex
+    if salaries is None or rent is None or opex is None or opex <= 0:
         risks.append({
             "category": "COST",
             "risk_type": "FIXED_COST_OVERHANG",
             "risk_title_ar": "تضخم التكاليف الثابتة التشغيلية",
-            "level": RISK_HIGH if fixed_pct > 80.0 else RISK_WATCH,
+            "level": RISK_UNKNOWN,
+            "trigger": "FIXED_COSTS_PROPORTION_PCT",
+            "input_value": None,
+            "threshold_rule": "FIXED_COST_OVERHANG: (salaries + rent) / opex > 70%",
+            "reason_ar": "بيانات الرواتب أو الإيجار أو إجمالي المصروفات غير مكتملة في الدورة الأخيرة.",
+            "period": latest.period_label,
+            "source": "UNKNOWN",
+            "calculation_version": CALCULATION_VERSION,
+        })
+    else:
+        fixed_costs = salaries + rent
+        fixed_pct = round((fixed_costs / opex) * 100, 1)
+        if (fixed_costs / opex) > 0.70:
+            lvl = RISK_HIGH if fixed_pct > 80.0 else RISK_WATCH
+            reason = f"تشكل التكاليف الثابتة (الرواتب والإيجار) {fixed_pct}% من إجمالي المصروفات التشغيلية."
+        else:
+            lvl = RISK_LOW
+            reason = f"نسبة التكاليف الثابتة في النطاق الآمن ({fixed_pct}% من إجمالي المصروفات)."
+        risks.append({
+            "category": "COST",
+            "risk_type": "FIXED_COST_OVERHANG",
+            "risk_title_ar": "تضخم التكاليف الثابتة التشغيلية",
+            "level": lvl,
             "trigger": "FIXED_COSTS_PROPORTION_PCT",
             "input_value": fixed_pct,
             "threshold_rule": "FIXED_COST_OVERHANG: (salaries + rent) / opex > 70%",
-            "reason_ar": f"تشكل التكاليف الثابتة (الرواتب والإيجار) {fixed_pct}% من إجمالي المصروفات التشغيلية.",
+            "reason_ar": reason,
             "period": latest.period_label,
             "source": latest.source_type,
             "calculation_version": CALCULATION_VERSION,
         })
 
     # Risk 3: REVENUE Trend Risk
+    # If previous revenue was zero, percentage_change=None, level=UNKNOWN
     if prev and latest.actual_revenue is not None and prev.actual_revenue is not None:
-        rev_change_pct = (
-            round(((latest.actual_revenue - prev.actual_revenue) / prev.actual_revenue) * 100, 1)
-            if prev.actual_revenue > 0
-            else 0.0
-        )
-        if rev_change_pct < -15.0:
-            lvl = RISK_HIGH
-            reason = f"تراجع حاد في الإيرادات بنسبة {abs(rev_change_pct):.1f}% مقارنة بالدورة السابقة."
-        elif rev_change_pct < 0.0:
-            lvl = RISK_WATCH
-            reason = f"تراجع طفيف في الإيرادات بنسبة {abs(rev_change_pct):.1f}%."
+        if prev.actual_revenue <= 0:
+            risks.append({
+                "category": "REVENUE",
+                "risk_type": "REVENUE_CONTRACTION",
+                "risk_title_ar": "مخاطر تراجع وتذبذب الإيرادات",
+                "level": RISK_UNKNOWN,
+                "trigger": "REVENUE_GROWTH_PCT",
+                "input_value": None,
+                "percentage_change": None,
+                "threshold_rule": "HIGH: < -15% | WATCH: < 0% | LOW: >= 0% (requires prev revenue > 0)",
+                "reason_ar": "إيرادات الدورة السابقة كانت صفراً؛ لا يمكن احتساب نسبة نمو ذات دلالة إحصائية.",
+                "period": latest.period_label,
+                "source": latest.source_type,
+                "calculation_version": CALCULATION_VERSION,
+            })
         else:
-            lvl = RISK_LOW
-            reason = f"الإيرادات تنمو بمعدل إيجابي (+{rev_change_pct:.1f}%)."
-        risks.append({
-            "category": "REVENUE",
-            "risk_type": "REVENUE_CONTRACTION",
-            "risk_title_ar": "مخاطر تراجع وتذبذب الإيرادات",
-            "level": lvl,
-            "trigger": "REVENUE_GROWTH_PCT",
-            "input_value": rev_change_pct,
-            "threshold_rule": "HIGH: < -15% | WATCH: < 0% | LOW: >= 0%",
-            "reason_ar": reason,
-            "period": latest.period_label,
-            "source": latest.source_type,
-            "calculation_version": CALCULATION_VERSION,
-        })
+            rev_change_pct = round(((latest.actual_revenue - prev.actual_revenue) / prev.actual_revenue) * 100, 1)
+            if rev_change_pct < -15.0:
+                lvl = RISK_HIGH
+                reason = f"تراجع حاد في الإيرادات بنسبة {abs(rev_change_pct):.1f}% مقارنة بالدورة السابقة."
+            elif rev_change_pct < 0.0:
+                lvl = RISK_WATCH
+                reason = f"تراجع طفيف في الإيرادات بنسبة {abs(rev_change_pct):.1f}%."
+            else:
+                lvl = RISK_LOW
+                reason = f"الإيرادات تنمو بمعدل إيجابي (+{rev_change_pct:.1f}%)."
+            risks.append({
+                "category": "REVENUE",
+                "risk_type": "REVENUE_CONTRACTION",
+                "risk_title_ar": "مخاطر تراجع وتذبذب الإيرادات",
+                "level": lvl,
+                "trigger": "REVENUE_GROWTH_PCT",
+                "input_value": rev_change_pct,
+                "percentage_change": rev_change_pct,
+                "threshold_rule": "HIGH: < -15% | WATCH: < 0% | LOW: >= 0%",
+                "reason_ar": reason,
+                "period": latest.period_label,
+                "source": latest.source_type,
+                "calculation_version": CALCULATION_VERSION,
+            })
     else:
         risks.append({
             "category": "REVENUE",
@@ -846,6 +980,7 @@ def detect_growth_risks(
             "level": RISK_UNKNOWN,
             "trigger": "REVENUE_GROWTH_PCT",
             "input_value": None,
+            "percentage_change": None,
             "threshold_rule": "requires at least 2 comparable revenue periods",
             "reason_ar": "لا تتوفر دورتان متتاليتان بإيرادات معلومة لاحتساب نسبة التغير بدقة.",
             "period": latest.period_label,
@@ -968,26 +1103,29 @@ def evaluate_expansion_readiness(
         "reason_ar": p_reason,
     })
 
-    # 2. RUNWAY_ADEQUACY
-    cash = latest_p.closing_cash_balance if latest_p else None
-    opex = latest_p.total_actual_opex if latest_p else None
-    if cash is not None and opex is not None and opex > 0:
-        runway = round(cash / opex, 1)
+    # 2. RUNWAY_ADEQUACY (reusing Wave 5 burn-rate semantics)
+    runway_info = calculate_actual_runway(launch_ws)
+    if runway_info["status"] == "NOT_AVAILABLE":
+        p_status = PREREQ_UNKNOWN
+        critical_unknowns += 1
+        p_reason = runway_info["reason_ar"]
+    elif runway_info["status"] == "NOT_BURNING_CASH":
+        p_status = PREREQ_PASS
+        passes += 1
+        p_reason = "النشاط يحقق تدفقاً نقدياً موجباً أو متعادلاً (لا يوجد حرق نقدي)، ومدرج السيولة آمن."
+    else:
+        runway = runway_info["runway_months"]
         if runway >= 3.0:
             p_status = PREREQ_PASS
             passes += 1
-            p_reason = f"رصيد النقدية يوفر مدرج أمان مريح للتوسع ({runway} أشهر)."
+            p_reason = f"رصيد النقدية يوفر مدرج أمان مريح للتوسع استناداً إلى الحرق الشهري ({runway} أشهر)."
         elif runway >= 2.0:
             p_status = PREREQ_FAIL
-            p_reason = f"مدرج السيولة محدود ({runway} أشهر)، مما قد يعرض النشاط لعجز نقدي في حال التوسع."
+            p_reason = f"مدرج السيولة محدود ({runway} أشهر حرق نقدي)، مما قد يعرض النشاط لعجز نقدي في حال التوسع."
         else:
             p_status = PREREQ_FAIL
             hard_blockers += 1
-            p_reason = f"مدرج السيولة حرج جداً ({runway} أشهر فقط)، يمنع التوسع قبل تأمين سيولة كافية."
-    else:
-        p_status = PREREQ_UNKNOWN
-        critical_unknowns += 1
-        p_reason = "رصيد النقدية الختامي أو المصاريف التشغيلية غير مدخلين لحساب مدرج الأمان."
+            p_reason = f"مدرج السيولة حرج جداً ({runway} أشهر حرق نقدي)، يمنع التوسع قبل تأمين سيولة كافية."
     prereqs.append({
         "code": "RUNWAY_ADEQUACY",
         "key": "runway_adequacy",
@@ -1004,6 +1142,7 @@ def evaluate_expansion_readiness(
         p_reason = "لم يتم تسجيل أي دورة تشغيلية فعلية لقياس اقتصاديات الوحدة."
     else:
         rev = latest_p.actual_revenue
+        opex = latest_p.total_actual_opex
         cogs = latest_p.actual_opex_cogs
         if rev is not None and opex is not None:
             if rev >= opex:
@@ -1116,6 +1255,7 @@ def get_growth_funding_context(
     - Program match != approved financing.
     - Separates: current available cash, growth investment need, confirmed funding, potential funding capacity, funding gap.
     - Unknown capacity remains UNKNOWN.
+    - Unknown funding values are never coerced to 0.0.
     """
     if isinstance(study_or_growth_ws, models.GrowthWorkspace):
         growth_ws = study_or_growth_ws
@@ -1139,37 +1279,85 @@ def get_growth_funding_context(
     growth_investment = scenario.investment_required if scenario else None
 
     # Wave 2 context: Owner capital & confirmed facilities from study assumptions
-    assumptions_map = {a.key: a.value_number for a in study.study_assumptions if a.is_active}
+    assumptions_map = {a.key: a.value_number for a in study.study_assumptions if a.is_active} if (study and study.study_assumptions) else {}
     owner_equity = assumptions_map.get("owner_contribution")
     confirmed_facilities = assumptions_map.get("existing_available_facilities")
 
-    # Funding gap calculation
-    funding_gap = None
-    if growth_investment is not None:
-        confirmed_avail = (cash_on_hand or 0.0) + (owner_equity or 0.0) + (confirmed_facilities or 0.0)
-        funding_gap = max(0.0, round(growth_investment - confirmed_avail, 2))
+    # Tracking known and unknown components - never coerce unknown to 0.0
+    known_confirmed_amounts: Dict[str, float] = {}
+    unknown_components: List[str] = []
 
-    # Wave 2 funding programs lookup
-    db = Session.object_session(study)
+    if cash_on_hand is not None:
+        known_confirmed_amounts["cash_on_hand"] = cash_on_hand
+    else:
+        unknown_components.append("cash_on_hand")
+
+    if owner_equity is not None:
+        known_confirmed_amounts["owner_equity"] = owner_equity
+    else:
+        unknown_components.append("owner_equity")
+
+    if confirmed_facilities is not None:
+        known_confirmed_amounts["confirmed_facilities"] = confirmed_facilities
+    else:
+        unknown_components.append("confirmed_facilities")
+
+    if growth_investment is None:
+        unknown_components.append("growth_investment")
+
+    known_total = round(sum(known_confirmed_amounts.values()), 2)
+
+    # Funding gap calculation - strictly requires ALL components to be known
+    if unknown_components:
+        funding_gap = None
+        if "cash_on_hand" in unknown_components:
+            funding_gap_status = "NOT_AVAILABLE"
+        else:
+            funding_gap_status = "NEEDS_INFORMATION"
+    else:
+        funding_gap = max(0.0, round(growth_investment - known_total, 2))
+        funding_gap_status = "CALCULATED"
+
+    # Wave 2 funding programs lookup using real deterministic evaluator
+    db = Session.object_session(study) if study else None
     matched_programs = []
-    if db:
-        programs = db.query(models.FundingProgram).limit(5).all()
-        for p in programs:
+    matches_count = 0
+    if db and study:
+        project = getattr(study, "project", None)
+        eval_res = evaluate_study_funding_matches(
+            db,
+            study=study,
+            project=project,
+            owner_contribution=owner_equity,
+            existing_facilities=confirmed_facilities,
+            capex_assumption=growth_investment,
+        )
+        for m in eval_res.get("matches", []):
+            st = m.get("overall_match_status", "NOT_EVALUATED")
             matched_programs.append({
-                "program_id": p.id,
-                "program_name_ar": p.program_name_ar,
-                "sponsor_name_ar": p.provider_ar or "جهة تمويل معتمدة",
-                "funding_type": p.program_type or "تمويل تنموي",
-                "fit_status": "MATCHED",
+                "program_id": m.get("program_id"),
+                "program_name_ar": m.get("program_name_ar"),
+                "sponsor_name_ar": m.get("provider_ar") or m.get("sponsor_name_ar") or "جهة تمويل معتمدة",
+                "funding_type": m.get("funding_type") or m.get("program_type") or "تمويل تنموي",
+                "fit_status": st,
+                "overall_match_status": st,
+                "status_reason_ar": m.get("status_reason_ar"),
             })
+        matches_count = eval_res.get("matches_count", 0)
+
+    confirmed_funding_status = "CONFIRMED" if (owner_equity is not None or confirmed_facilities is not None) else "UNKNOWN"
 
     return {
         "context_type": "WAVE_2_INTEGRATION",
         "disclaimer_ar": "التمويل المحتمل ليس سيولة نقدية متاحة ولا يغني عن تحقيق مدرج سيولة تشغيلي آمن.",
-        "summary_ar": f"تم الربط مع منظومة التمويل في Wave 2؛ تم رصد {len(matched_programs)} برنامج تمويلي مؤهل.",
-        "wave2_matched_programs_count": len(matched_programs),
+        "summary_ar": f"تم الربط مع منظومة التمويل في Wave 2؛ تم رصد {matches_count} برنامج تمويلي مطابق.",
+        "wave2_matched_programs_count": matches_count,
         "wave2_matched_programs": matched_programs,
-        "study_id": study.id,
+        "study_id": study.id if study else None,
+        "known_confirmed_amounts": known_confirmed_amounts,
+        "unknown_components": unknown_components,
+        "known_total": known_total,
+        "funding_gap_status": funding_gap_status,
         "feasibility_reference": {
             "funding_needed": study.project.investment if (study and getattr(study, "project", None)) else (study.payload.get("investment") if study and getattr(study, "payload", None) else None),
             "capital_structure": None,
@@ -1190,19 +1378,23 @@ def get_growth_funding_context(
         "confirmed_funding": {
             "owner_equity": owner_equity,
             "confirmed_credit_facilities": confirmed_facilities,
-            "total_confirmed": round((owner_equity or 0.0) + (confirmed_facilities or 0.0), 2),
-            "status": "CONFIRMED" if (owner_equity is not None or confirmed_facilities is not None) else "UNKNOWN",
+            "total_confirmed": round((owner_equity or 0.0) + (confirmed_facilities or 0.0), 2) if (owner_equity is not None or confirmed_facilities is not None) else None,
+            "status": confirmed_funding_status,
             "label_ar": "التمويل المؤكد المتاح",
         },
         "potential_funding_capacity": {
             "status": "POTENTIAL_NOT_CASH",
             "note_ar": "الطاقة التمويلية المحتملة لا تعني موافقة ائتمانية ولا تُعد نقدية متاحة.",
-            "programs_link": f"/studies/{study.id}/funding-matches",
-            "readiness_link": f"/studies/{study.id}/funding-readiness",
+            "programs_link": f"/studies/{study.id}/funding-matches" if study else "#",
+            "readiness_link": f"/studies/{study.id}/funding-readiness" if study else "#",
         },
         "funding_gap": {
             "gap_amount": funding_gap,
-            "status": "CALCULATED" if funding_gap is not None else "NEEDS_INVESTMENT_AMOUNT",
+            "status": funding_gap_status,
+            "funding_gap_status": funding_gap_status,
+            "known_confirmed_amounts": known_confirmed_amounts,
+            "unknown_components": unknown_components,
+            "known_total": known_total,
             "label_ar": "الفجوة التمويلية للتوسع",
             "rule_explanation_ar": "الفجوة التمويلية = استثمار التوسع المطلوب - (النقدية المتاحة + التمويل المؤكد).",
         },
@@ -1228,12 +1420,12 @@ def execute_what_if_scenario(
     expected_monthly_revenue_uplift: Optional[float] = None,
     target_capacity_increase_pct: Optional[float] = None,
     user_assumptions: Optional[Dict[str, Any]] = None,
-    revenue_change_pct: float = 0.0,
-    opex_change_pct: float = 0.0,
-    new_headcount_cost: float = 0.0,
-    new_marketing_spend: float = 0.0,
+    revenue_change_pct: Optional[float] = None,
+    opex_change_pct: Optional[float] = None,
+    new_headcount_cost: Optional[float] = None,
+    new_marketing_spend: Optional[float] = None,
     new_branch_capex: Optional[float] = None,
-    volume_change_pct: float = 0.0,
+    volume_change_pct: Optional[float] = None,
     **kwargs,
 ) -> models.GrowthWhatIfModel:
     """Executes deterministic What-If analysis strictly separating ACTUAL, BASELINE,
@@ -1242,8 +1434,11 @@ def execute_what_if_scenario(
     Output strictly labeled:
     - ACTUAL: historical actual values
     - BASELINE: approved study projections
-    - USER_ASSUMPTION: explicit user overrides
+    - USER_ASSUMPTION: explicit user overrides (omitted assumptions are NEVER tagged USER_ASSUMPTION)
     - PLATFORM_DERIVED: purely calculated projections
+    If neither ACTUAL nor approved BASELINE exists:
+    base revenue = None, base opex = None, status = NEEDS_INFORMATION, simulated values = None.
+    Never invent synthetic fallbacks (100000/60000).
     Scenario result != forecast guarantee.
     """
     db = Session.object_session(growth_ws)
@@ -1268,11 +1463,18 @@ def execute_what_if_scenario(
         proj_rev = p0.get("projected_revenue")
         proj_opex = p0.get("projected_opex")
 
-    base_rev = act_rev if act_rev is not None else (proj_rev or 100000.0)
-    base_opex = act_opex if act_opex is not None else (proj_opex or 60000.0)
+    # Strictly no synthetic defaults (never invent 100000.0 or 60000.0)
+    base_rev = act_rev if act_rev is not None else proj_rev
+    base_opex = act_opex if act_opex is not None else proj_opex
 
-    # 3. User Assumptions Assembly
-    final_user_assumptions = {
+    # 3. User Assumptions Assembly - ONLY explicitly supplied non-None values
+    final_user_assumptions = {}
+    if user_assumptions:
+        for k, v in user_assumptions.items():
+            if v is not None:
+                final_user_assumptions[k] = v
+
+    explicit_args = {
         "capex_required": effective_capex,
         "additional_monthly_opex": additional_monthly_opex,
         "expected_monthly_revenue_uplift": expected_monthly_revenue_uplift,
@@ -1281,67 +1483,92 @@ def execute_what_if_scenario(
         "opex_change_pct": opex_change_pct,
         "new_headcount_cost": new_headcount_cost,
         "new_marketing_spend": new_marketing_spend,
-        "new_branch_capex": effective_capex,
+        "new_branch_capex": new_branch_capex,
         "volume_change_pct": volume_change_pct,
     }
-    if user_assumptions:
-        final_user_assumptions.update(user_assumptions)
+    for k, v in explicit_args.items():
+        if v is not None and k not in final_user_assumptions:
+            final_user_assumptions[k] = v
 
     # 4. Platform Derived Projections (Deterministic)
-    effective_rev_pct = revenue_change_pct + volume_change_pct
-    uplift_rev = expected_monthly_revenue_uplift or 0.0
-    uplift_opex = (additional_monthly_opex or 0.0) + new_headcount_cost + new_marketing_spend
+    if base_rev is None or base_opex is None:
+        derived_outputs = {
+            "status": "NEEDS_INFORMATION",
+            "simulated_monthly_revenue": None,
+            "simulated_monthly_opex": None,
+            "simulated_net_monthly": None,
+            "initial_cash_after_capex": None,
+            "estimated_cash_payback_months": None,
+            "estimated_net_runway_impact_months": None,
+            "minimum_cash_required": effective_capex,
+            "monthly_forward_projections": [],
+            "reason_ar": "لا توجد بيانات فعلية سابقة ولا خط أساس معتمد لاحتساب سيناريو ماذا-لو. الحالة: يلزم استكمال البيانات (NEEDS_INFORMATION).",
+            "disclaimer_ar": "نتائج السيناريو هي مخرجات مشتقة من افتراضات المستخدم ولا تشكل ضماناً مالياً مستقبلياً.",
+            "calculation_version": CALCULATION_VERSION,
+        }
+    else:
+        rev_pct = final_user_assumptions.get("revenue_change_pct") or 0.0
+        vol_pct = final_user_assumptions.get("volume_change_pct") or 0.0
+        opex_pct = final_user_assumptions.get("opex_change_pct") or 0.0
+        effective_rev_pct = rev_pct + vol_pct
+        uplift_rev = final_user_assumptions.get("expected_monthly_revenue_uplift") or 0.0
+        uplift_opex = (
+            (final_user_assumptions.get("additional_monthly_opex") or 0.0)
+            + (final_user_assumptions.get("new_headcount_cost") or 0.0)
+            + (final_user_assumptions.get("new_marketing_spend") or 0.0)
+        )
 
-    simulated_monthly_revenue = round((base_rev * (1.0 + (effective_rev_pct / 100.0))) + uplift_rev, 2)
-    simulated_monthly_opex = round((base_opex * (1.0 + (opex_change_pct / 100.0))) + uplift_opex, 2)
-    simulated_net_monthly = round(simulated_monthly_revenue - simulated_monthly_opex, 2)
+        simulated_monthly_revenue = round((base_rev * (1.0 + (effective_rev_pct / 100.0))) + uplift_rev, 2)
+        simulated_monthly_opex = round((base_opex * (1.0 + (opex_pct / 100.0))) + uplift_opex, 2)
+        simulated_net_monthly = round(simulated_monthly_revenue - simulated_monthly_opex, 2)
 
-    simulated_cash = act_cash if act_cash is not None else None
-    initial_cash_after_capex = None
-    if simulated_cash is not None and effective_capex is not None:
-        initial_cash_after_capex = round(simulated_cash - effective_capex, 2)
+        simulated_cash = act_cash if act_cash is not None else None
+        initial_cash_after_capex = None
+        if simulated_cash is not None and effective_capex is not None:
+            initial_cash_after_capex = round(simulated_cash - effective_capex, 2)
 
-    # Calculate Payback Months & Runway Impact
-    net_monthly_gain = (simulated_net_monthly - (base_rev - base_opex))
-    payback_months = None
-    if effective_capex and effective_capex > 0:
-        gain_for_payback = net_monthly_gain if net_monthly_gain > 0 else simulated_net_monthly
-        if gain_for_payback > 0:
-            payback_months = int(round(effective_capex / gain_for_payback))
+        # Calculate Payback Months & Runway Impact
+        net_monthly_gain = (simulated_net_monthly - (base_rev - base_opex))
+        payback_months = None
+        if effective_capex and effective_capex > 0:
+            gain_for_payback = net_monthly_gain if net_monthly_gain > 0 else simulated_net_monthly
+            if gain_for_payback > 0:
+                payback_months = int(round(effective_capex / gain_for_payback))
 
-    # Calculate forward trajectory
-    horizon = min(60, max(1, target_horizon_months))
-    forward_projections = []
-    curr_cash = initial_cash_after_capex if initial_cash_after_capex is not None else simulated_cash
+        # Calculate forward trajectory
+        horizon = min(60, max(1, target_horizon_months))
+        forward_projections = []
+        curr_cash = initial_cash_after_capex if initial_cash_after_capex is not None else simulated_cash
 
-    for m in range(1, horizon + 1):
-        m_rev = simulated_monthly_revenue
-        m_opex = simulated_monthly_opex
-        m_net = round(m_rev - m_opex, 2)
-        if curr_cash is not None:
-            curr_cash = round(curr_cash + m_net, 2)
+        for m in range(1, horizon + 1):
+            m_rev = simulated_monthly_revenue
+            m_opex = simulated_monthly_opex
+            m_net = round(m_rev - m_opex, 2)
+            if curr_cash is not None:
+                curr_cash = round(curr_cash + m_net, 2)
 
-        forward_projections.append({
-            "month": m,
-            "period_label": f"Sim+M{m:02d}",
-            "projected_revenue": m_rev,
-            "projected_opex": m_opex,
-            "projected_net_cashflow": m_net,
-            "projected_cash_balance": curr_cash,
-        })
+            forward_projections.append({
+                "month": m,
+                "period_label": f"Sim+M{m:02d}",
+                "projected_revenue": m_rev,
+                "projected_opex": m_opex,
+                "projected_net_cashflow": m_net,
+                "projected_cash_balance": curr_cash,
+            })
 
-    derived_outputs = {
-        "simulated_monthly_revenue": simulated_monthly_revenue,
-        "simulated_monthly_opex": simulated_monthly_opex,
-        "simulated_net_monthly": simulated_net_monthly,
-        "initial_cash_after_capex": initial_cash_after_capex,
-        "estimated_cash_payback_months": payback_months,
-        "estimated_net_runway_impact_months": round(payback_months - 12, 1) if payback_months else None,
-        "minimum_cash_required": effective_capex or 0.0,
-        "monthly_forward_projections": forward_projections,
-        "disclaimer_ar": "نتائج السيناريو هي مخرجات مشتقة من افتراضات المستخدم ولا تشكل ضماناً مالياً مستقبلياً.",
-        "calculation_version": CALCULATION_VERSION,
-    }
+        derived_outputs = {
+            "status": "CALCULATED",
+            "simulated_monthly_revenue": simulated_monthly_revenue,
+            "simulated_monthly_opex": simulated_monthly_opex,
+            "simulated_net_monthly": simulated_net_monthly,
+            "initial_cash_after_capex": initial_cash_after_capex,
+            "estimated_cash_payback_months": payback_months,
+            "estimated_net_runway_impact_months": round(payback_months - 12, 1) if payback_months else None,
+            "minimum_cash_required": effective_capex or 0.0,
+            "monthly_forward_projections": forward_projections,
+            "disclaimer_ar": "نتائج السيناريو هي مخرجات مشتقة من افتراضات المستخدم ولا تشكل ضماناً مالياً مستقبلياً.",
+            "calculation_version": CALCULATION_VERSION,
+        }
 
     model = models.GrowthWhatIfModel(
         workspace_id=growth_ws.id,
@@ -1448,6 +1675,7 @@ def record_growth_decision(
     user_assumptions: Optional[Dict[str, Any]] = None,
     conditions: Optional[List[str]] = None,
     re_evaluation_date: Optional[str] = None,
+    growth_scenario_id: Optional[int] = None,
 ) -> models.GrowthDecision:
     """Records an immutable strategic business decision explicitly confirmed by the user.
     
@@ -1455,7 +1683,8 @@ def record_growth_decision(
     
     Semantics:
     - SCALE: Must not result merely from revenue growth; checks cash, capacity, and operational stability.
-      If cash requirement is unknown or data incomplete, decision is rejected.
+      Requires explicit same-workspace growth_scenario_id, known capex/investment requirement > 0,
+      readiness state != NEEDS_INFORMATION and != NOT_READY, and funding context not treating unknown as cash.
     - FIX: Generates remediation action plan.
     - PIVOT: Links to a NEW Wave 4 validation cycle workspace without overwriting old ones.
     - HOLD: Requires reason and re-evaluation condition/date.
@@ -1485,12 +1714,29 @@ def record_growth_decision(
         elif p["status"] == PREREQ_UNKNOWN:
             unknowns.append(f"{p['name_ar']}: {p['reason_ar']}")
 
-    # SCALE Guardrail: cannot scale merely from revenue increase
+    # SCALE Guardrail: cannot scale into the dark
     if decision == DECISION_SCALE:
+        if not growth_scenario_id:
+            raise ValueError("يتطلب اعتماد قرار التوسع (SCALE) تحديد سيناريو نمو معتمد (growth_scenario_id).")
+
+        scenario = db.query(models.GrowthScenario).filter_by(id=growth_scenario_id).first()
+        if not scenario or scenario.workspace_id != growth_ws.id:
+            raise ValueError("سيناريو النمو المحدد غير موجود أو لا ينتمي إلى نفس مساحة عمل النمو الحالية.")
+
+        scenario_investment = scenario.investment_required
+        if scenario_investment is None or scenario_investment <= 0:
+            raise ValueError("يتطلب قرار التوسع (SCALE) تحديد قيمة متطلبات الاستثمار أو النفقات الرأسمالية (capex / investment required) بشكل صريح وأكبر من صفر.")
+
         if readiness["readiness_state"] == READINESS_NEEDS_INFO:
             raise ValueError("لا يمكن اعتماد قرار التوسع (SCALE) في ظل وجود متطلبات جوهرية مجهولة (NEEDS_INFORMATION). يرجى استكمال بيانات الأداء أولاً.")
         if readiness["readiness_state"] == READINESS_NOT_READY:
             raise ValueError(f"لا يمكن اعتماد قرار التوسع (SCALE) لوجود معطلات صريحة أو عجز في مدرج السيولة: {readiness['summary_ar']}")
+
+        funding_ctx = get_growth_funding_context(growth_ws, launch_ws, scenario)
+        if funding_ctx.get("funding_gap_status") in ("NOT_AVAILABLE", "NEEDS_INFORMATION"):
+            raise ValueError("لا يمكن اعتماد قرار التوسع (SCALE) في ظل عدم اكتمال بيانات السيولة أو التمويل المؤكد (حالة الفجوة التمويلية غير معلومة).")
+        if funding_ctx.get("current_available_cash", {}).get("status") == "UNKNOWN":
+            raise ValueError("لا يمكن اعتماد قرار التوسع (SCALE) دون توفر رصيد نقدية فعلي مسجل.")
 
     # Version sequence
     latest_dec = (
@@ -1552,6 +1798,7 @@ def record_growth_decision(
         decision=decision,
         decision_version=new_version,
         decision_reason=decision_reason,
+        growth_scenario_id=growth_scenario_id,
         supporting_facts=supporting_facts,
         contradicting_facts=contradicting_facts,
         unknowns=unknowns,

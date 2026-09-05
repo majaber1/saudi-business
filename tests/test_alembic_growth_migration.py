@@ -47,7 +47,10 @@ def test_alembic_single_head_and_revision_chain():
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 migration head, found: {heads}"
-    assert heads[0] == "0023_growth_os", f"Expected head to be 0023_growth_os, got {heads[0]}"
+    assert heads[0] == "0024_wave6_integrity", f"Expected head to be 0024_wave6_integrity, got {heads[0]}"
+
+    rev_0024 = script.get_revision("0024_wave6_integrity")
+    assert rev_0024.down_revision == "0023_growth_os"
 
     rev_0023 = script.get_revision("0023_growth_os")
     assert rev_0023.down_revision == "0022_launch_actuals_os"
@@ -105,6 +108,8 @@ def test_alembic_migration_0022_to_0023_upgrade_and_downgrade(alembic_config):
     # Verify decision columns
     decision_columns = {c["name"]: c for c in inspector_0023.get_columns("growth_decisions")}
     assert decision_columns["pivot_validation_workspace_id"]["nullable"] is True
+    assert "growth_scenario_id" in decision_columns
+    assert decision_columns["growth_scenario_id"]["nullable"] is True
     assert "decision" in decision_columns
     assert "supporting_facts" in decision_columns
     assert "contradicting_facts" in decision_columns

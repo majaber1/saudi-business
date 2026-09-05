@@ -1575,12 +1575,17 @@ class GrowthDecision(TimestampMixin, Base):
     pivot_validation_workspace_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("validation_workspaces.id", ondelete="SET NULL"), nullable=True
     )
+    # Linked Wave 6 growth scenario for SCALE decisions
+    growth_scenario_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("growth_scenarios.id", ondelete="SET NULL"), nullable=True
+    )
     re_evaluation_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     decided_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     decided_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     workspace: Mapped["GrowthWorkspace"] = relationship(back_populates="decisions")
     pivot_validation_workspace: Mapped[Optional["ValidationWorkspace"]] = relationship()
+    growth_scenario: Mapped[Optional["GrowthScenario"]] = relationship()
     actions: Mapped[list["GrowthAction"]] = relationship(back_populates="decision")
 
 

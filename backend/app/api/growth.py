@@ -76,6 +76,7 @@ class MonthlyReviewIn(BaseModel):
 class DecisionRecordIn(BaseModel):
     decision: GrowthDecisionType = Field(..., description="SCALE, FIX, PIVOT, HOLD, STOP, NEEDS_INFORMATION")
     decision_reason: str = Field(..., min_length=5)
+    growth_scenario_id: Optional[int] = Field(default=None, description="Required for SCALE decisions")
     user_assumptions: Optional[Dict[str, Any]] = None
     conditions: Optional[List[str]] = None
     re_evaluation_date: Optional[str] = None
@@ -265,6 +266,7 @@ def _serialize_growth_workspace_full(
             {
                 "id": d.id,
                 "workspace_id": d.workspace_id,
+                "growth_scenario_id": d.growth_scenario_id,
                 "decision": d.decision,
                 "decision_version": d.decision_version,
                 "decision_reason": d.decision_reason,
@@ -314,6 +316,29 @@ def get_study_growth_workspace(
     try:
         ws = get_or_create_growth_workspace(session, current_user, study_id)
         return _serialize_growth_workspace_full(ws, session)
+    except PermissionError as pe:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(pe))
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/study/{study_id}/funding-context")
+def get_study_growth_funding_context(
+    study_id: int,
+    scenario_id: Optional[int] = None,
+    current_user: models.User = Depends(get_current_user),
+    session: Session = Depends(db.get_db),
+):
+    """Retrieves growth funding context for a feasibility study."""
+    try:
+        ws = get_or_create_growth_workspace(session, current_user, study_id)
+        launch_ws = session.query(models.LaunchWorkspace).filter_by(study_id=study_id).first()
+        scenario = None
+        if scenario_id:
+            scenario = session.query(models.GrowthScenario).filter_by(id=scenario_id, workspace_id=ws.id).first()
+        return {"funding_context": get_growth_funding_context(ws, launch_ws, scenario=scenario)}
     except PermissionError as pe:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(pe))
     except ValueError as ve:
@@ -440,6 +465,9 @@ def run_growth_what_if_model(
                 "scenario_id": model.scenario_id,
                 "scenario_name": model.title,
                 "assumptions_summary": model.user_assumptions,
+                "baseline_inputs": model.baseline_inputs,
+                "actual_inputs": model.actual_inputs,
+                "derived_outputs": model.derived_outputs,
                 "baseline_snapshot": model.baseline_inputs,
                 "derived_monthly_projections": (model.derived_outputs or {}).get("monthly_forward_projections", []),
                 "estimated_cash_payback_months": (model.derived_outputs or {}).get("estimated_cash_payback_months"),
@@ -520,12 +548,14 @@ def record_decision(
             user_assumptions=payload.user_assumptions,
             conditions=payload.conditions,
             re_evaluation_date=payload.re_evaluation_date,
+            growth_scenario_id=payload.growth_scenario_id,
         )
         return {
             "message": f"Strategic decision '{decision.decision}' recorded successfully (v{decision.decision_version})",
             "decision": {
                 "id": decision.id,
                 "workspace_id": decision.workspace_id,
+                "growth_scenario_id": decision.growth_scenario_id,
                 "decision": decision.decision,
                 "decision_version": decision.decision_version,
                 "decision_reason": decision.decision_reason,

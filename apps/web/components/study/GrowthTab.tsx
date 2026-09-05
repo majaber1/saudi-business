@@ -103,6 +103,7 @@ export default function GrowthTab({
   // Decision form state
   const [decisionType, setDecisionType] = useState<"SCALE" | "FIX" | "PIVOT" | "HOLD" | "STOP" | "NEEDS_INFORMATION">("HOLD");
   const [decisionReason, setDecisionReason] = useState("");
+  const [decisionScenarioId, setDecisionScenarioId] = useState<number | "">("");
   const [decisionConditions, setDecisionConditions] = useState("");
   const [decisionReEvalDate, setDecisionReEvalDate] = useState("");
   const [submittingDecision, setSubmittingDecision] = useState(false);
@@ -215,11 +216,13 @@ export default function GrowthTab({
       await recordGrowthDecision(token, data.workspace.id, {
         decision: decisionType,
         decision_reason: decisionReason,
+        growth_scenario_id: decisionType === "SCALE" && decisionScenarioId ? Number(decisionScenarioId) : null,
         conditions: condList,
         re_evaluation_date: decisionReEvalDate || null,
       });
       setActionSuccess(`تم اعتماد وتسجيل القرار الاستراتيجي '${decisionType}' بنجاح`);
       setDecisionReason("");
+      setDecisionScenarioId("");
       setDecisionConditions("");
       setDecisionReEvalDate("");
       loadData();
@@ -1095,6 +1098,26 @@ export default function GrowthTab({
                     className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
+                {decisionType === "SCALE" && (
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                      سيناريو التوسع المعتمد (إلزامي لقرار SCALE)
+                    </label>
+                    <select
+                      required
+                      value={decisionScenarioId}
+                      onChange={(e) => setDecisionScenarioId(e.target.value ? Number(e.target.value) : "")}
+                      className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:border-emerald-500 focus:outline-none font-bold"
+                    >
+                      <option value="">-- اختر سيناريو التوسع المعتمد لمعرفة الاحتياج الاستثماري --</option>
+                      {(data.scenarios || []).map((s: any) => (
+                        <option key={s.id} value={s.id}>
+                          {s.title} ({s.investment_required ? `${s.investment_required.toLocaleString()} ر.س` : "بدون متطلب استثماري"})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="sm:col-span-2">
                   <label className="text-[11px] font-bold text-slate-600 block mb-1">مبررات القرار (إلزامي)</label>
                   <textarea

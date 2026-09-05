@@ -2372,6 +2372,7 @@ export function recordGrowthDecision(
   data: {
     decision: string;
     decision_reason: string;
+    growth_scenario_id?: number | null;
     user_assumptions?: Record<string, any>;
     conditions?: string[];
     re_evaluation_date?: string | null;
