@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   getValidationWorkspace,
+  getValidationWorkspaceById,
+  getValidationCycles,
   addValidationHypothesis,
   updateValidationHypothesis,
   addValidationExperiment,
@@ -92,6 +94,8 @@ export default function ValidationTab({
 }) {
   const ar = locale === "ar";
   const [workspace, setWorkspace] = useState<ValidationWorkspaceData | null>(null);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<number | null>(null);
+  const [cycles, setCycles] = useState<any[]>([]);
   const [decisions, setDecisions] = useState<ValidationDecisionItem[]>([]);
   const [subTab, setSubTab] = useState<"hypotheses" | "experiments" | "evidence" | "decision">("hypotheses");
   const [loading, setLoading] = useState(true);
@@ -138,22 +142,29 @@ export default function ValidationTab({
   const [decisionReason, setDecisionReason] = useState("");
   const [decisionConditions, setDecisionConditions] = useState<string[]>([""]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (targetWorkspaceId?: number | null) => {
     try {
       setLoading(true);
       setError(null);
-      const ws = await getValidationWorkspace(token, studyId);
+      const wid = targetWorkspaceId !== undefined ? targetWorkspaceId : selectedWorkspaceId;
+      const ws = wid ? await getValidationWorkspaceById(token, wid) : await getValidationWorkspace(token, studyId);
       setWorkspace(ws);
-      if (ws.id) {
+      if (ws?.id) {
         const decList = await getValidationDecisions(token, ws.id);
         setDecisions(decList);
+      }
+      try {
+        const cycleList = await getValidationCycles(token, studyId);
+        setCycles(cycleList.cycles || []);
+      } catch {
+        // non-blocking
       }
     } catch (err: any) {
       setError(err?.message || "فشل تحميل بيانات التحقق الميداني");
     } finally {
       setLoading(false);
     }
-  }, [studyId, token]);
+  }, [studyId, token, selectedWorkspaceId]);
 
   useEffect(() => {
     loadData();
@@ -341,16 +352,71 @@ export default function ValidationTab({
             </p>
           </div>
 
-          <div className="flex flex-col items-end">
-            <span className="text-xs text-slate-500">{ar ? "حالة التحقق الشاملة:" : "Overall Status:"}</span>
-            <span
-              className={`mt-1 inline-flex items-center rounded-full border px-4 py-1.5 text-sm font-bold shadow-sm ${badgeStyle.color}`}
-              data-testid="validation-status-badge"
-            >
-              {ar ? badgeStyle.ar : evalStatus}
-            </span>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">{ar ? "دورة التحقق:" : "Cycle:"}</span>
+              {(cycles.length > 1 || (workspace?.total_cycles && workspace.total_cycles > 1)) ? (
+                <select
+                  value={workspace?.id || ""}
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    setSelectedWorkspaceId(id);
+                    loadData(id);
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800 shadow-xs focus:border-brand-500 focus:outline-none"
+                  data-testid="validation-cycle-switcher"
+                >
+                  {cycles.length > 0 ? (
+                    cycles.map((c) => (
+                      <option key={c.workspace_id} value={c.workspace_id}>
+                        {ar ? `الدورة ${c.cycle_number}` : `Cycle ${c.cycle_number}`}
+                        {c.is_current ? (ar ? " (الحالية - النشطة)" : " (Current - Active)") : (ar ? " (تاريخية)" : " (Historical)")}
+                        {c.latest_decision ? ` · ${c.latest_decision}` : ""}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={workspace?.id || ""}>
+                      {ar ? `الدورة ${workspace?.cycle_number || 1}` : `Cycle ${workspace?.cycle_number || 1}`}
+                    </option>
+                  )}
+                </select>
+              ) : (
+                <span className="rounded-md bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                  {ar ? `الدورة ${workspace?.cycle_number || 1}` : `Cycle ${workspace?.cycle_number || 1}`}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">{ar ? "حالة التحقق الشاملة:" : "Overall Status:"}</span>
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold shadow-sm ${badgeStyle.color}`}
+                data-testid="validation-status-badge"
+              >
+                {ar ? badgeStyle.ar : evalStatus}
+              </span>
+            </div>
           </div>
         </div>
+
+        {workspace?.is_current_cycle === false && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex items-center justify-between">
+            <span>
+              {ar
+                ? "⚠️ تنبيه: أنت تستعرض دورة تحقق تاريخية مؤرشفة. تتوفر دورة تحقق حالية نشطة أحدث (ناتجة عن مسار PIVOT)."
+                : "⚠️ Note: Viewing an archived historical validation cycle. A newer active cycle is available."}
+            </span>
+            <button
+              onClick={() => {
+                setSelectedWorkspaceId(null);
+                loadData(null);
+              }}
+              className="rounded-md bg-amber-200 px-2 py-1 font-semibold text-amber-950 hover:bg-amber-300"
+            >
+              {ar ? "الانتقال للدورة الحالية" : "Go to Current Cycle"}
+            </button>
+          </div>
+        )}
 
         {/* SUMMARY & TRANSPARENT METRICS */}
         {workspace?.evaluation && (

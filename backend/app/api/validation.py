@@ -83,12 +83,26 @@ class DecisionCreateIn(BaseModel):
 
 def _serialize_workspace(ws: models.ValidationWorkspace, db_session: Session) -> Dict[str, Any]:
     eval_res = evaluate_workspace_status(ws)
+    all_study_workspaces = (
+        db_session.query(models.ValidationWorkspace.id)
+        .filter_by(study_id=ws.study_id)
+        .order_by(models.ValidationWorkspace.id.asc())
+        .all()
+    )
+    all_ids = [row[0] for row in all_study_workspaces]
+    current_cycle_number = (all_ids.index(ws.id) + 1) if ws.id in all_ids else 1
+    is_current_cycle = (ws.id == all_ids[-1]) if all_ids else True
+
     return {
         "id": ws.id,
         "project_id": ws.project_id,
         "study_id": ws.study_id,
         "status": ws.status,
         "evaluation": eval_res,
+        "cycle_number": current_cycle_number,
+        "total_cycles": len(all_ids),
+        "is_current_cycle": is_current_cycle,
+        "historical_cycle_ids": all_ids,
         "created_at": ws.created_at.isoformat() if ws.created_at else None,
         "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
         "hypotheses": [
@@ -173,6 +187,42 @@ def get_or_create_workspace(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get("/study/{study_id}/cycles", status_code=status.HTTP_200_OK)
+def list_validation_cycles(
+    study_id: int,
+    user: models.User = Depends(get_current_user),
+    db_session: Session = Depends(db.get_db),
+):
+    """Lists all validation cycles for a study with summary metadata."""
+    study = db_session.query(models.FeasibilityStudy).filter_by(id=study_id).first()
+    if not study:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feasibility study not found")
+    if study.project.owner_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    workspaces = (
+        db_session.query(models.ValidationWorkspace)
+        .filter_by(study_id=study_id)
+        .order_by(models.ValidationWorkspace.id.asc())
+        .all()
+    )
+    cycles = []
+    for idx, w in enumerate(workspaces, start=1):
+        latest_dec = w.decisions[0].decision if w.decisions else None
+        cycles.append({
+            "workspace_id": w.id,
+            "cycle_number": idx,
+            "is_current": (idx == len(workspaces)),
+            "status": w.status,
+            "latest_decision": latest_dec,
+            "hypotheses_count": len(w.hypotheses),
+            "evidence_count": len(w.evidence),
+            "created_at": w.created_at.isoformat() if w.created_at else None,
+        })
+    cycles.reverse()
+    return {"study_id": study_id, "cycles": cycles, "total_cycles": len(cycles)}
 
 
 @router.get("/workspaces/{workspace_id}", status_code=status.HTTP_200_OK)

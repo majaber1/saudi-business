@@ -1667,10 +1667,15 @@ export interface ValidationWorkspaceData {
   project_id: number;
   study_id: number;
   status: string;
+  cycle_number?: number;
+  total_cycles?: number;
+  is_current_cycle?: boolean;
+  historical_cycle_ids?: number[];
   evaluation: {
-    status: string;
-    total_hypotheses: number;
-    counts: Record<string, number>;
+    status?: string;
+    overall_status?: string;
+    total_hypotheses?: number;
+    counts?: Record<string, number>;
     critical_total: number;
     critical_supported: number;
     critical_untested: number;
@@ -1687,6 +1692,27 @@ export interface ValidationWorkspaceData {
 
 export function getValidationWorkspace(token: string, studyId: number) {
   return authedRequest<ValidationWorkspaceData>(`/api/v1/validation/study/${studyId}`, token);
+}
+
+export function getValidationWorkspaceById(token: string, workspaceId: number) {
+  return authedRequest<ValidationWorkspaceData>(`/api/v1/validation/workspaces/${workspaceId}`, token);
+}
+
+export function getValidationCycles(token: string, studyId: number) {
+  return authedRequest<{
+    study_id: number;
+    cycles: Array<{
+      workspace_id: number;
+      cycle_number: number;
+      is_current: boolean;
+      status: string;
+      latest_decision: string | null;
+      hypotheses_count: number;
+      evidence_count: number;
+      created_at: string | null;
+    }>;
+    total_cycles: number;
+  }>(`/api/v1/validation/study/${studyId}/cycles`, token);
 }
 
 export function addValidationHypothesis(
@@ -2292,6 +2318,74 @@ export type GrowthWorkspaceData = {
     completed_at: string | null;
   }>;
 };
+
+export type GrowthFundingContext = {
+  context_type: string;
+  summary_ar: string;
+  disclaimer_ar: string;
+  wave2_matched_programs_count: number;
+  wave2_matched_programs: Array<{
+    program_id: number;
+    program_name_ar: string;
+    sponsor_name_ar: string;
+    funding_type: string;
+    fit_status: string;
+    status_reason_ar?: string;
+  }>;
+  known_confirmed_amounts?: Record<string, number>;
+  unknown_components?: string[];
+  known_total?: number;
+  funding_gap_status?: string;
+  feasibility_reference?: {
+    funding_needed: number | null;
+    capital_structure: any;
+    recommended_structure: any;
+  };
+  current_available_cash?: {
+    amount: number | null;
+    status: string;
+    source: string;
+    label_ar: string;
+  };
+  growth_investment_need?: {
+    amount: number | null;
+    status: string;
+    source: string;
+    label_ar: string;
+  };
+  confirmed_funding?: {
+    owner_equity: number | null;
+    confirmed_credit_facilities: number | null;
+    total_confirmed: number | null;
+    status: string;
+    label_ar: string;
+  };
+  potential_funding_capacity?: {
+    status: string;
+    note_ar: string;
+    programs_link: string;
+    readiness_link: string;
+  };
+  funding_gap?: {
+    gap_amount: number | null;
+    status: string;
+    funding_gap_status: string;
+    known_confirmed_amounts: Record<string, number>;
+    unknown_components: string[];
+    known_total: number;
+    label_ar: string;
+    rule_explanation_ar: string;
+  };
+  calculation_version?: string;
+};
+
+export function getGrowthFundingContext(token: string, studyId: number, scenarioId?: number) {
+  const q = scenarioId ? `?scenario_id=${scenarioId}` : "";
+  return authedRequest<{ funding_context: GrowthFundingContext }>(
+    `/api/v1/growth/study/${studyId}/funding-context${q}`,
+    token
+  );
+}
 
 export function getGrowthWorkspace(token: string, studyId: number) {
   return authedRequest<GrowthWorkspaceData>(`/api/v1/growth/study/${studyId}`, token);

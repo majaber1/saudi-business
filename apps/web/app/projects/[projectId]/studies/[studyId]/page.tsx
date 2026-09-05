@@ -317,7 +317,7 @@ export default function StudyWorkspacePage({ params }: { params: Promise<{ proje
           ) : active === "launch" ? (
             <LaunchTab token={token} studyId={study.id} locale={locale} />
           ) : active === "growth" ? (
-            <GrowthTab token={token} studyId={study.id} locale={locale} />
+            <GrowthTab token={token} studyId={study.id} locale={locale} onNavigateTab={(tab) => setActive(tab as any)} />
           ) : active === "sources" && lineage ? (
             <div className="mt-5 space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">

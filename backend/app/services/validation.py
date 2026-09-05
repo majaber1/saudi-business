@@ -66,6 +66,7 @@ def get_or_create_validation_workspace(
     ws = (
         db.query(models.ValidationWorkspace)
         .filter_by(study_id=study.id)
+        .order_by(models.ValidationWorkspace.id.desc())
         .first()
     )
     if not ws:

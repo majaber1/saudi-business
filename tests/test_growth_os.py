@@ -1258,3 +1258,154 @@ def test_failure_path_l_scale_with_valid_scenario_and_readiness_permitted():
     assert dec["decision"] == "SCALE"
     assert dec["growth_scenario_id"] == scen["id"]
 
+
+def test_capacity_utilization_requires_explicit_evidence():
+    """Test 36: CAPACITY_UTILIZATION is not marked PASS merely because actual periods exist.
+    Without explicit capacity evidence, returns UNKNOWN / NA as appropriate.
+    For capacity-sensitive SCALE scenario (CAPACITY_EXPANSION), unknown capacity remains visible
+    and blocks blind scale with NEEDS_INFORMATION.
+    """
+    _, tok = _register_and_login("caputil")
+    headers = _auth(tok)
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+
+    # 2 actual periods recorded, but NO capacity metrics in assumptions or business profile
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={"period_order": 1, "period_label": "2026-M01", "actual_revenue": 50000.0, "total_actual_opex": 30000.0, "closing_cash_balance": 100000.0},
+        headers=headers,
+    )
+    client.post(
+        f"/api/v1/launch/workspaces/{launch_id}/actuals",
+        json={"period_order": 2, "period_label": "2026-M02", "actual_revenue": 60000.0, "total_actual_opex": 32000.0, "closing_cash_balance": 120000.0},
+        headers=headers,
+    )
+
+    # Check readiness without scenario: capacity_utilization must be UNKNOWN, NOT PASS
+    r = client.get(f"/api/v1/growth/study/{sid}", headers=headers)
+    assert r.status_code == 200
+    expansion_readiness = r.json()["expansion_readiness"]
+    prereqs = {p["code"]: p["status"] for p in expansion_readiness["prerequisites"]}
+    prereqs_reasons = {p["code"]: p["reason_ar"] for p in expansion_readiness["prerequisites"]}
+    assert prereqs["CAPACITY_UTILIZATION"] == "UNKNOWN", f"Expected UNKNOWN, got {prereqs['CAPACITY_UTILIZATION']}"
+    assert "استغلال الطاقة الاستيعابية" in prereqs_reasons["CAPACITY_UTILIZATION"] or "UNKNOWN" in prereqs_reasons["CAPACITY_UTILIZATION"]
+
+    ws_id = r.json()["workspace"]["id"]
+
+    # Scenario: CAPACITY_EXPANSION (explicitly capacity-sensitive)
+    scen = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/scenarios",
+        json={"name": "توسع طاقة إنتاجية", "scenario_type": "CAPACITY_EXPANSION", "capex_required": 50000.0},
+        headers=headers,
+    ).json()["scenario"]
+
+    # Trying to SCALE with CAPACITY_EXPANSION without capacity evidence must be rejected (NEEDS_INFORMATION)
+    r_scale = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/decisions",
+        json={
+            "decision": "SCALE",
+            "growth_scenario_id": scen["id"],
+            "decision_reason": "محاولة توسع طاقة دون بيانات سعة",
+        },
+        headers=headers,
+    )
+    assert r_scale.status_code == 400
+    assert "لا يمكن اعتماد قرار التوسع" in r_scale.json()["detail"] or "NEEDS_INFORMATION" in r_scale.json()["detail"]
+
+    # Now add explicit capacity utilization assumption
+    session = app_db.SessionLocal()
+    try:
+        session.add(models.StudyAssumption(
+            study_id=sid,
+            key="capacity_utilization",
+            label_en="Capacity Utilization",
+            label_ar="نسبة استغلال الطاقة",
+            origin="USER",
+            value_number=88.5,
+            is_active=True,
+        ))
+        session.commit()
+    finally:
+        session.close()
+
+    # With explicit capacity utilization, prerequisite is now PASS
+    r_ready = client.get(f"/api/v1/growth/study/{sid}", headers=headers)
+    assert r_ready.status_code == 200
+    prereqs2 = {p["code"]: p["status"] for p in r_ready.json()["expansion_readiness"]["prerequisites"]}
+    assert prereqs2["CAPACITY_UTILIZATION"] == "PASS"
+
+
+def test_pivot_current_validation_cycle_and_history_preserved():
+    """Test 37: PIVOT decision creates a new active validation cycle.
+    - Default GET returns the latest (new) cycle as current.
+    - Old validation history remains preserved and retrievable by workspace ID.
+    - Cycle numbers and metadata are accurate.
+    - Wave 4 launch gating continues to recognize approved historical GO.
+    """
+    _, tok = _register_and_login("pivotcycle")
+    headers = _auth(tok)
+    pid, sid, launch_id = _setup_launch_ready_study(tok)
+
+    # 1. Get initial validation workspace (Cycle 1)
+    r_v1 = client.get(f"/api/v1/validation/study/{sid}", headers=headers)
+    assert r_v1.status_code == 200
+    w1 = r_v1.json()
+    w1_id = w1["id"]
+    assert w1["cycle_number"] == 1
+    assert w1["is_current_cycle"] is True
+
+    # Record GO decision in Cycle 1
+    client.post(
+        f"/api/v1/validation/workspaces/{w1_id}/decision",
+        json={"decision": "GO", "decision_reason": "تم التحقق الميداني بنجاح للدورة الأولى"},
+        headers=headers,
+    )
+
+    # 2. In Growth OS, record a PIVOT strategic decision
+    ws_id = client.get(f"/api/v1/growth/study/{sid}", headers=headers).json()["workspace"]["id"]
+    r_piv = client.post(
+        f"/api/v1/growth/workspaces/{ws_id}/decisions",
+        json={
+            "decision": "PIVOT",
+            "decision_reason": "تغيير نموذج العمل بعد اختبارات ميدانية جديدة",
+        },
+        headers=headers,
+    )
+    assert r_piv.status_code == 201
+    piv_data = r_piv.json()["decision"]
+    new_cycle_wid = piv_data.get("pivot_validation_workspace_id")
+    assert new_cycle_wid is not None
+    assert new_cycle_wid != w1_id
+
+    # 3. Query current validation workspace: MUST return new cycle (Cycle 2)
+    r_v2 = client.get(f"/api/v1/validation/study/{sid}", headers=headers)
+    assert r_v2.status_code == 200
+    w2 = r_v2.json()
+    assert w2["id"] == new_cycle_wid
+    assert w2["cycle_number"] == 2
+    assert w2["total_cycles"] == 2
+    assert w2["is_current_cycle"] is True
+    assert w1_id in w2["historical_cycle_ids"]
+
+    # 4. Old validation cycle 1 must STILL be retrievable by workspace ID
+    r_old = client.get(f"/api/v1/validation/workspaces/{w1_id}", headers=headers)
+    assert r_old.status_code == 200
+    old_data = r_old.json()
+    assert old_data["id"] == w1_id
+    assert old_data["cycle_number"] == 1
+    assert old_data["is_current_cycle"] is False
+    assert old_data["latest_decision"]["decision"] == "GO"
+
+    # 5. Cycles listing endpoint returns both cycles in order
+    r_cycles = client.get(f"/api/v1/validation/study/{sid}/cycles", headers=headers)
+    assert r_cycles.status_code == 200
+    cycles = r_cycles.json()["cycles"]
+    assert len(cycles) == 2
+    assert cycles[0]["cycle_number"] == 2 and cycles[0]["is_current"] is True
+    assert cycles[1]["cycle_number"] == 1 and cycles[1]["is_current"] is False
+
+    # 6. Launch gating check: Wave 4 launch workspace still honors the approved GO from cycle 1
+    r_launch = client.get(f"/api/v1/launch/workspaces/study/{sid}", headers=headers)
+    assert r_launch.status_code == 200
+
+

@@ -1061,6 +1061,7 @@ def detect_growth_risks(
 def evaluate_expansion_readiness(
     growth_ws: models.GrowthWorkspace,
     launch_ws: Optional[models.LaunchWorkspace],
+    scenario: Optional[models.GrowthScenario] = None,
 ) -> Dict[str, Any]:
     """Evaluates transparent expansion readiness prerequisites across 5 standard codes:
     OPERATING_STABILITY, RUNWAY_ADEQUACY, UNIT_ECONOMICS, CAPACITY_UTILIZATION, DATA_COMPLETENESS.
@@ -1076,6 +1077,7 @@ def evaluate_expansion_readiness(
     critical_unknowns = 0
     passes = 0
 
+    study = growth_ws.study if growth_ws else None
     periods = launch_ws.actual_periods if launch_ws else []
     periods_count = len(periods)
     latest_p = periods[-1] if periods else None
@@ -1171,19 +1173,80 @@ def evaluate_expansion_readiness(
     })
 
     # 4. CAPACITY_UTILIZATION
-    if not periods:
-        p_status = PREREQ_UNKNOWN
-        p_reason = "البيانات الميدانية غير متوفرة لقياس معدل استغلال الطاقة الاستيعابية."
-    else:
+    # Do not mark CAPACITY_UTILIZATION = PASS merely because actual periods exist.
+    # Without explicit capacity/capacity-utilization evidence, return UNKNOWN or NOT_APPLICABLE.
+    # For capacity-sensitive SCALE scenarios, unknown capacity must remain visible and must not silently PASS.
+    assumptions_map = {
+        a.key: a.value_number
+        for a in (study.study_assumptions if study and study.study_assumptions else [])
+        if a.is_active
+    }
+    cap_util = (
+        assumptions_map.get("capacity_utilization")
+        or assumptions_map.get("capacity_utilization_rate")
+        or assumptions_map.get("capacity_rate")
+    )
+    profile = getattr(study, "business_profile", None) if study else None
+    profile_cap = profile.capacity_value if profile else None
+    scen_cap = (scenario.capacity_assumptions or {}) if scenario else {}
+    target_cap_increase = scen_cap.get("target_capacity_increase_pct") if scen_cap else getattr(scenario, "target_capacity_increase_pct", None)
+    industry = getattr(study, "industry", None) if study else None
+    is_digital_service = industry in ("software", "fintech", "consulting", "digital_services")
+
+    is_capacity_sensitive_scenario = (
+        scenario is not None
+        and (
+            scenario.scenario_type in ("CAPACITY_EXPANSION", "NEW_BRANCH", "NEW_PRODUCT", "NEW_SERVICE", "FRANCHISE_EXPANSION")
+            or bool(scen_cap)
+            or (target_cap_increase is not None and target_cap_increase > 0)
+        )
+    )
+
+    cap_is_critical = False
+    if cap_util is not None:
+        if 40.0 <= cap_util <= 85.0:
+            p_status = PREREQ_PASS
+            passes += 1
+            p_reason = f"معدل استغلال الطاقة الاستيعابية مثبت بنسبة {cap_util:.1f}%، ضمن النطاق المقبول للتوسع."
+        elif cap_util > 85.0:
+            p_status = PREREQ_PASS
+            passes += 1
+            p_reason = f"معدل استغلال الطاقة الاستيعابية مرتفع ({cap_util:.1f}%)؛ التوسع يسهم في فك الاختناق التشغيلي."
+        else:
+            p_status = PREREQ_FAIL
+            hard_blockers += 1
+            p_reason = f"معدل استغلال الطاقة الاستيعابية منخفض حالياً ({cap_util:.1f}%)؛ التوسع غير مبرر قبل تحسين الاستغلال."
+    elif profile_cap is not None and profile_cap > 0:
         p_status = PREREQ_PASS
         passes += 1
-        p_reason = "القدرة التشغيلية الحالية مستقرة وقابلة للتوسع أو استيعاب الفروع الجديدة."
+        unit_str = f" {profile.capacity_unit}" if profile.capacity_unit else " وحدة"
+        p_reason = f"الطاقة الاستيعابية موثقة في ملف المنشأة ({profile_cap:,.0f}{unit_str})."
+    elif scen_cap.get("verified_utilization_rate") is not None:
+        v_rate = float(scen_cap["verified_utilization_rate"])
+        p_status = PREREQ_PASS
+        passes += 1
+        p_reason = f"معدل استغلال الطاقة مثبت في سيناريو النمو بنسبة {v_rate:.1f}%."
+    elif is_digital_service:
+        p_status = "NOT_APPLICABLE"
+        p_reason = "طبيعة النشاط الرقمي/الخدمي غير مقيدة بطاقة استيعابية مكانية محددة."
+    else:
+        # Without explicit capacity evidence, status remains UNKNOWN
+        p_status = PREREQ_UNKNOWN
+        if is_capacity_sensitive_scenario and scenario and scenario.scenario_type == "CAPACITY_EXPANSION":
+            cap_is_critical = True
+            critical_unknowns += 1
+            p_reason = "سيناريو توسعة الطاقة الاستيعابية (CAPACITY_EXPANSION) يتطلب توثيق بيانات الطاقة الحالية؛ الطاقة مجهولة حالياً."
+        elif is_capacity_sensitive_scenario:
+            p_reason = f"سيناريو التوسع ({scenario.title if scenario else ''}) حساس للطاقة ولكن لم تسجل بيانات استغلال الطاقة؛ تبقى الحالة مجهولة (UNKNOWN)."
+        else:
+            p_reason = "لم تسجل أدلة أو بيانات موثقة عن معدل استغلال الطاقة الاستيعابية؛ تبقى الحالة مجهولة (UNKNOWN)."
+
     prereqs.append({
         "code": "CAPACITY_UTILIZATION",
         "key": "capacity_utilization",
         "name_ar": "استيعاب وجاهزية الطاقة التشغيلية",
         "status": p_status,
-        "is_critical": False,
+        "is_critical": cap_is_critical,
         "reason_ar": p_reason,
     })
 
@@ -1697,8 +1760,12 @@ def record_growth_decision(
     db = Session.object_session(growth_ws)
     launch_ws = db.query(models.LaunchWorkspace).filter_by(study_id=growth_ws.study_id).first()
 
+    scenario = None
+    if growth_scenario_id:
+        scenario = db.query(models.GrowthScenario).filter_by(id=growth_scenario_id).first()
+
     # Pre-decision sanity checks
-    readiness = evaluate_expansion_readiness(growth_ws, launch_ws)
+    readiness = evaluate_expansion_readiness(growth_ws, launch_ws, scenario=scenario)
     risks = detect_growth_risks(launch_ws)
 
     supporting_facts = []
@@ -1719,7 +1786,6 @@ def record_growth_decision(
         if not growth_scenario_id:
             raise ValueError("يتطلب اعتماد قرار التوسع (SCALE) تحديد سيناريو نمو معتمد (growth_scenario_id).")
 
-        scenario = db.query(models.GrowthScenario).filter_by(id=growth_scenario_id).first()
         if not scenario or scenario.workspace_id != growth_ws.id:
             raise ValueError("سيناريو النمو المحدد غير موجود أو لا ينتمي إلى نفس مساحة عمل النمو الحالية.")
 
