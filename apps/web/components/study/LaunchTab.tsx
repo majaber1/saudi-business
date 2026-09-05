@@ -17,6 +17,9 @@ import {
   type LaunchVarianceReport,
   type LaunchVarianceSummary,
   type LaunchReforecast,
+  type LaunchWorkspaceStatus,
+  type LaunchMilestoneStatus,
+  type LaunchTaskStatus,
 } from "@/lib/api";
 
 const milestoneCategories = [
@@ -42,6 +45,15 @@ const milestoneStatusMap: Record<string, { ar: string; badge: string }> = {
   IN_PROGRESS: { ar: "جارٍ التنفيذ", badge: "bg-blue-100 text-blue-700 border-blue-300" },
   COMPLETED: { ar: "مكتمل بنجاح", badge: "bg-emerald-100 text-emerald-800 border-emerald-300" },
   BLOCKED: { ar: "معطل / متعثر", badge: "bg-red-100 text-red-800 border-red-300" },
+  DELAYED: { ar: "مؤجل / متأخر", badge: "bg-amber-100 text-amber-800 border-amber-300" },
+};
+
+const taskStatusMap: Record<string, { ar: string; badge: string }> = {
+  PENDING: { ar: "قيد الانتظار", badge: "bg-slate-100 text-slate-700 border-slate-300" },
+  IN_PROGRESS: { ar: "جارٍ التنفيذ", badge: "bg-blue-100 text-blue-700 border-blue-300" },
+  COMPLETED: { ar: "مكتملة", badge: "bg-emerald-100 text-emerald-800 border-emerald-300" },
+  BLOCKED: { ar: "معطلة", badge: "bg-red-100 text-red-800 border-red-300" },
+  CANCELLED: { ar: "ملغاة", badge: "bg-gray-100 text-gray-700 border-gray-300" },
 };
 
 const alertLevelMap: Record<string, { ar: string; badge: string; desc: string }> = {
@@ -149,7 +161,7 @@ export default function LaunchTab({
     fetchWorkspace();
   }, [fetchWorkspace]);
 
-  const handleUpdateStatus = async (status: string, launchDate?: string) => {
+  const handleUpdateStatus = async (status: LaunchWorkspaceStatus, launchDate?: string) => {
     if (!workspaceData) return;
     try {
       setSavingAction(true);
@@ -194,7 +206,7 @@ export default function LaunchTab({
     }
   };
 
-  const handleUpdateMilestone = async (milestoneId: number, status: string, cost?: number) => {
+  const handleUpdateMilestone = async (milestoneId: number, status: LaunchMilestoneStatus, cost?: number) => {
     try {
       setSavingAction(true);
       setError(null);
@@ -238,7 +250,7 @@ export default function LaunchTab({
     }
   };
 
-  const handleUpdateTask = async (taskId: number, status: string) => {
+  const handleUpdateTask = async (taskId: number, status: LaunchTaskStatus) => {
     try {
       setSavingAction(true);
       setError(null);
@@ -417,7 +429,7 @@ export default function LaunchTab({
               {ar ? "تحديث حالة دورة حياة مساحة الإطلاق:" : "Update Launch Lifecycle Status:"}
             </h4>
             <div className="flex flex-wrap items-center gap-2">
-              {["PLANNED", "IN_PROGRESS", "BLOCKED", "LAUNCHED", "PAUSED", "CANCELLED"].map((st) => (
+              {(["PLANNED", "IN_PROGRESS", "BLOCKED", "LAUNCHED", "PAUSED", "CANCELLED"] as LaunchWorkspaceStatus[]).map((st) => (
                 <button
                   key={st}
                   onClick={() => handleUpdateStatus(st, actualLaunchDate)}
@@ -640,6 +652,15 @@ export default function LaunchTab({
                             ✕ {ar ? "تعثر" : "Block"}
                           </button>
                         )}
+                        {m.status !== "DELAYED" && m.status !== "COMPLETED" && (
+                          <button
+                            disabled={savingAction}
+                            onClick={() => handleUpdateMilestone(m.id, "DELAYED")}
+                            className="px-2.5 py-1 text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 rounded hover:bg-amber-100 transition"
+                          >
+                            ⏳ {ar ? "تأجيل" : "Delay"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -850,14 +871,10 @@ export default function LaunchTab({
                       <div className="flex items-center gap-2">
                         <span
                           className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${
-                            t.status === "COMPLETED"
-                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                              : t.status === "IN_PROGRESS"
-                              ? "bg-blue-100 text-blue-800 border-blue-300"
-                              : "bg-slate-100 text-slate-700 border-slate-300"
+                            taskStatusMap[t.status]?.badge || "bg-slate-100 text-slate-700 border-slate-300"
                           }`}
                         >
-                          {t.status === "COMPLETED" ? (ar ? "مكتملة" : "Completed") : t.status === "IN_PROGRESS" ? (ar ? "جارية" : "In Progress") : (ar ? "قيد الانتظار" : "Pending")}
+                          {taskStatusMap[t.status]?.ar || t.status}
                         </span>
                         {t.is_critical && (
                           <span className="text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 px-2 py-0.5 rounded-full">
@@ -878,7 +895,7 @@ export default function LaunchTab({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       {t.status !== "COMPLETED" && (
                         <button
                           disabled={savingAction}
@@ -888,13 +905,31 @@ export default function LaunchTab({
                           ✓ {ar ? "إنجاز" : "Complete"}
                         </button>
                       )}
-                      {t.status === "PENDING" && (
+                      {t.status !== "IN_PROGRESS" && t.status !== "COMPLETED" && (
                         <button
                           disabled={savingAction}
                           onClick={() => handleUpdateTask(t.id, "IN_PROGRESS")}
                           className="px-2.5 py-1 text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 transition"
                         >
                           ▶ {ar ? "بدء" : "Start"}
+                        </button>
+                      )}
+                      {t.status !== "BLOCKED" && (
+                        <button
+                          disabled={savingAction}
+                          onClick={() => handleUpdateTask(t.id, "BLOCKED")}
+                          className="px-2.5 py-1 text-xs font-semibold bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100 transition"
+                        >
+                          ✕ {ar ? "تعثر" : "Block"}
+                        </button>
+                      )}
+                      {t.status !== "CANCELLED" && t.status !== "COMPLETED" && (
+                        <button
+                          disabled={savingAction}
+                          onClick={() => handleUpdateTask(t.id, "CANCELLED")}
+                          className="px-2.5 py-1 text-xs font-semibold bg-gray-50 text-gray-700 border border-gray-200 rounded hover:bg-gray-100 transition"
+                        >
+                          ✕ {ar ? "إلغاء" : "Cancel"}
                         </button>
                       )}
                     </div>

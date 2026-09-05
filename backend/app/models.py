@@ -1322,7 +1322,7 @@ class LaunchTask(TimestampMixin, Base):
     owner_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     due_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     completed_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    # PENDING | IN_PROGRESS | COMPLETED | BLOCKED
+    # PENDING | IN_PROGRESS | COMPLETED | BLOCKED | CANCELLED
     status: Mapped[str] = mapped_column(String(30), default="PENDING", nullable=False)
     dependency_task_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("launch_tasks.id", ondelete="SET NULL"), nullable=True

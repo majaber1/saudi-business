@@ -1803,6 +1803,10 @@ export function getValidationDecisions(token: string, workspaceId: number) {
 // WAVE 5: LAUNCH & ACTUALS OS TYPES AND CLIENT APIS
 // ---------------------------------------------------------
 
+export type LaunchMilestoneStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "BLOCKED" | "DELAYED";
+export type LaunchTaskStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "BLOCKED" | "CANCELLED";
+export type LaunchWorkspaceStatus = "PLANNED" | "IN_PROGRESS" | "BLOCKED" | "LAUNCHED" | "PAUSED" | "CANCELLED";
+
 export type LaunchTask = {
   id: number;
   workspace_id: number;
@@ -1812,7 +1816,7 @@ export type LaunchTask = {
   owner_name?: string | null;
   due_date?: string | null;
   completed_date?: string | null;
-  status: string;
+  status: LaunchTaskStatus;
   dependency_task_id?: number | null;
   is_critical: boolean;
 };
@@ -1826,7 +1830,7 @@ export type LaunchMilestone = {
   completed_date?: string | null;
   budget_allocated: number | null;
   actual_cost: number | null;
-  status: string;
+  status: LaunchMilestoneStatus;
   owner_name?: string | null;
   dependency_milestone_id?: number | null;
   is_suggested?: boolean;
@@ -1979,7 +1983,7 @@ export function updateLaunchWorkspaceStatus(
   token: string,
   workspaceId: number,
   data: {
-    status: string;
+    status: LaunchWorkspaceStatus;
     actual_launch_date?: string | null;
     target_launch_date?: string | null;
   }
@@ -2002,6 +2006,7 @@ export function addLaunchMilestone(
     owner_name?: string;
     dependency_milestone_id?: number | null;
     is_suggested?: boolean;
+    status?: LaunchMilestoneStatus;
   }
 ) {
   return authedRequest<LaunchMilestone>(`/api/v1/launch/workspaces/${workspaceId}/milestones`, token, {
@@ -2014,7 +2019,7 @@ export function updateLaunchMilestone(
   token: string,
   milestoneId: number,
   data: {
-    status?: string;
+    status?: LaunchMilestoneStatus;
     actual_cost?: number | null;
     budget_allocated?: number | null;
     completed_date?: string | null;
@@ -2039,6 +2044,7 @@ export function createLaunchTask(
     due_date?: string;
     dependency_task_id?: number | null;
     is_critical?: boolean;
+    status?: LaunchTaskStatus;
   }
 ) {
   return authedRequest<LaunchTask>(`/api/v1/launch/workspaces/${workspaceId}/tasks`, token, {
@@ -2051,7 +2057,7 @@ export function updateLaunchTask(
   token: string,
   taskId: number,
   data: {
-    status?: string;
+    status?: LaunchTaskStatus;
     owner_name?: string;
     due_date?: string;
     completed_date?: string;

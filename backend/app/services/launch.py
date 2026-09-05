@@ -46,12 +46,27 @@ MILESTONE_IN_PROGRESS = "IN_PROGRESS"
 MILESTONE_COMPLETED = "COMPLETED"
 MILESTONE_BLOCKED = "BLOCKED"
 MILESTONE_DELAYED = "DELAYED"
+VALID_MILESTONE_STATUSES = {
+    MILESTONE_PENDING,
+    MILESTONE_IN_PROGRESS,
+    MILESTONE_COMPLETED,
+    MILESTONE_BLOCKED,
+    MILESTONE_DELAYED,
+}
 
 # Task statuses
 TASK_PENDING = "PENDING"
 TASK_IN_PROGRESS = "IN_PROGRESS"
 TASK_COMPLETED = "COMPLETED"
 TASK_BLOCKED = "BLOCKED"
+TASK_CANCELLED = "CANCELLED"
+VALID_TASK_STATUSES = {
+    TASK_PENDING,
+    TASK_IN_PROGRESS,
+    TASK_COMPLETED,
+    TASK_BLOCKED,
+    TASK_CANCELLED,
+}
 
 # Variance alert levels
 ALERT_NOT_AVAILABLE = "NOT_AVAILABLE"
@@ -243,14 +258,21 @@ def transition_launch_workspace_status(
             f"Invalid target_status: '{target_status}'. Allowed: {sorted(list(VALID_WORKSPACE_STATUSES))}"
         )
 
+    if target_status != WS_STATUS_LAUNCHED and actual_launch_date is not None and actual_launch_date.strip() != "":
+        raise ValueError(
+            f"actual_launch_date cannot be set when status is '{target_status}'. It may be persisted only when status is LAUNCHED."
+        )
+
     ws.status = target_status
     if target_status == WS_STATUS_LAUNCHED:
-        ws.actual_launch_date = actual_launch_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    elif actual_launch_date:
-        ws.actual_launch_date = actual_launch_date
+        ws.actual_launch_date = (
+            actual_launch_date.strip()
+            if (actual_launch_date and actual_launch_date.strip())
+            else datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        )
 
     if target_launch_date:
-        ws.target_launch_date = target_launch_date
+        ws.target_launch_date = target_launch_date.strip()
 
     db.commit()
     db.refresh(ws)
@@ -269,11 +291,28 @@ def add_launch_milestone(
     owner_name: Optional[str] = None,
     dependency_milestone_id: Optional[int] = None,
     is_suggested: bool = False,
+    status: Optional[str] = None,
 ) -> models.LaunchMilestone:
     """Adds a custom milestone to the launch workspace."""
     ws = db.query(models.LaunchWorkspace).filter_by(id=workspace_id).first()
     if not ws or ws.user_id != user.id:
         raise PermissionError("Access denied to launch workspace")
+
+    if dependency_milestone_id is not None:
+        dep_m = db.query(models.LaunchMilestone).filter_by(id=dependency_milestone_id, workspace_id=ws.id).first()
+        if not dep_m:
+            raise ValueError(
+                f"Referenced milestone dependency {dependency_milestone_id} does not exist or does not belong to launch workspace {workspace_id}"
+            )
+
+    milestone_status = MILESTONE_PENDING
+    if status is not None:
+        status_norm = status.strip().upper()
+        if status_norm not in VALID_MILESTONE_STATUSES:
+            raise ValueError(
+                f"Invalid milestone status: '{status}'. Allowed: {sorted(list(VALID_MILESTONE_STATUSES))}"
+            )
+        milestone_status = status_norm
 
     m = models.LaunchMilestone(
         workspace_id=ws.id,
@@ -285,7 +324,7 @@ def add_launch_milestone(
         actual_cost=None,
         owner_name=owner_name,
         dependency_milestone_id=dependency_milestone_id,
-        status=MILESTONE_PENDING,
+        status=milestone_status,
         is_suggested=is_suggested,
     )
     db.add(m)
@@ -311,7 +350,15 @@ def update_launch_milestone(
         raise PermissionError("Access denied to milestone")
 
     if status:
-        m.status = status
+        status_norm = status.strip().upper()
+        if status_norm not in VALID_MILESTONE_STATUSES:
+            raise ValueError(
+                f"Invalid milestone status: '{status}'. Allowed: {sorted(list(VALID_MILESTONE_STATUSES))}"
+            )
+        m.status = status_norm
+        if status_norm == MILESTONE_COMPLETED and not m.completed_date:
+            m.completed_date = completed_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     if actual_cost is not None:
         m.actual_cost = actual_cost
     if budget_allocated is not None:
@@ -322,8 +369,6 @@ def update_launch_milestone(
         m.due_date = due_date
     if completed_date:
         m.completed_date = completed_date
-    elif status == MILESTONE_COMPLETED and not m.completed_date:
-        m.completed_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     db.commit()
     db.refresh(m)
@@ -341,16 +386,33 @@ def add_launch_task(
     due_date: Optional[str] = None,
     dependency_task_id: Optional[int] = None,
     is_critical: bool = False,
+    status: Optional[str] = None,
 ) -> models.LaunchTask:
     """Creates a discrete execution task linked to a milestone or workspace."""
     ws = db.query(models.LaunchWorkspace).filter_by(id=workspace_id).first()
     if not ws or ws.user_id != user.id:
         raise PermissionError("Access denied to launch workspace")
 
-    if milestone_id:
+    if milestone_id is not None:
         m = db.query(models.LaunchMilestone).filter_by(id=milestone_id, workspace_id=ws.id).first()
         if not m:
             raise ValueError(f"Milestone {milestone_id} does not belong to workspace {workspace_id}")
+
+    if dependency_task_id is not None:
+        dep_t = db.query(models.LaunchTask).filter_by(id=dependency_task_id, workspace_id=ws.id).first()
+        if not dep_t:
+            raise ValueError(
+                f"Referenced task dependency {dependency_task_id} does not exist or does not belong to launch workspace {workspace_id}"
+            )
+
+    task_status = TASK_PENDING
+    if status is not None:
+        status_norm = status.strip().upper()
+        if status_norm not in VALID_TASK_STATUSES:
+            raise ValueError(
+                f"Invalid task status: '{status}'. Allowed: {sorted(list(VALID_TASK_STATUSES))}"
+            )
+        task_status = status_norm
 
     task = models.LaunchTask(
         workspace_id=ws.id,
@@ -361,7 +423,7 @@ def add_launch_task(
         due_date=due_date,
         dependency_task_id=dependency_task_id,
         is_critical=is_critical,
-        status=TASK_PENDING,
+        status=task_status,
     )
     db.add(task)
     db.commit()
@@ -384,8 +446,13 @@ def update_launch_task(
         raise PermissionError("Access denied to task")
 
     if status:
-        task.status = status
-        if status == TASK_COMPLETED and not task.completed_date:
+        status_norm = status.strip().upper()
+        if status_norm not in VALID_TASK_STATUSES:
+            raise ValueError(
+                f"Invalid task status: '{status}'. Allowed: {sorted(list(VALID_TASK_STATUSES))}"
+            )
+        task.status = status_norm
+        if status_norm == TASK_COMPLETED and not task.completed_date:
             task.completed_date = completed_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if owner_name is not None:
         task.owner_name = owner_name

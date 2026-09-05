@@ -5,9 +5,9 @@ forecast vs actual variance tracking, explicit launch state transitions, and dyn
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app import db, models
@@ -26,6 +26,10 @@ from app.services.launch import (
 
 router = APIRouter(prefix="/api/v1/launch", tags=["Launch OS (Wave 5)"])
 
+MilestoneStatus = Literal["PENDING", "IN_PROGRESS", "COMPLETED", "BLOCKED", "DELAYED"]
+TaskStatus = Literal["PENDING", "IN_PROGRESS", "COMPLETED", "BLOCKED", "CANCELLED"]
+WorkspaceStatus = Literal["PLANNED", "IN_PROGRESS", "BLOCKED", "LAUNCHED", "PAUSED", "CANCELLED"]
+
 
 # Schemas
 class MilestoneCreateIn(BaseModel):
@@ -37,10 +41,11 @@ class MilestoneCreateIn(BaseModel):
     owner_name: Optional[str] = None
     dependency_milestone_id: Optional[int] = None
     is_suggested: bool = False
+    status: Optional[MilestoneStatus] = "PENDING"
 
 
 class MilestoneUpdateIn(BaseModel):
-    status: Optional[str] = None
+    status: Optional[MilestoneStatus] = None
     actual_cost: Optional[float] = None
     budget_allocated: Optional[float] = None
     completed_date: Optional[str] = None
@@ -56,19 +61,28 @@ class TaskCreateIn(BaseModel):
     due_date: Optional[str] = None
     dependency_task_id: Optional[int] = None
     is_critical: bool = False
+    status: Optional[TaskStatus] = "PENDING"
 
 
 class TaskUpdateIn(BaseModel):
-    status: Optional[str] = None
+    status: Optional[TaskStatus] = None
     owner_name: Optional[str] = None
     due_date: Optional[str] = None
     completed_date: Optional[str] = None
 
 
 class WorkspaceStatusUpdateIn(BaseModel):
-    status: str = Field(..., description="PLANNED, IN_PROGRESS, BLOCKED, LAUNCHED, PAUSED, CANCELLED")
+    status: WorkspaceStatus = Field(..., description="PLANNED, IN_PROGRESS, BLOCKED, LAUNCHED, PAUSED, CANCELLED")
     actual_launch_date: Optional[str] = None
     target_launch_date: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_actual_launch_date(self) -> WorkspaceStatusUpdateIn:
+        if self.status != "LAUNCHED" and self.actual_launch_date is not None and self.actual_launch_date.strip() != "":
+            raise ValueError(
+                f"actual_launch_date cannot be set when status is '{self.status}'. It may be persisted only when status is LAUNCHED."
+            )
+        return self
 
 
 class ActualPeriodIn(BaseModel):
@@ -348,6 +362,7 @@ def create_milestone(
             owner_name=payload.owner_name,
             dependency_milestone_id=payload.dependency_milestone_id,
             is_suggested=payload.is_suggested,
+            status=payload.status,
         )
         return {
             "id": m.id,
@@ -366,6 +381,8 @@ def create_milestone(
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
+        if "status" in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
@@ -406,6 +423,8 @@ def update_milestone(
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
+        if "status" in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
@@ -429,6 +448,7 @@ def create_task(
             due_date=payload.due_date,
             dependency_task_id=payload.dependency_task_id,
             is_critical=payload.is_critical,
+            status=payload.status,
         )
         return {
             "id": t.id,
@@ -446,6 +466,8 @@ def create_task(
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
+        if "status" in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
@@ -483,6 +505,8 @@ def update_task(
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
+        if "status" in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 

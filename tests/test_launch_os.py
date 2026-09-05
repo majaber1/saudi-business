@@ -819,3 +819,289 @@ def test_22_refresh_logout_login_persistence():
     assert fresh_ws["actual_periods"][0]["actual_revenue"] == 77000.0
     assert len(fresh_ws["reforecasts"]) == 1
     assert fresh_ws["reforecasts"][0]["reforecast_title"] == "تنبؤ محفوظ v1"
+
+
+def test_23_dependency_ownership_and_workspace_isolation():
+    """23. Dependency milestone and task references strictly isolate to the same workspace."""
+    _, tok_a = _register_and_login("user_a")
+    _, tok_b = _register_and_login("user_b")
+    headers_a = _auth(tok_a)
+    headers_b = _auth(tok_b)
+
+    # User A: Workspace 1
+    _, study_a1 = _create_project_and_study(tok_a, "مشروع أ1")
+    _add_validation_decision(tok_a, study_a1, "GO")
+    ws_a1 = client.get(f"/api/v1/launch/study/{study_a1}", headers=headers_a).json()
+    ws_a1_id = ws_a1["id"]
+    m_a1_id = ws_a1["milestones"][0]["id"]
+    r_task_a1 = client.post(
+        f"/api/v1/launch/workspaces/{ws_a1_id}/tasks",
+        json={"title": "مهمة مسار أ1", "milestone_id": m_a1_id},
+        headers=headers_a,
+    )
+    assert r_task_a1.status_code == 201
+    task_a1_id = r_task_a1.json()["id"]
+
+    # User A: Workspace 2
+    _, study_a2 = _create_project_and_study(tok_a, "مشروع أ2")
+    _add_validation_decision(tok_a, study_a2, "GO")
+    ws_a2 = client.get(f"/api/v1/launch/study/{study_a2}", headers=headers_a).json()
+    ws_a2_id = ws_a2["id"]
+    m_a2_id = ws_a2["milestones"][0]["id"]
+    r_task_a2 = client.post(
+        f"/api/v1/launch/workspaces/{ws_a2_id}/tasks",
+        json={"title": "مهمة مسار أ2", "milestone_id": m_a2_id},
+        headers=headers_a,
+    )
+    assert r_task_a2.status_code == 201
+    task_a2_id = r_task_a2.json()["id"]
+
+    # User B: Workspace B
+    _, study_b = _create_project_and_study(tok_b, "مشروع ب")
+    _add_validation_decision(tok_b, study_b, "GO")
+    ws_b = client.get(f"/api/v1/launch/study/{study_b}", headers=headers_b).json()
+    ws_b_id = ws_b["id"]
+    m_b_id = ws_b["milestones"][0]["id"]
+    r_task_b = client.post(
+        f"/api/v1/launch/workspaces/{ws_b_id}/tasks",
+        json={"title": "مهمة مسار ب", "milestone_id": m_b_id},
+        headers=headers_b,
+    )
+    assert r_task_b.status_code == 201
+    task_b_id = r_task_b.json()["id"]
+
+    # 1. User A cannot depend on User B milestone
+    r_cross_user_m = client.post(
+        f"/api/v1/launch/workspaces/{ws_a1_id}/milestones",
+        json={
+            "category": "OPERATIONS",
+            "title": "معلم غير مخول يعتمد على مستخدم آخر",
+            "dependency_milestone_id": m_b_id,
+        },
+        headers=headers_a,
+    )
+    assert r_cross_user_m.status_code in (400, 404, 422)
+
+    # 2. User A cannot depend on User B task
+    r_cross_user_t = client.post(
+        f"/api/v1/launch/workspaces/{ws_a1_id}/tasks",
+        json={
+            "title": "مهمة غير مخولة تعتمد على مستخدم آخر",
+            "dependency_task_id": task_b_id,
+        },
+        headers=headers_a,
+    )
+    assert r_cross_user_t.status_code in (400, 404, 422)
+
+    # 3. Same-user different-workspace milestone dependency is rejected
+    r_diff_ws_m = client.post(
+        f"/api/v1/launch/workspaces/{ws_a1_id}/milestones",
+        json={
+            "category": "OPERATIONS",
+            "title": "معلم يعتمد على مساحة أخرى لنفس المستخدم",
+            "dependency_milestone_id": m_a2_id,
+        },
+        headers=headers_a,
+    )
+    assert r_diff_ws_m.status_code in (400, 404, 422)
+
+    # 4. Same-user different-workspace task dependency is rejected
+    r_diff_ws_t = client.post(
+        f"/api/v1/launch/workspaces/{ws_a1_id}/tasks",
+        json={
+            "title": "مهمة تعتمد على مهمة بمساحة أخرى لنفس المستخدم",
+            "dependency_task_id": task_a2_id,
+        },
+        headers=headers_a,
+    )
+    assert r_diff_ws_t.status_code in (400, 404, 422)
+
+    # 5. Milestone_id from different workspace is rejected
+    r_diff_ws_parent_m = client.post(
+        f"/api/v1/launch/workspaces/{ws_a1_id}/tasks",
+        json={
+            "title": "مهمة مرتبطة بمعلم من مساحة أخرى",
+            "milestone_id": m_a2_id,
+        },
+        headers=headers_a,
+    )
+    assert r_diff_ws_parent_m.status_code in (400, 404, 422)
+
+    # 6. Valid same-workspace milestone dependency succeeds
+    r_valid_m = client.post(
+        f"/api/v1/launch/workspaces/{ws_a1_id}/milestones",
+        json={
+            "category": "OPERATIONS",
+            "title": "معلم تابع صحيح داخل نفس مساحة العمل",
+            "dependency_milestone_id": m_a1_id,
+        },
+        headers=headers_a,
+    )
+    assert r_valid_m.status_code == 201
+    valid_m = r_valid_m.json()
+    assert valid_m["dependency_milestone_id"] == m_a1_id
+
+    # 7. Valid same-workspace task dependency succeeds
+    r_valid_t = client.post(
+        f"/api/v1/launch/workspaces/{ws_a1_id}/tasks",
+        json={
+            "title": "مهمة تابعة صحيحة داخل نفس مساحة العمل",
+            "milestone_id": m_a1_id,
+            "dependency_task_id": task_a1_id,
+        },
+        headers=headers_a,
+    )
+    assert r_valid_t.status_code == 201
+    valid_t = r_valid_t.json()
+    assert valid_t["dependency_task_id"] == task_a1_id
+    assert valid_t["milestone_id"] == m_a1_id
+
+
+def test_24_actual_launch_date_semantics():
+    """24. actual_launch_date may only be set when status is LAUNCHED; rejects non-LAUNCHED dates with 422."""
+    _, tok = _register_and_login("launch_sem")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع تاريخ الإطلاق الفعلي")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+    assert ws["status"] == WS_STATUS_PLANNED
+
+    # 1. IN_PROGRESS + actual_launch_date -> REJECT (422)
+    r_inprog = client.patch(
+        f"/api/v1/launch/workspaces/{ws_id}/status",
+        json={"status": WS_STATUS_IN_PROGRESS, "actual_launch_date": "2026-09-05"},
+        headers=headers,
+    )
+    assert r_inprog.status_code == 422
+
+    # 2. PLANNED + actual_launch_date -> REJECT (422)
+    r_plan = client.patch(
+        f"/api/v1/launch/workspaces/{ws_id}/status",
+        json={"status": WS_STATUS_PLANNED, "actual_launch_date": "2026-09-05"},
+        headers=headers,
+    )
+    assert r_plan.status_code == 422
+
+    # 3. BLOCKED + actual_launch_date -> REJECT (422)
+    r_block = client.patch(
+        f"/api/v1/launch/workspaces/{ws_id}/status",
+        json={"status": "BLOCKED", "actual_launch_date": "2026-09-05"},
+        headers=headers,
+    )
+    assert r_block.status_code == 422
+
+    # 4. LAUNCHED + explicit date -> PASS (200)
+    r_launch = client.patch(
+        f"/api/v1/launch/workspaces/{ws_id}/status",
+        json={"status": WS_STATUS_LAUNCHED, "actual_launch_date": "2026-09-15"},
+        headers=headers,
+    )
+    assert r_launch.status_code == 200
+    assert r_launch.json()["status"] == WS_STATUS_LAUNCHED
+    assert r_launch.json()["actual_launch_date"] == "2026-09-15"
+
+    # 5. LAUNCHED without date -> system records current date
+    _, study_id2 = _create_project_and_study(tok, "مشروع إطلاق دون تاريخ صريح")
+    _add_validation_decision(tok, study_id2, "GO")
+    ws2 = client.get(f"/api/v1/launch/study/{study_id2}", headers=headers).json()
+    ws2_id = ws2["id"]
+
+    r_launch_auto = client.patch(
+        f"/api/v1/launch/workspaces/{ws2_id}/status",
+        json={"status": WS_STATUS_LAUNCHED},
+        headers=headers,
+    )
+    assert r_launch_auto.status_code == 200
+    assert r_launch_auto.json()["status"] == WS_STATUS_LAUNCHED
+    recorded_date = r_launch_auto.json()["actual_launch_date"]
+    assert recorded_date is not None
+    assert len(recorded_date) == 10  # YYYY-MM-DD
+
+    # 6. Do not auto-launch from revenue
+    _, study_id3 = _create_project_and_study(tok, "مشروع التحقق من عدم الإطلاق الآلي")
+    _add_validation_decision(tok, study_id3, "GO")
+    ws3 = client.get(f"/api/v1/launch/study/{study_id3}", headers=headers).json()
+    ws3_id = ws3["id"]
+
+    client.post(
+        f"/api/v1/launch/workspaces/{ws3_id}/actuals",
+        json={"period_label": "M01", "period_order": 1, "actual_revenue": 100000.0},
+        headers=headers,
+    )
+    ws3_check = client.get(f"/api/v1/launch/workspaces/{ws3_id}", headers=headers).json()
+    assert ws3_check["status"] == WS_STATUS_PLANNED
+    assert ws3_check["actual_launch_date"] is None
+
+
+def test_25_strict_status_enums():
+    """25. Milestone and task status endpoints enforce canonical enums and reject invalid strings with HTTP 422."""
+    _, tok = _register_and_login("enum_strict")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع تدقيق الحالات")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+    m_id = ws["milestones"][0]["id"]
+
+    # 1. Milestone creation rejects arbitrary string (e.g. TODO) with 422
+    r_bad_m = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/milestones",
+        json={"category": "TEAM", "title": "معلم بحالة غير صالحة", "status": "TODO"},
+        headers=headers,
+    )
+    assert r_bad_m.status_code == 422
+
+    # 2. Milestone update rejects arbitrary string with 422
+    r_bad_up_m = client.patch(
+        f"/api/v1/launch/milestones/{m_id}",
+        json={"status": "DONE"},
+        headers=headers,
+    )
+    assert r_bad_up_m.status_code == 422
+
+    # 3. Canonical milestone statuses (PENDING, IN_PROGRESS, COMPLETED, BLOCKED, DELAYED) all succeed
+    for canonical_m_status in ["IN_PROGRESS", "BLOCKED", "DELAYED", "PENDING", "COMPLETED"]:
+        r_ok = client.patch(
+            f"/api/v1/launch/milestones/{m_id}",
+            json={"status": canonical_m_status},
+            headers=headers,
+        )
+        assert r_ok.status_code == 200, f"Milestone status {canonical_m_status} failed: {r_ok.text}"
+        assert r_ok.json()["status"] == canonical_m_status
+
+    # 4. Task creation rejects arbitrary string with 422
+    r_bad_t = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/tasks",
+        json={"title": "مهمة بحالة غير صالحة", "milestone_id": m_id, "status": "TODO"},
+        headers=headers,
+    )
+    assert r_bad_t.status_code == 422
+
+    # 5. Create valid task with canonical default (PENDING)
+    r_task = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/tasks",
+        json={"title": "مهمة فحص الحالات المقبولة", "milestone_id": m_id},
+        headers=headers,
+    )
+    assert r_task.status_code == 201
+    task_id = r_task.json()["id"]
+    assert r_task.json()["status"] == "PENDING"
+
+    # 6. Task update rejects arbitrary string with 422
+    r_bad_up_t = client.patch(
+        f"/api/v1/launch/tasks/{task_id}",
+        json={"status": "IN_REVIEW"},
+        headers=headers,
+    )
+    assert r_bad_up_t.status_code == 422
+
+    # 7. Canonical task statuses (PENDING, IN_PROGRESS, COMPLETED, BLOCKED, CANCELLED) all succeed
+    for canonical_t_status in ["IN_PROGRESS", "BLOCKED", "CANCELLED", "PENDING", "COMPLETED"]:
+        r_t_ok = client.patch(
+            f"/api/v1/launch/tasks/{task_id}",
+            json={"status": canonical_t_status},
+            headers=headers,
+        )
+        assert r_t_ok.status_code == 200, f"Task status {canonical_t_status} failed: {r_t_ok.text}"
+        assert r_t_ok.json()["status"] == canonical_t_status
