@@ -18,6 +18,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Drop legacy unverified funding tables from initial schema if present
+    op.execute("DROP TABLE IF EXISTS funding_matches")
+    op.execute("DROP TABLE IF EXISTS funding_programs")
+
     op.create_table(
         "funding_programs",
         sa.Column("id", sa.Integer(), primary_key=True),

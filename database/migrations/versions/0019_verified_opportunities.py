@@ -1,11 +1,11 @@
-\"\"\"verified opportunities and franchise registry (Wave 3: Opportunities & Franchise)
+"""verified opportunities and franchise registry (Wave 3: Opportunities & Franchise)
 
 Additive migration. Adds verified_opportunities and opportunity_version_history tables.
 Adds source opportunity lineage columns to feasibility_studies.
 
 Revision ID: 0019_verified_opportunities
 Revises: 0018_funding_programs
-\"\"\"
+"""
 from alembic import op
 import sqlalchemy as sa
 
