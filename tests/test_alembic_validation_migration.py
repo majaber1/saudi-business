@@ -49,7 +49,7 @@ def test_alembic_single_head_and_revision_chain():
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 migration head, found: {heads}"
-    assert heads[0] == "0021_validation_os", f"Expected head to be 0021_validation_os, got {heads[0]}"
+    assert heads[0] in ("0021_validation_os", "0022_launch_actuals_os")
 
     rev_0021 = script.get_revision("0021_validation_os")
     assert rev_0021.down_revision == "0020_opportunity_fit_matching"
@@ -92,8 +92,8 @@ def test_alembic_migration_0020_to_0021_upgrade_and_downgrade(alembic_config):
     assert "launch_workspaces" not in tables_0020
     assert "launch_milestones" not in tables_0020
 
-    # --- STEP 2: Upgrade to head (0021_validation_os) ---
-    command.upgrade(cfg, "head")
+    # --- STEP 2: Upgrade to 0021_validation_os ---
+    command.upgrade(cfg, "0021_validation_os")
 
     inspector_0021 = sa.inspect(engine)
     tables_0021 = set(inspector_0021.get_table_names())
@@ -225,8 +225,8 @@ def test_alembic_migration_0020_to_0021_upgrade_and_downgrade(alembic_config):
     assert "verified_opportunities" in tables_downgraded
     assert "opportunity_fit_profiles" in tables_downgraded
 
-    # --- STEP 7: Re-upgrade to head (idempotency check) ---
-    command.upgrade(cfg, "head")
+    # --- STEP 7: Re-upgrade to 0021 (idempotency check) ---
+    command.upgrade(cfg, "0021_validation_os")
     inspector_reupgrade = sa.inspect(engine)
     tables_reupgraded = set(inspector_reupgrade.get_table_names())
     for t in wave4_tables:

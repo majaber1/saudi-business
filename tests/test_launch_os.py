@@ -1,16 +1,28 @@
 """Wave 5 — Launch, Actuals & Reforecasting OS Automated Test Suite.
 
 Comprehensive tests covering:
-1. Validation Decision Gate: STOP and PIVOT decisions block launch workspace creation.
-2. Launch workspace initialization and ownership isolation.
-3. Pre-launch milestone tracking (Saudi regulatory & execution milestones).
-4. Milestone status & cost updating.
-5. Baseline snapshot freezing (ensuring feasibility forecasts are not mutated).
-6. Operational actuals recording (Revenue, Volume/AOV, CAPEX, OPEX breakdown).
-7. Forecast vs actual variance engine and zero-denominator protection.
-8. Materiality alert thresholds (NORMAL, WATCH, MATERIAL_VARIANCE).
-9. Dynamic scenario reforecasting with runway and burn rate calculations.
-10. Immutable reforecast versioning (v1, v2) preserving baseline snapshot integrity.
+1. Validation Decision Gate: Absence of decision, NEEDS_EVIDENCE, STOP, and PIVOT block launch workspace.
+2. Validation Decision Gate: GO and GO_WITH_CONDITIONS permit launch workspace.
+3. Milestone Seeding: All seeded milestone budgets are NULL (no synthetic budgets), marked as suggested.
+4. Baseline Snapshot: Missing study forecast does not invent numbers.
+5. Baseline Lineage: Lineage fields (source_study_revision, validation_decision_id, calculation_version) are preserved.
+6. Actuals Semantics: Missing actual values are NULL (None), never defaulting to 0.0.
+7. Actuals Semantics: Explicit 0.0 actual revenue remains 0.0.
+8. Derived Totals: Only computed when required inputs are known.
+9. Actuals Provenance: source_type and source_reference are stored and returned.
+10. Explicit Launch State: actual_revenue > 0 does NOT automatically change status to LAUNCHED.
+11. Explicit Launch State: Explicit PATCH transitions status through allowed states and sets actual_launch_date.
+12. Task Management: Tasks can be created, linked to milestones, marked critical, and transitioned to COMPLETED.
+13. Variance Semantics: Missing baseline or missing actual strictly returns NOT_AVAILABLE.
+14. Variance Semantics: Exact variance percentage and alert tiers (NORMAL, WATCH, MATERIAL_VARIANCE) when both are known.
+15. Zero-Denominator Protection: Handles zero projected amounts safely.
+16. Reforecast: No synthetic 50k/25k fallbacks; assumptions tagged as USER_ASSUMPTION.
+17. Cash Runway: Total investment is NEVER equated to cash balance.
+18. Cash Runway: Requires explicit cash and actual burn rate; otherwise None / NOT_AVAILABLE.
+19. Break-Even Semantics: Distinguishes cash_flow_positive_month from financial_break_even_month.
+20. Immutable Versioning: Reforecast versions (v1, v2) increment and preserve previous versions.
+21. Ownership Isolation: Strict cross-user 403 boundaries for all launch endpoints.
+22. Persistence: Full state persists across logout/login and fresh retrieval.
 """
 from __future__ import annotations
 
@@ -34,7 +46,12 @@ from app.services.launch import (
     ALERT_NORMAL,
     ALERT_WATCH,
     ALERT_MATERIAL_VARIANCE,
-    ALERT_NO_DATA,
+    ALERT_NOT_AVAILABLE,
+    WS_STATUS_PLANNED,
+    WS_STATUS_IN_PROGRESS,
+    WS_STATUS_LAUNCHED,
+    WS_STATUS_PAUSED,
+    WS_STATUS_CANCELLED,
 )
 
 client = TestClient(app)
@@ -63,299 +80,742 @@ def _register_and_login(prefix="founder"):
     return email, tok
 
 
-def _create_project_and_study(tok: str, title="مشروع كافيه تجريبي", investment=350000.0):
+def _create_project_and_study(tok: str, title="مشروع كافيه تجريبي", investment=350000.0, monthly_projections=None):
     headers = _auth(tok)
     r_p = client.post("/projects/", json={"name": title, "industry": "food_beverage", "investment": investment}, headers=headers)
     assert r_p.status_code == 201, r_p.text
     project_id = r_p.json()["id"]
 
+    study_payload = {
+        "project_id": project_id,
+        "title": f"دراسة: {title}",
+        "industry": "food_beverage",
+        "investment": investment,
+    }
+
     r_s = client.post(
         "/feasibility/",
-        json={"project_id": project_id, "title": f"دراسة: {title}", "industry": "food_beverage", "investment": investment},
+        json=study_payload,
         headers=headers,
     )
     assert r_s.status_code == 201, r_s.text
     study_id = r_s.json()["id"]
+
+    if monthly_projections:
+        r_step = client.patch(
+            f"/feasibility/{study_id}/step",
+            json={"step": 4, "data": {"monthly_projections": monthly_projections}},
+            headers=headers,
+        )
+        assert r_step.status_code == 200, r_step.text
+
     return project_id, study_id
+
+
+def _add_validation_decision(tok: str, study_id: int, decision: str, reason: str = "قرار اعتماد ميداني"):
+    headers = _auth(tok)
+    val_ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    if decision == "GO":
+        # All critical hypotheses must have real supporting evidence
+        for h in val_ws["hypotheses"]:
+            if h.get("importance") == "CRITICAL":
+                client.post(
+                    f"/api/v1/validation/workspaces/{val_ws['id']}/evidence",
+                    json={
+                        "evidence_type": "INTERVIEW",
+                        "title": f"دليل ميداني مثبت للفرضية {h['id']}",
+                        "hypothesis_id": h["id"],
+                        "evidence_strength": "STRONG",
+                        "evidence_direction": "SUPPORTING",
+                        "is_simulated": False,
+                    },
+                    headers=headers,
+                )
+    elif decision == "GO_WITH_CONDITIONS":
+        # At least one hypothesis supported so workspace is PARTIALLY_VALIDATED
+        client.post(
+            f"/api/v1/validation/workspaces/{val_ws['id']}/evidence",
+            json={
+                "evidence_type": "INTERVIEW",
+                "title": "دليل ميداني مثبت جزئي",
+                "hypothesis_id": val_ws["hypotheses"][0]["id"],
+                "evidence_strength": "STRONG",
+                "evidence_direction": "SUPPORTING",
+                "is_simulated": False,
+            },
+            headers=headers,
+        )
+
+    dec_body = {"decision": decision, "decision_reason": reason}
+    if decision == "GO_WITH_CONDITIONS":
+        dec_body["conditions"] = ["الالتزام بميزانية التسويق"]
+    r_dec = client.post(
+        f"/api/v1/validation/workspaces/{val_ws['id']}/decision",
+        json=dec_body,
+        headers=headers,
+    )
+    assert r_dec.status_code == 201, r_dec.text
+    return r_dec.json()
 
 
 # ==============================================================================
 # TESTS
 # ==============================================================================
 
-def test_validation_decision_gate_blocks_stop_and_pivot():
-    """Test that a STOP or PIVOT validation decision blocks launch workspace creation."""
-    _, tok = _register_and_login("val_gate")
+def test_01_launch_gate_no_decision_blocks_launch():
+    """1. Launch workspace rejected if no validation decision exists."""
+    _, tok = _register_and_login("no_dec")
     headers = _auth(tok)
-    _, study_id = _create_project_and_study(tok, "مشروع فحص بوابات الإطلاق")
+    _, study_id = _create_project_and_study(tok, "مشروع دون قرار تحقق")
 
-    # 1. Initialize validation workspace and record STOP
+    r = client.get(f"/api/v1/launch/study/{study_id}", headers=headers)
+    assert r.status_code == 422
+    assert "قرار تحقق ميداني رسمي معتمد" in r.text
+
+
+def test_02_launch_gate_needs_evidence_status_blocks_launch():
+    """2. Launch workspace rejected when validation workspace is in NEEDS_EVIDENCE status."""
+    _, tok = _register_and_login("needs_ev")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع يحتاج أدلة")
+    val_ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
+    assert val_ws["status"] == "NEEDS_EVIDENCE"
+    assert len(val_ws.get("decisions", [])) == 0
+
+    r = client.get(f"/api/v1/launch/study/{study_id}", headers=headers)
+    assert r.status_code == 422
+    assert "قرار تحقق ميداني رسمي معتمد" in r.text
+
+
+def test_03_launch_gate_stop_and_pivot_block_launch():
+    """3. Launch workspace rejected if validation decision is STOP or PIVOT."""
+    _, tok = _register_and_login("stop_piv")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع متوقف")
+    _add_validation_decision(tok, study_id, "STOP", "المؤشرات الميدانية سلبية")
+
+    r_stop = client.get(f"/api/v1/launch/study/{study_id}", headers=headers)
+    assert r_stop.status_code == 422
+    assert "STOP" in r_stop.text or "يتطلب الإطلاق قرار" in r_stop.text
+
+    # Record PIVOT decision
     val_ws = client.get(f"/api/v1/validation/study/{study_id}", headers=headers).json()
     client.post(
         f"/api/v1/validation/workspaces/{val_ws['id']}/decision",
-        json={"decision": "STOP", "decision_reason": "أدلة ميدانية سلبية"},
+        json={"decision": "PIVOT", "decision_reason": "تغيير النموذج"},
         headers=headers,
     )
-
-    # Attempting to initialize launch workspace -> HTTP 422 rejected!
-    r_stop = client.get(f"/api/v1/launch/study/{study_id}", headers=headers)
-    assert r_stop.status_code == 422
-    assert "إيقاف" in r_stop.text or "STOP" in r_stop.text
-
-    # 2. Record PIVOT decision
-    client.post(
-        f"/api/v1/validation/workspaces/{val_ws['id']}/decision",
-        json={"decision": "PIVOT", "decision_reason": "تغيير النموذج التشغيلي"},
-        headers=headers,
-    )
-
     r_pivot = client.get(f"/api/v1/launch/study/{study_id}", headers=headers)
     assert r_pivot.status_code == 422
-    assert "تعديل المسار" in r_pivot.text or "PIVOT" in r_pivot.text
-
-    # 3. Add supporting evidence to reach PARTIALLY_VALIDATED, then record GO_WITH_CONDITIONS decision
-    client.post(
-        f"/api/v1/validation/workspaces/{val_ws['id']}/evidence",
-        json={
-            "evidence_type": "INTERVIEW",
-            "title": "مقابلة داعمة أولية",
-            "hypothesis_id": val_ws["hypotheses"][0]["id"],
-            "evidence_strength": "STRONG",
-            "evidence_direction": "SUPPORTING",
-            "is_simulated": False,
-        },
-        headers=headers,
-    )
-
-    r_dec = client.post(
-        f"/api/v1/validation/workspaces/{val_ws['id']}/decision",
-        json={
-            "decision": "GO_WITH_CONDITIONS",
-            "decision_reason": "تحقق كافٍ مع اشتراط سقف التكاليف",
-            "conditions": ["التعاقد بسعر الجملة"],
-        },
-        headers=headers,
-    )
-    assert r_dec.status_code == 201
-
-    # Now launch workspace creation succeeds!
-    r_ok = client.get(f"/api/v1/launch/study/{study_id}", headers=headers)
-    assert r_ok.status_code == 200
-    assert r_ok.json()["status"] == "PRE_LAUNCH"
+    assert "PIVOT" in r_pivot.text or "يتطلب الإطلاق قرار" in r_pivot.text
 
 
-def test_launch_workspace_milestones_and_baseline_snapshot():
-    """Test default milestone seeding and frozen baseline projection snapshot."""
-    _, tok = _register_and_login("launch_init")
+def test_04_launch_gate_go_and_go_with_conditions_allowed():
+    """4. Launch workspace is permitted when validation decision is GO or GO_WITH_CONDITIONS."""
+    _, tok = _register_and_login("go_gate")
     headers = _auth(tok)
-    _, study_id = _create_project_and_study(tok, "مشروع تجارة التجزئة", investment=450000.0)
 
-    res = client.get(f"/api/v1/launch/study/{study_id}", headers=headers)
-    assert res.status_code == 200
-    data = res.json()
+    # Test GO
+    _, study_id1 = _create_project_and_study(tok, "مشروع منطلق تماما")
+    _add_validation_decision(tok, study_id1, "GO", "تحقق كامل وإيجابي")
+    r_go = client.get(f"/api/v1/launch/study/{study_id1}", headers=headers)
+    assert r_go.status_code == 200
+    assert r_go.json()["status"] == WS_STATUS_PLANNED
 
-    # Milestones verification
-    milestones = data["milestones"]
+    # Test GO_WITH_CONDITIONS
+    _, study_id2 = _create_project_and_study(tok, "مشروع منطلق بشروط")
+    _add_validation_decision(tok, study_id2, "GO_WITH_CONDITIONS", "تحقق مع اشتراطات")
+    r_gwc = client.get(f"/api/v1/launch/study/{study_id2}", headers=headers)
+    assert r_gwc.status_code == 200
+    assert r_gwc.json()["status"] == WS_STATUS_PLANNED
+
+
+def test_05_seeded_milestone_budgets_are_null_and_suggested():
+    """5. All seeded milestone budgets must be null (None) and marked as suggested."""
+    _, tok = _register_and_login("null_budgets")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع تجزئة مخصص")
+    _add_validation_decision(tok, study_id, "GO")
+
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    milestones = ws["milestones"]
     assert len(milestones) == 6
-    categories = {m["category"] for m in milestones}
-    assert "REGULATORY" in categories
-    assert "LOCATION" in categories
-    assert "EQUIPMENT" in categories
-    assert "TEAM" in categories
-    assert "MARKETING" in categories
-    assert "OPERATIONS" in categories
 
-    # Baseline snapshot verification
-    snaps = data["baseline_snapshots"]
+    synthetic_values = {5000.0, 75000.0, 120000.0, 25000.0, 15000.0, 10000.0}
+    for m in milestones:
+        assert m["budget_allocated"] is None, f"Milestone {m['title']} has synthetic budget: {m['budget_allocated']}"
+        assert m["budget_allocated"] not in synthetic_values
+        assert m["actual_cost"] is None
+        assert m["is_suggested"] is True
+
+
+def test_06_missing_study_forecast_does_not_invent_numbers():
+    """6. Baseline snapshot does not invent 12 fake monthly projections if missing from study."""
+    _, tok = _register_and_login("no_synth_proj")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع بلا توقعات شهرية", investment=200000.0)
+    _add_validation_decision(tok, study_id, "GO")
+
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    snaps = ws["baseline_snapshots"]
     assert len(snaps) == 1
-    s = snaps[0]
-    assert s["total_investment"] == 450000.0
-    assert s["snapshot_version"] == 1
-    assert len(s["monthly_projections"]) == 12
-    assert s["monthly_projections"][0]["period_label"] == "M01"
+    snap = snaps[0]
+    assert snap["total_investment"] == 200000.0
+    # No synthetic monthly projections invented!
+    assert len(snap["monthly_projections"]) == 0
+    # Lineage is tracked
+    assert snap["source_study_revision"] is not None
+    assert snap["validation_decision_id"] is not None
+    assert snap["calculation_version"] == "v1.0.0-real-lineage"
 
 
-def test_milestone_management_and_cost_updates():
-    """Test adding custom milestone and updating progress/costs."""
-    _, tok = _register_and_login("milestone_mgr")
+def test_07_study_with_real_projections_populates_baseline():
+    """7. Study with explicit real projections carries them into baseline snapshot."""
+    _, tok = _register_and_login("real_proj")
     headers = _auth(tok)
-    _, study_id = _create_project_and_study(tok, "مشروع مطعم ومقهى")
+    real_projs = [
+        {"month": 1, "period_label": "M01", "projected_revenue": 50000.0, "projected_opex": 20000.0, "projected_capex": 100000.0, "projected_net_cashflow": -70000.0},
+        {"month": 2, "period_label": "M02", "projected_revenue": 60000.0, "projected_opex": 22000.0, "projected_capex": 0.0, "projected_net_cashflow": 38000.0},
+    ]
+    _, study_id = _create_project_and_study(tok, "مشروع بتوقعات حقيقية", investment=150000.0, monthly_projections=real_projs)
+    _add_validation_decision(tok, study_id, "GO")
 
     ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
-    ws_id = ws["id"]
-    m1_id = ws["milestones"][0]["id"]
-
-    # Patch existing milestone
-    r_patch = client.patch(
-        f"/api/v1/launch/milestones/{m1_id}",
-        json={"status": "COMPLETED", "actual_cost": 4200.0},
-        headers=headers,
-    )
-    assert r_patch.status_code == 200
-    assert r_patch.json()["status"] == "COMPLETED"
-    assert r_patch.json()["actual_cost"] == 4200.0
-    assert r_patch.json()["completed_date"] is not None
-
-    # Add custom milestone
-    r_add = client.post(
-        f"/api/v1/launch/workspaces/{ws_id}/milestones",
-        json={
-            "category": "OPERATIONS",
-            "title": "الربط التقني مع أنظمة المحاسبة والفوترة السحابية",
-            "budget_allocated": 3000.0,
-        },
-        headers=headers,
-    )
-    assert r_add.status_code == 201
-    assert r_add.json()["title"] == "الربط التقني مع أنظمة المحاسبة والفوترة السحابية"
+    snaps = ws["baseline_snapshots"]
+    assert len(snaps) == 1
+    snap = snaps[0]
+    assert len(snap["monthly_projections"]) == 2
+    assert snap["monthly_projections"][0]["projected_revenue"] == 50000.0
+    assert snap["monthly_projections"][1]["projected_revenue"] == 60000.0
 
 
-def test_actual_period_recording_and_opex_breakdown():
-    """Test operational actuals recording with OPEX breakdown and derived net cashflow."""
-    _, tok = _register_and_login("actuals_rec")
+def test_08_actual_period_null_not_equal_zero():
+    """8. Missing actual numbers remain NULL/None, never defaulting to 0.0."""
+    _, tok = _register_and_login("null_actuals")
     headers = _auth(tok)
-    _, study_id = _create_project_and_study(tok, "مشروع عيادة تخصصية")
-
+    _, study_id = _create_project_and_study(tok, "مشروع فحص القيم الفارغة")
+    _add_validation_decision(tok, study_id, "GO")
     ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
     ws_id = ws["id"]
 
-    r_act = client.post(
+    # Post period with no revenue or costs specified
+    r = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={"period_label": "M01", "period_order": 1, "notes": "فترة تجريبية دون بيانات مالية"},
+        headers=headers,
+    )
+    assert r.status_code == 201
+    act = r.json()
+    assert act["actual_revenue"] is None
+    assert act["transactions_count"] is None
+    assert act["average_ticket_size"] is None
+    assert act["actual_capex"] is None
+    assert act["total_actual_opex"] is None
+    assert act["net_cashflow"] is None
+
+
+def test_09_explicit_actual_revenue_zero_remains_zero():
+    """9. Explicit 0.0 actual revenue remains 0.0 and is not treated as None or missing."""
+    _, tok = _register_and_login("zero_actuals")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع إيراد صفري")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    r = client.post(
         f"/api/v1/launch/workspaces/{ws_id}/actuals",
         json={
             "period_label": "M01",
             "period_order": 1,
-            "actual_revenue": 70000.0,
-            "transactions_count": 1400,
-            "actual_capex": 250000.0,
-            "actual_opex_salaries": 20000.0,
-            "actual_opex_rent": 12000.0,
-            "actual_opex_utilities": 3000.0,
-            "actual_opex_marketing": 6000.0,
-            "actual_opex_cogs": 10000.0,
-            "actual_opex_other": 1000.0,
-            "closing_cash_balance": 98000.0,
-            "notes": "انطلاق العمليات في الشهر الأول",
+            "actual_revenue": 0.0,
+            "transactions_count": 0,
+            "actual_capex": 0.0,
+            "total_actual_opex": 15000.0,
         },
         headers=headers,
     )
-    assert r_act.status_code == 201
-    act_data = r_act.json()
-
-    # Derived AOV = 70000 / 1400 = 50.0
-    assert act_data["average_ticket_size"] == 50.0
-    # Total OPEX = 20000 + 12000 + 3000 + 6000 + 10000 + 1000 = 52000.0
-    assert act_data["total_actual_opex"] == 52000.0
-    # Net cashflow = 70000 - 250000 - 52000 = -232000.0
-    assert act_data["net_cashflow"] == -232000.0
+    assert r.status_code == 201
+    act = r.json()
+    assert act["actual_revenue"] == 0.0
+    assert act["transactions_count"] == 0
+    assert act["total_actual_opex"] == 15000.0
+    assert act["net_cashflow"] == -15000.0
 
 
-def test_forecast_vs_actual_variance_and_materiality_alerts():
-    """Test variance calculations against frozen baseline and alert tiers."""
-    _, tok = _register_and_login("variance_test")
+def test_10_derived_totals_only_compute_when_inputs_known():
+    """10. Derived totals (AOV, total OPEX, net cashflow) compute ONLY when inputs are known."""
+    _, tok = _register_and_login("derived_calc")
     headers = _auth(tok)
-    _, study_id = _create_project_and_study(tok, "مشروع نادي رياضي", investment=500000.0)
-
+    _, study_id = _create_project_and_study(tok, "مشروع حسابات مشتقة")
+    _add_validation_decision(tok, study_id, "GO")
     ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
     ws_id = ws["id"]
 
-    # Record period 1 with Material Variance (>25%)
+    # Case A: revenue and transactions known, all opex fields known -> AOV, total OPEX, net cashflow compute
+    r_a = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={
+            "period_label": "M01",
+            "period_order": 1,
+            "actual_revenue": 80000.0,
+            "transactions_count": 1600,
+            "actual_capex": 20000.0,
+            "actual_opex_salaries": 25000.0,
+            "actual_opex_rent": 10000.0,
+            "actual_opex_utilities": 0.0,
+            "actual_opex_marketing": 0.0,
+            "actual_opex_cogs": 0.0,
+            "actual_opex_other": 0.0,
+        },
+        headers=headers,
+    )
+    assert r_a.status_code == 201
+    d_a = r_a.json()
+    assert d_a["average_ticket_size"] == 50.0
+    assert d_a["total_actual_opex"] == 35000.0
+    # Net cash flow = 80000 - 20000 - 35000 = 25000.0
+    assert d_a["net_cashflow"] == 25000.0
+
+    # Case B: transactions is None -> AOV is None
+    r_b = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={"period_label": "M02", "period_order": 2, "actual_revenue": 50000.0},
+        headers=headers,
+    )
+    assert r_b.status_code == 201
+    d_b = r_b.json()
+    assert d_b["average_ticket_size"] is None
+    # Capex and OPEX missing -> net_cashflow is None
+    assert d_b["net_cashflow"] is None
+
+
+def test_11_variance_not_available_when_baseline_or_actual_unknown():
+    """11. Variance is strictly NOT_AVAILABLE if baseline or actual is missing."""
+    _, tok = _register_and_login("var_na")
+    headers = _auth(tok)
+    # Study has no monthly projections
+    _, study_id = _create_project_and_study(tok, "مشروع دون خط أساس للتفرع")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # Record actuals
     client.post(
         f"/api/v1/launch/workspaces/{ws_id}/actuals",
-        json={
-            "period_label": "M01",
-            "period_order": 1,
-            "actual_revenue": 5000.0,  # far lower than expected
-            "actual_opex_salaries": 60000.0,
-        },
+        json={"period_label": "M01", "period_order": 1, "actual_revenue": 40000.0, "total_actual_opex": 15000.0},
         headers=headers,
     )
 
     r_var = client.get(f"/api/v1/launch/workspaces/{ws_id}/variances", headers=headers)
     assert r_var.status_code == 200
     var_data = r_var.json()
-    assert var_data["overall_health"] == ALERT_MATERIAL_VARIANCE
-    assert len(var_data["period_variances"]) == 1
-
+    assert var_data["overall_health"] == ALERT_NOT_AVAILABLE
     p1 = var_data["period_variances"][0]
-    assert p1["alert"] == ALERT_MATERIAL_VARIANCE
-    assert p1["variance"]["revenue_pct"] is not None
-    assert p1["variance"]["opex_pct"] is not None
+    assert p1["alert"] == ALERT_NOT_AVAILABLE
+    assert p1["variance"]["revenue_state"] == "NOT_AVAILABLE"
 
 
-def test_dynamic_reforecast_generation_and_runway():
-    """Test scenario reforecasting, runway calculations, and multiple versions."""
-    _, tok = _register_and_login("reforecast_user")
+def test_12_variance_exact_and_alerts_when_both_known():
+    """12. Variance and alert tiers (NORMAL, WATCH, MATERIAL_VARIANCE) when both are known."""
+    _, tok = _register_and_login("var_exact")
     headers = _auth(tok)
-    _, study_id = _create_project_and_study(tok, "مشروع مغسلة سيارات ذكية")
-
+    projs = [
+        {"month": 1, "period_label": "M01", "projected_revenue": 100000.0, "projected_opex": 40000.0},
+        {"month": 2, "period_label": "M02", "projected_revenue": 100000.0, "projected_opex": 40000.0},
+        {"month": 3, "period_label": "M03", "projected_revenue": 100000.0, "projected_opex": 40000.0},
+    ]
+    _, study_id = _create_project_and_study(tok, "مشروع فحص الانحراف الدقيق", monthly_projections=projs)
+    _add_validation_decision(tok, study_id, "GO")
     ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
     ws_id = ws["id"]
 
-    # Record actuals for 2 periods
+    # Period 1: NORMAL (<10% diff) -> Revenue 95000 (-5%), OPEX 42000 (+5%)
     client.post(
         f"/api/v1/launch/workspaces/{ws_id}/actuals",
-        json={"period_label": "M01", "period_order": 1, "actual_revenue": 30000.0, "actual_opex_salaries": 18000.0, "closing_cash_balance": 150000.0},
+        json={"period_label": "M01", "period_order": 1, "actual_revenue": 95000.0, "total_actual_opex": 42000.0},
         headers=headers,
     )
+    # Period 2: WATCH (10-25% diff) -> Revenue 85000 (-15%), OPEX 40000 (0%)
     client.post(
         f"/api/v1/launch/workspaces/{ws_id}/actuals",
-        json={"period_label": "M02", "period_order": 2, "actual_revenue": 35000.0, "actual_opex_salaries": 20000.0, "closing_cash_balance": 135000.0},
+        json={"period_label": "M02", "period_order": 2, "actual_revenue": 85000.0, "total_actual_opex": 40000.0},
+        headers=headers,
+    )
+    # Period 3: MATERIAL_VARIANCE (>25% diff) -> Revenue 60000 (-40%), OPEX 60000 (+50%)
+    client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={"period_label": "M03", "period_order": 3, "actual_revenue": 60000.0, "total_actual_opex": 60000.0},
         headers=headers,
     )
 
-    # Post Reforecast V1
-    rf1_res = client.post(
-        f"/api/v1/launch/workspaces/{ws_id}/reforecast",
+    r_var = client.get(f"/api/v1/launch/workspaces/{ws_id}/variances", headers=headers)
+    assert r_var.status_code == 200
+    v = r_var.json()
+    assert v["overall_health"] == ALERT_MATERIAL_VARIANCE
+
+    p1 = v["period_variances"][0]
+    assert p1["alert"] == ALERT_NORMAL
+    assert p1["variance"]["revenue_pct"] == -5.0
+
+    p2 = v["period_variances"][1]
+    assert p2["alert"] == ALERT_WATCH
+    assert p2["variance"]["revenue_pct"] == -15.0
+
+    p3 = v["period_variances"][2]
+    assert p3["alert"] == ALERT_MATERIAL_VARIANCE
+    assert p3["variance"]["revenue_pct"] == -40.0
+    assert p3["variance"]["opex_pct"] == 50.0
+
+
+def test_13_no_automatic_launched_from_revenue():
+    """13. Recording actual revenue does NOT automatically mutate workspace status to LAUNCHED."""
+    _, tok = _register_and_login("no_auto_launch")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع التحقق من عدم الإطلاق التلقائي")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+    assert ws["status"] == WS_STATUS_PLANNED
+
+    # Record large revenue
+    client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={"period_label": "M01", "period_order": 1, "actual_revenue": 250000.0, "closing_cash_balance": 180000.0},
+        headers=headers,
+    )
+
+    # Workspace must still be PLANNED
+    ws_after = client.get(f"/api/v1/launch/workspaces/{ws_id}", headers=headers).json()
+    assert ws_after["status"] == WS_STATUS_PLANNED
+    assert ws_after["actual_launch_date"] is None
+
+
+def test_14_explicit_launch_state_transitions():
+    """14. Workspace status changes only via explicit transition; sets actual_launch_date when LAUNCHED."""
+    _, tok = _register_and_login("state_trans")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع دورة حياة الإطلاق")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # 1. Transition to IN_PROGRESS
+    r_prog = client.patch(
+        f"/api/v1/launch/workspaces/{ws_id}/status",
+        json={"status": WS_STATUS_IN_PROGRESS, "target_launch_date": "2026-10-01"},
+        headers=headers,
+    )
+    assert r_prog.status_code == 200
+    assert r_prog.json()["status"] == WS_STATUS_IN_PROGRESS
+    assert r_prog.json()["target_launch_date"] == "2026-10-01"
+
+    # 2. Transition to LAUNCHED with explicit date
+    r_launch = client.patch(
+        f"/api/v1/launch/workspaces/{ws_id}/status",
+        json={"status": WS_STATUS_LAUNCHED, "actual_launch_date": "2026-09-05"},
+        headers=headers,
+    )
+    assert r_launch.status_code == 200
+    assert r_launch.json()["status"] == WS_STATUS_LAUNCHED
+    assert r_launch.json()["actual_launch_date"] == "2026-09-05"
+
+    # 3. Transition to PAUSED
+    r_pause = client.patch(
+        f"/api/v1/launch/workspaces/{ws_id}/status",
+        json={"status": WS_STATUS_PAUSED},
+        headers=headers,
+    )
+    assert r_pause.status_code == 200
+    assert r_pause.json()["status"] == WS_STATUS_PAUSED
+
+    # 4. Reject invalid status
+    r_inv = client.patch(
+        f"/api/v1/launch/workspaces/{ws_id}/status",
+        json={"status": "INVALID_STATE"},
+        headers=headers,
+    )
+    assert r_inv.status_code == 422
+
+
+def test_15_task_management_with_milestones_and_completion():
+    """15. Execution tasks can be created, linked to milestones, marked critical, and completed."""
+    _, tok = _register_and_login("task_mgr")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع المهام التنفيذية")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+    m1_id = ws["milestones"][0]["id"]
+
+    # Create task
+    r_task = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/tasks",
         json={
-            "reforecast_title": "إعادة التنبؤ بناءً على نتائج أول شهرين",
-            "adjustment_rationale": "تعديل وتيرة النمو مع ضبط المصاريف الإدارية",
-            "growth_rate_adjustment_pct": -5.0,
-            "opex_adjustment_pct": -8.0,
+            "title": "إيداع رسوم ترخيص بلدي والمطابقة الفنية",
+            "milestone_id": m1_id,
+            "description": "سداد الفاتورة عبر سداد ورفع المخططات المعتمدة",
+            "owner_name": "سعد المطيري",
+            "due_date": "2026-09-20",
+            "is_critical": True,
         },
         headers=headers,
     )
-    assert rf1_res.status_code == 201
-    rf1 = rf1_res.json()
-    assert rf1["version_number"] == 1
-    assert rf1["remaining_runway_months"] is not None
-    assert len(rf1["reforecast_payload"]["monthly_projections"]) == 12
+    assert r_task.status_code == 201
+    t = r_task.json()
+    assert t["title"] == "إيداع رسوم ترخيص بلدي والمطابقة الفنية"
+    assert t["owner_name"] == "سعد المطيري"
+    assert t["is_critical"] is True
+    assert t["status"] == "PENDING"
+    t_id = t["id"]
 
-    # Post Reforecast V2
-    rf2_res = client.post(
+    # Update task to COMPLETED
+    r_up = client.patch(
+        f"/api/v1/launch/tasks/{t_id}",
+        json={"status": "COMPLETED"},
+        headers=headers,
+    )
+    assert r_up.status_code == 200
+    t_up = r_up.json()
+    assert t_up["status"] == "COMPLETED"
+    assert t_up["completed_date"] is not None
+
+
+def test_16_reforecast_removes_fallbacks_and_labels_assumptions():
+    """16. Reforecast avoids synthetic 50k/25k fallbacks and tags assumptions as USER_ASSUMPTION."""
+    _, tok = _register_and_login("reforecast_sem")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع إعادة التنبؤ")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # Record actuals
+    client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={"period_label": "M01", "period_order": 1, "actual_revenue": 45000.0, "total_actual_opex": 20000.0, "closing_cash_balance": 120000.0},
+        headers=headers,
+    )
+
+    r_rf = client.post(
         f"/api/v1/launch/workspaces/{ws_id}/reforecast",
         json={
-            "reforecast_title": "سيناريو التوسع التسويقي v2",
-            "adjustment_rationale": "إعادة التنبؤ مع افتراض مضاعفة الحملة الإعلانية",
-            "growth_rate_adjustment_pct": 20.0,
-            "opex_adjustment_pct": 15.0,
+            "reforecast_title": "السيناريو المتحفظ",
+            "adjustment_rationale": "تعديل بناء على نتائج الشهر الأول",
+            "growth_rate_adjustment_pct": 5.0,
+            "opex_adjustment_pct": 2.0,
         },
         headers=headers,
     )
-    assert rf2_res.status_code == 201
-    rf2 = rf2_res.json()
-    assert rf2["version_number"] == 2
+    assert r_rf.status_code == 201
+    rf = r_rf.json()
+    payload = rf["reforecast_payload"]
+
+    # Assumptions classification must be USER_ASSUMPTION
+    assert payload["assumptions"]["classification"] == "USER_ASSUMPTION"
+    assert payload["assumptions"]["growth_rate_adjustment_pct"] == 5.0
+    assert payload["assumptions"]["opex_adjustment_pct"] == 2.0
+
+    # Values must be extrapolated from actuals (45000 * 1.05 = 47250.0), NOT synthetic 50000.0!
+    m1_proj = payload["monthly_projections"][0]
+    assert m1_proj["reforecast_revenue"] == 47250.0
+    assert m1_proj["reforecast_opex"] == 20400.0
 
 
-def test_launch_workspace_ownership_isolation():
-    """Test that workspaces cannot be accessed across different users."""
-    _, tok1 = _register_and_login("launch_owner1")
-    _, tok2 = _register_and_login("launch_owner2")
+def test_17_total_investment_never_equated_to_cash_balance():
+    """17. Cash runway is NOT computed using total_investment as cash balance."""
+    _, tok = _register_and_login("cash_vs_inv")
+    headers = _auth(tok)
+    # Total investment = 600,000.0
+    _, study_id = _create_project_and_study(tok, "مشروع استثمار لا يساوي الكاش", investment=600000.0)
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
 
-    _, study_id = _create_project_and_study(tok1, "مشروع محمي أ")
+    # Record actuals WITHOUT closing cash balance, with burning cashflow
+    client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={"period_label": "M01", "period_order": 1, "actual_revenue": 10000.0, "total_actual_opex": 30000.0},
+        headers=headers,
+    )
+
+    # Reforecast without explicit cash balance
+    r_rf = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/reforecast",
+        json={
+            "reforecast_title": "إعادة تنبؤ دون رصيد نقدي معروف",
+            "adjustment_rationale": "فحص عدم استعارة إجمالي الاستثمار كرصيد كاش",
+        },
+        headers=headers,
+    )
+    assert r_rf.status_code == 201
+    rf = r_rf.json()
+    # Runway must be None / NOT_AVAILABLE, NOT 600000 / 20000 = 30 months!
+    assert rf["remaining_runway_months"] is None
+    assert rf["reforecast_payload"]["current_cash_balance"] is None
+
+
+def test_18_runway_requires_explicit_cash_and_actual_burn():
+    """18. Cash runway computes accurately when explicit cash balance and burning net cashflow exist."""
+    _, tok = _register_and_login("runway_calc")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع حساب المدرج الزمني")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    # Record 2 months of negative net cashflow:
+    # M01: Net cash = 20000 - 40000 = -20000
+    # M02: Net cash = 30000 - 60000 = -30000
+    # Average burn = 25,000 / month
+    client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={"period_label": "M01", "period_order": 1, "actual_revenue": 20000.0, "actual_capex": 0.0, "total_actual_opex": 40000.0},
+        headers=headers,
+    )
+    client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={"period_label": "M02", "period_order": 2, "actual_revenue": 30000.0, "actual_capex": 0.0, "total_actual_opex": 60000.0, "closing_cash_balance": 100000.0},
+        headers=headers,
+    )
+
+    r_rf = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/reforecast",
+        json={
+            "reforecast_title": "إعادة التنبؤ بناء على رصيد الكاش الختامي",
+            "adjustment_rationale": "فحص دقة المدرج المالي",
+        },
+        headers=headers,
+    )
+    assert r_rf.status_code == 201
+    rf = r_rf.json()
+    # Monthly burn rate = 25,000.0
+    assert rf["monthly_burn_rate"] == 25000.0
+    # Runway = 100,000 / 25,000 = 4.0 months
+    assert rf["remaining_runway_months"] == 4.0
+
+
+def test_19_break_even_distinguishes_positive_cashflow_from_break_even():
+    """19. Distinguishes first cash_flow_positive_month from cumulative financial_break_even_month."""
+    _, tok = _register_and_login("break_even")
+    headers = _auth(tok)
+    # Total investment = 50,000.0
+    projs = [
+        {"month": 1, "period_label": "M01", "projected_revenue": 30000.0, "projected_opex": 20000.0},  # +10,000 (positive cashflow month 1, cum=10k)
+        {"month": 2, "period_label": "M02", "projected_revenue": 35000.0, "projected_opex": 20000.0},  # +15,000 (cum=25k)
+        {"month": 3, "period_label": "M03", "projected_revenue": 40000.0, "projected_opex": 20000.0},  # +20,000 (cum=45k)
+        {"month": 4, "period_label": "M04", "projected_revenue": 45000.0, "projected_opex": 20000.0},  # +25,000 (cum=70k >= 50k -> financial break-even month 4)
+    ]
+    _, study_id = _create_project_and_study(tok, "مشروع فحص نقطة التعادل", investment=50000.0, monthly_projections=projs)
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    r_rf = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/reforecast",
+        json={
+            "reforecast_title": "تحليل التعادل المالي والتدفق الإيجابي",
+            "adjustment_rationale": "فحص تمييز الشهر الإيجابي عن التعادل الكامل",
+        },
+        headers=headers,
+    )
+    assert r_rf.status_code == 201
+    rf = r_rf.json()
+    # First positive net cashflow is Month 1
+    assert rf["cash_flow_positive_month"] == 1
+    # Financial break-even (recovering initial 50k investment) is Month 4
+    assert rf["financial_break_even_month"] == 4
+
+
+def test_20_source_provenance_on_actuals():
+    """20. source_type and source_reference are recorded and returned on actual periods."""
+    _, tok = _register_and_login("actuals_prov")
+    headers = _auth(tok)
+    _, study_id = _create_project_and_study(tok, "مشروع موثوقية مصادر الفعليات")
+    _add_validation_decision(tok, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers).json()
+    ws_id = ws["id"]
+
+    r_act = client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={
+            "period_label": "M01",
+            "period_order": 1,
+            "actual_revenue": 50000.0,
+            "source_type": "SYSTEM_INTEGRATION",
+            "source_reference": "ZATCA-E-INVOICE-BATCH-2026-09",
+            "notes": "مستورد آلياً من بوابة الفوترة السحابية",
+        },
+        headers=headers,
+    )
+    assert r_act.status_code == 201
+    act = r_act.json()
+    assert act["source_type"] == "SYSTEM_INTEGRATION"
+    assert act["source_reference"] == "ZATCA-E-INVOICE-BATCH-2026-09"
+
+
+def test_21_launch_workspace_ownership_isolation():
+    """21. Launch workspace, actuals, tasks, and reforecasts strictly reject cross-user access (403)."""
+    _, tok1 = _register_and_login("owner_u1")
+    _, tok2 = _register_and_login("owner_u2")
+
+    _, study_id = _create_project_and_study(tok1, "مشروع معزول بالكامل")
+    _add_validation_decision(tok1, study_id, "GO")
     ws1 = client.get(f"/api/v1/launch/study/{study_id}", headers=_auth(tok1)).json()
     ws1_id = ws1["id"]
 
-    # User 2 attempts to get User 1's workspace -> 403 Forbidden
-    r_iso_study = client.get(f"/api/v1/launch/study/{study_id}", headers=_auth(tok2))
-    assert r_iso_study.status_code == 403
+    # User 2 access attempts
+    assert client.get(f"/api/v1/launch/study/{study_id}", headers=_auth(tok2)).status_code == 403
+    assert client.get(f"/api/v1/launch/workspaces/{ws1_id}", headers=_auth(tok2)).status_code == 403
+    assert client.patch(f"/api/v1/launch/workspaces/{ws1_id}/status", json={"status": "LAUNCHED"}, headers=_auth(tok2)).status_code == 403
+    assert client.post(f"/api/v1/launch/workspaces/{ws1_id}/actuals", json={"period_label": "M01", "period_order": 1}, headers=_auth(tok2)).status_code == 403
+    assert client.post(f"/api/v1/launch/workspaces/{ws1_id}/tasks", json={"title": "مهمة غير مخولة"}, headers=_auth(tok2)).status_code == 403
+    assert client.post(f"/api/v1/launch/workspaces/{ws1_id}/reforecast", json={"reforecast_title": "تنبؤ غير مخول", "adjustment_rationale": "محاولة وصول غير مصرح بها"}, headers=_auth(tok2)).status_code == 403
 
-    r_iso_ws = client.get(f"/api/v1/launch/workspaces/{ws1_id}", headers=_auth(tok2))
-    assert r_iso_ws.status_code == 403
 
-    # User 2 attempts to record actuals on User 1's workspace -> 403
-    r_act = client.post(
-        f"/api/v1/launch/workspaces/{ws1_id}/actuals",
-        json={"period_label": "M01", "period_order": 1, "actual_revenue": 10000.0},
-        headers=_auth(tok2),
+def test_22_refresh_logout_login_persistence():
+    """22. Complete state persists across logout/login and fresh retrieval."""
+    email, tok1 = _register_and_login("persist_user")
+    headers1 = _auth(tok1)
+
+    _, study_id = _create_project_and_study(tok1, "مشروع استمرارية البيانات الميدانية")
+    _add_validation_decision(tok1, study_id, "GO")
+    ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers1).json()
+    ws_id = ws["id"]
+    m1_id = ws["milestones"][0]["id"]
+
+    # Perform updates
+    client.patch(
+        f"/api/v1/launch/workspaces/{ws_id}/status",
+        json={"status": WS_STATUS_LAUNCHED, "actual_launch_date": "2026-09-05"},
+        headers=headers1,
     )
-    assert r_act.status_code == 403
+    client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/tasks",
+        json={"title": "مهمة التوثيق المستمر", "milestone_id": m1_id, "owner_name": "مشعل", "is_critical": True},
+        headers=headers1,
+    )
+    client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/actuals",
+        json={"period_label": "M01", "period_order": 1, "actual_revenue": 77000.0, "total_actual_opex": 23000.0, "closing_cash_balance": 150000.0},
+        headers=headers1,
+    )
+    client.post(
+        f"/api/v1/launch/workspaces/{ws_id}/reforecast",
+        json={"reforecast_title": "تنبؤ محفوظ v1", "adjustment_rationale": "توثيق التغييرات المستمرة"},
+        headers=headers1,
+    )
+
+    # Re-login with new token
+    tok2 = client.post("/auth/login", json={"email": email, "password": PASSWORD}).json()["access_token"]
+    headers2 = _auth(tok2)
+
+    fresh_ws = client.get(f"/api/v1/launch/study/{study_id}", headers=headers2).json()
+    assert fresh_ws["status"] == WS_STATUS_LAUNCHED
+    assert fresh_ws["actual_launch_date"] == "2026-09-05"
+    assert len(fresh_ws["tasks"]) == 1
+    assert fresh_ws["tasks"][0]["title"] == "مهمة التوثيق المستمر"
+    assert len(fresh_ws["actual_periods"]) == 1
+    assert fresh_ws["actual_periods"][0]["actual_revenue"] == 77000.0
+    assert len(fresh_ws["reforecasts"]) == 1
+    assert fresh_ws["reforecasts"][0]["reforecast_title"] == "تنبؤ محفوظ v1"

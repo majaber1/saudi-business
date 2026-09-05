@@ -1251,13 +1251,16 @@ class LaunchWorkspace(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    # PRE_LAUNCH | LAUNCHING | LAUNCHED | POST_LAUNCH
-    status: Mapped[str] = mapped_column(String(50), default="PRE_LAUNCH", nullable=False)
+    # PLANNED | IN_PROGRESS | BLOCKED | LAUNCHED | PAUSED | CANCELLED
+    status: Mapped[str] = mapped_column(String(50), default="PLANNED", nullable=False)
     target_launch_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     actual_launch_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     milestones: Mapped[list["LaunchMilestone"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan", order_by="LaunchMilestone.id"
+    )
+    tasks: Mapped[list["LaunchTask"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", order_by="LaunchTask.id"
     )
     baseline_snapshots: Mapped[list["LaunchBaselineSnapshot"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan", order_by="LaunchBaselineSnapshot.id.desc()"
@@ -1285,12 +1288,49 @@ class LaunchMilestone(TimestampMixin, Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     due_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     completed_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    # PENDING | IN_PROGRESS | COMPLETED | DELAYED
+    # PENDING | IN_PROGRESS | COMPLETED | BLOCKED | DELAYED
     status: Mapped[str] = mapped_column(String(50), default="PENDING", nullable=False)
-    budget_allocated: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    actual_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Budgets are never synthetically invented; null until explicitly set or approved
+    budget_allocated: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    actual_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    owner_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    dependency_milestone_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("launch_milestones.id", ondelete="SET NULL"), nullable=True
+    )
+    is_suggested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     workspace: Mapped["LaunchWorkspace"] = relationship(back_populates="milestones")
+    tasks: Mapped[list["LaunchTask"]] = relationship(
+        back_populates="milestone", cascade="all, delete-orphan", order_by="LaunchTask.id"
+    )
+
+
+class LaunchTask(TimestampMixin, Base):
+    """Specific actionable task belonging to a launch milestone."""
+
+    __tablename__ = "launch_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("launch_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    milestone_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("launch_milestones.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    due_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    completed_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # PENDING | IN_PROGRESS | COMPLETED | BLOCKED
+    status: Mapped[str] = mapped_column(String(30), default="PENDING", nullable=False)
+    dependency_task_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("launch_tasks.id", ondelete="SET NULL"), nullable=True
+    )
+    is_critical: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    workspace: Mapped["LaunchWorkspace"] = relationship(back_populates="tasks")
+    milestone: Mapped[Optional["LaunchMilestone"]] = relationship(back_populates="tasks")
 
 
 class LaunchBaselineSnapshot(TimestampMixin, Base):
@@ -1303,17 +1343,28 @@ class LaunchBaselineSnapshot(TimestampMixin, Base):
         ForeignKey("launch_workspaces.id", ondelete="CASCADE"), index=True, nullable=False
     )
     snapshot_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    total_investment: Mapped[float] = mapped_column(Float, nullable=False)
+    total_investment: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     monthly_projections: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     frozen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     source_study_revision: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    validation_decision_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("validation_decisions.id", ondelete="SET NULL"), nullable=True
+    )
+    validation_decision_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_opportunity_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_opportunity_version: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    funding_context: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    calculation_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     workspace: Mapped["LaunchWorkspace"] = relationship(back_populates="baseline_snapshots")
 
 
 class LaunchActualPeriod(TimestampMixin, Base):
-    """Actual performance figures recorded for a specific operational period (e.g. Month 1, Month 2)."""
+    """Actual performance figures recorded for a specific operational period (e.g. Month 1, Month 2).
+
+    Missing entries remain NULL / UNKNOWN. Zero strictly means the user entered 0.0.
+    """
 
     __tablename__ = "launch_actual_periods"
 
@@ -1323,19 +1374,22 @@ class LaunchActualPeriod(TimestampMixin, Base):
     )
     period_label: Mapped[str] = mapped_column(String(50), nullable=False)  # "M01", "2026-M01"
     period_order: Mapped[int] = mapped_column(Integer, nullable=False)
-    actual_revenue: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_revenue: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     transactions_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     average_ticket_size: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    actual_capex: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    actual_opex_salaries: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    actual_opex_rent: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    actual_opex_utilities: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    actual_opex_marketing: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    actual_opex_cogs: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    actual_opex_other: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    total_actual_opex: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    net_cashflow: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_capex: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    actual_opex_salaries: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    actual_opex_rent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    actual_opex_utilities: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    actual_opex_marketing: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    actual_opex_cogs: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    actual_opex_other: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    total_actual_opex: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    net_cashflow: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     closing_cash_balance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # USER_ENTERED | IMPORTED | SYSTEM_INTEGRATION | DOCUMENT_BACKED
+    source_type: Mapped[str] = mapped_column(String(50), default="USER_ENTERED", nullable=False)
+    source_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     recorded_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -1359,11 +1413,13 @@ class LaunchReforecast(TimestampMixin, Base):
     opex_adjustment_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     monthly_burn_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     remaining_runway_months: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    revised_break_even_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cash_flow_positive_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    financial_break_even_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     reforecast_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     workspace: Mapped["LaunchWorkspace"] = relationship(back_populates="reforecasts")
+
 
 
 
