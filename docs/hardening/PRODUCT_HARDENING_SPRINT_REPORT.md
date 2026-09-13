@@ -159,3 +159,9 @@ Awaiting owner review.
 
 **DO NOT MERGE PR #53.**  
 **DO NOT START PHASE 9A.**
+
+## CI follow-up (post-rebase)
+
+- GitHub Actions run on tip before e2e fixture alignment failed 3 journey tests because hardening critical-assumption / evidence-safety gates correctly rejected incomplete fixtures.
+- Fix: update e2e fixtures only (no hardening semantic change).
+- Vercel `feasibilityos-ai` remains known platform FAILURE; `saudi-business-web` SUCCESS.
