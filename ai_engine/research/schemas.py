@@ -53,12 +53,18 @@ class ResearchClaim:
     document_id: str | None = None
     chunk_id: str | None = None
     origin: str | None = None
+    # Phase 8C.2 additive metadata (optional; never required for 8A/8B callers)
+    published_at: str | None = None
+    geography: str | None = None
+    trust_score: float | None = None
+    authority_type: str | None = None
+    research_quality: dict[str, Any] | None = None
 
     def to_claim_dict(self) -> dict[str, Any]:
         origin = self.origin
         if origin is None:
             origin = "knowledge" if self.from_knowledge else "research"
-        return {
+        out: dict[str, Any] = {
             "statement": self.statement,
             "source_type": self.source_type,
             "source_url": self.source_url,
@@ -70,6 +76,17 @@ class ResearchClaim:
             "chunk_id": self.chunk_id,
             "source_key": self.source_key,
         }
+        if self.published_at is not None:
+            out["published_at"] = self.published_at
+        if self.geography is not None:
+            out["geography"] = self.geography
+        if self.trust_score is not None:
+            out["trust_score"] = float(self.trust_score)
+        if self.authority_type is not None:
+            out["authority_type"] = self.authority_type
+        if self.research_quality is not None:
+            out["research_quality"] = dict(self.research_quality)
+        return out
 
 
 @dataclass
@@ -107,6 +124,8 @@ class ResearchResult:
     attempts: list[dict[str, Any]] = field(default_factory=list)
     # Phase 8B — Controlled Market Research public payload (optional)
     market_research: dict[str, Any] | None = None
+    # Phase 8C.2 — deterministic quality / ranking / conflict payload (optional)
+    research_quality: dict[str, Any] | None = None
     completed_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -134,5 +153,6 @@ class ResearchResult:
             "errors": list(self.errors),
             "attempts": list(self.attempts),
             "market_research": self.market_research,
+            "research_quality": self.research_quality,
             "completed_at": self.completed_at,
         }

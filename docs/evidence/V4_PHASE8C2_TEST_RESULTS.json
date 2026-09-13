@@ -1,0 +1,65 @@
+{
+  "phase": "8C.2",
+  "title": "Source Ranking, Freshness & Conflict Intelligence",
+  "policy_version": "8c2-v1",
+  "baseline_main": "151d8b6b8d09ed59764f74a5c04689983bfbe906",
+  "branch": "cursor/v4-phase8c2-research-quality-1831",
+  "migration_required": false,
+  "timestamp_utc": "2026-09-13T12:00:00Z",
+  "suites": {
+    "phase8c2_research_quality": {
+      "passed": 42,
+      "failed": 0,
+      "total": 42
+    },
+    "phase8a_8b_8c1_8c2_combined": {
+      "passed": 100,
+      "failed": 0,
+      "total": 100
+    },
+    "phase7a_7b_misa_knowledge_financial_trust_8c1_8c2": {
+      "passed": 128,
+      "failed": 0,
+      "total": 128
+    },
+    "alembic_related": {
+      "passed": 17,
+      "failed": 0,
+      "total": 17
+    },
+    "full_backend": {
+      "passed": 889,
+      "failed": 0,
+      "total": 889,
+      "note": "Ran with env -u DATABASE_URL so sqlite test harness is used; pre-set postgresql migcheck URL caused unrelated health assertion noise"
+    }
+  },
+  "gates": {
+    "claim_type_authority": "PASS",
+    "source_ranking": "PASS",
+    "freshness": "PASS",
+    "evidence_quality": "PASS",
+    "conflict_detection": "PASS",
+    "conflict_resolution": "PASS",
+    "unresolved_conflict_safety": "PASS",
+    "no_fabricated_evidence": "PASS",
+    "research_persistence": "PASS",
+    "tenant_isolation": "PASS",
+    "api_compatibility": "PASS",
+    "architecture_scope": "PASS",
+    "security": "PASS",
+    "gastat_scenario": "PASS",
+    "misa_scenario": "PASS"
+  },
+  "changed_paths": [
+    "ai_engine/research/quality/",
+    "ai_engine/research/schemas.py",
+    "ai_engine/research/service.py",
+    "ai_engine/research/market/market_signal.py",
+    "ai_engine/research/market/schemas.py",
+    "backend/app/services/research_persistence_service.py",
+    "tests/test_phase8c2_research_quality.py",
+    "docs/evidence/V4_PHASE8C2_RESEARCH_QUALITY_VALIDATION.md",
+    "docs/evidence/V4_PHASE8C2_TEST_RESULTS.json"
+  ]
+}
