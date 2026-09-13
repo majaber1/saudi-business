@@ -4,6 +4,7 @@
   "observability_version": "8c3-v1",
   "baseline_main": "9f2eeb511e89b2f71ff3b060d650141c99695884",
   "tested_code_sha": "7ac0c6ae138e7ea2da8d44c5591f100b1c3358a9",
+  "final_head_sha": "1ac70a96a219db942effee98c285a09f6e1987b7",
   "branch": "cursor/v4-phase8c3-research-observability-1831",
   "pr": "https://github.com/majaber1/saudi-business/pull/51",
   "migration_required": false,
