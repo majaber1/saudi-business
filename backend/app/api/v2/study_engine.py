@@ -637,12 +637,27 @@ def _enrich_financial_results(financial_results, language: str = "en"):
         return financial_results
 
 
+def _with_research_observability(research_context, claims):
+    """Additive Phase 8C.3 projection; never mutates frozen quality semantics."""
+    try:
+        from ai_engine.research.quality.observability import (
+            attach_observability_to_research_context,
+        )
+
+        return attach_observability_to_research_context(
+            research_context, top_level_claims=claims
+        )
+    except Exception:
+        return research_context
+
+
 def _study_payload(study_id: str, record: dict, *, response: str | None = None) -> dict:
     """Full study payload so the UI can show AI-filled information."""
     s = record["state"] if "state" in record else record
     claims = s.get("claims") or []
     assumptions = s.get("assumptions") or []
     profile = s.get("profile")
+    research_context = _with_research_observability(s.get("research_context"), claims)
     payload = {
         "study_id": study_id,
         "project_id": s.get("project_id"),
@@ -670,7 +685,12 @@ def _study_payload(study_id: str, record: dict, *, response: str | None = None) 
         "next_action": s.get("next_action"),
         "error": s.get("error"),
         "knowledge_context": _public_knowledge_context(s.get("knowledge_context")),
-        "research_context": s.get("research_context"),
+        "research_context": research_context,
+        "research_quality_observability": (
+            research_context.get("research_quality_observability")
+            if isinstance(research_context, dict)
+            else None
+        ),
         "research_status": s.get("research_status"),
         "research_attempts": s.get("research_attempts") or [],
         "market_research_context": s.get("market_research_context"),
@@ -702,6 +722,9 @@ def _payload_from_state(study_id: str, state, *, response: str | None = None, re
     claims = [c.model_dump() if hasattr(c, "model_dump") else c for c in (state.claims or [])]
     assumptions = [a.model_dump() if hasattr(a, "model_dump") else a for a in (state.assumptions or [])]
     profile = state.profile.model_dump() if state.profile and hasattr(state.profile, "model_dump") else state.profile
+    research_context = _with_research_observability(
+        getattr(state, "research_context", None), claims
+    )
     payload = {
         "study_id": study_id,
         "project_id": state.project_id,
@@ -724,7 +747,12 @@ def _payload_from_state(study_id: str, state, *, response: str | None = None, re
         "next_action": state.next_action,
         "error": state.error,
         "knowledge_context": _public_knowledge_context(getattr(state, "knowledge_context", None)),
-        "research_context": getattr(state, "research_context", None),
+        "research_context": research_context,
+        "research_quality_observability": (
+            research_context.get("research_quality_observability")
+            if isinstance(research_context, dict)
+            else None
+        ),
         "research_status": getattr(state, "research_status", None),
         "research_attempts": list(getattr(state, "research_attempts", None) or []),
         "market_research_context": getattr(state, "market_research_context", None),
@@ -902,6 +930,116 @@ async def get_study(study_id: str, user=Depends(get_current_user)):
     return _study_payload(study_id, record)
 
 
+
+@router.post("/{study_id}/test/seed-research-quality")
+async def seed_research_quality_observability(study_id: str, user=Depends(get_current_user)):
+    """Test-only: persist a deterministic ResearchRun with quality for 8C.3 E2E.
+
+    Gated by ALLOW_TEST_SEED=1. Never available in production.
+    """
+    import os
+    if os.getenv("ALLOW_TEST_SEED", "").strip() not in {"1", "true", "TRUE", "yes"}:
+        raise HTTPException(status_code=404, detail="Not found")
+    if (os.getenv("ENVIRONMENT") or "").strip().lower() in {"production", "prod"}:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    user_id = str(user.id)
+    record = _load_study(study_id, user_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Study not found")
+
+    from datetime import datetime, timezone
+    from ai_engine.research.quality import (
+        enrich_claims_with_quality,
+        evaluate_research_quality,
+    )
+    from ai_engine.research.quality.observability import (
+        attach_observability_to_research_context,
+    )
+
+    candidates = [
+        {
+            "evidence_id": "gastat-cpi-2026-08",
+            "statement": "Saudi CPI for August 2026 is 2.1%",
+            "source_key": "gastat",
+            "source_url": "https://www.stats.gov.sa/cpi",
+            "value": 2.1,
+            "unit": "percent",
+            "period": "2026-08",
+            "geography": "SA",
+            "published_at": "2026-09-01T00:00:00Z",
+            "metric_key": "cpi",
+            "origin": "official",
+            "source_type": "official",
+        },
+        {
+            "evidence_id": "sama-cpi-2026-08",
+            "statement": "Saudi CPI for August 2026 is 2.3%",
+            "source_key": "sama",
+            "source_url": "https://www.sama.gov.sa/cpi",
+            "value": 2.3,
+            "unit": "percent",
+            "period": "2026-08",
+            "geography": "SA",
+            "published_at": "2026-08-15T00:00:00Z",
+            "metric_key": "cpi",
+            "origin": "official",
+            "source_type": "official",
+        },
+        {
+            "evidence_id": "misa-fdi-2025",
+            "statement": "Saudi FDI inflows in 2025 reached 20 billion USD",
+            "source_key": "misa",
+            "source_url": "https://misa.gov.sa/fdi",
+            "value": 20,
+            "unit": "billion_usd",
+            "period": "2025",
+            "geography": "SA",
+            "published_at": "2026-01-15T00:00:00Z",
+            "metric_key": "fdi",
+            "origin": "official",
+            "source_type": "official",
+        },
+    ]
+    quality = evaluate_research_quality(
+        candidates,
+        question="Saudi CPI and FDI",
+        as_of=datetime(2026, 9, 13, tzinfo=timezone.utc),
+    )
+    enriched = enrich_claims_with_quality(candidates, quality)
+    research_context = attach_observability_to_research_context(
+        {
+            "status": "complete",
+            "claims": enriched,
+            "research_quality": quality.to_public_dict(),
+        },
+        top_level_claims=enriched,
+    )
+
+    state = record["state"] if "state" in record else record
+    state = dict(state)
+    state["research_status"] = "complete"
+    state["research_context"] = research_context
+    preferred_ids = set(quality.preferred_evidence_ids or [])
+    # Keep preferred claim statements visible in the workspace list.
+    state["claims"] = [
+        {
+            "statement": c.get("statement"),
+            "source_type": "official" if c.get("source_key") in {"gastat", "misa", "sama"} else "unverified",
+            "source_url": c.get("source_url"),
+            "confidence": 0.9,
+            "origin": "research",
+            "source_key": c.get("source_key"),
+        }
+        for c in enriched
+        if c.get("evidence_id") in preferred_ids or c.get("source_key") == "misa"
+    ]
+    _save_study(study_id, state, user_id)
+
+    record = _load_study(study_id, user_id)
+    return _study_payload(study_id, record)
+
+
 @router.post("/{study_id}/message")
 async def send_message(study_id: str, req: StudyMessageRequest, user=Depends(get_current_user)):
     user_id = str(user.id)
@@ -933,7 +1071,6 @@ async def send_message(study_id: str, req: StudyMessageRequest, user=Depends(get
             break
 
     return _payload_from_state(study_id, state, response=last_ai_message, record_meta=record)
-
 
 
 @router.post("/{study_id}/continue")
