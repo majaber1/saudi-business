@@ -5,7 +5,7 @@
   "baseline_sha": "1a594a4a21ade09a2d8f6055cfe797ff603ee615",
   "baseline_main": "151d8b6b8d09ed59764f74a5c04689983bfbe906",
   "tested_code_sha": "d7df0edd5e910a194f1b3b9225310d04b61e61a6",
-  "final_head_sha": "2e00e1079adef5b937160e27948ede8cc6054b5c",
+  "final_head_sha": "d45abd0a9993bd95a5aef8846bb675c141148d21",
   "branch": "cursor/v4-phase8c2-research-quality-1831",
   "migration_required": false,
   "timestamp_utc": "2026-09-13T17:27:14.219466+00:00",
