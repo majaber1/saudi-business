@@ -14,6 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
+from sqlalchemy import nullslast
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -187,6 +188,9 @@ def create_run(
         return existing
 
     mapped = map_result_status(status)
+    # Application-side UTC with microsecond precision. Do not rely on SQLite /
+    # Postgres server_default resolution for latest-run chronology.
+    now = _utcnow()
     row = models.ResearchRun(
         id=rid,
         study_id=str(study_id),
@@ -200,7 +204,9 @@ def create_run(
         source_keys_json=list(source_keys) if source_keys is not None else None,
         knowledge_reused=False,
         live_fetch_count=0,
-        started_at=_utcnow() if mapped in {"RUNNING", "PLANNED"} else None,
+        started_at=now if mapped in {"RUNNING", "PLANNED"} else None,
+        created_at=now,
+        updated_at=now,
     )
     db.add(row)
     db.flush()
@@ -323,8 +329,14 @@ def list_runs_for_study(
     )
     if user_id is not None:
         q = q.filter(models.ResearchRun.user_id == _user_scope(owner_id, user_id))
+    # Chronology: application-side started_at (microseconds) first, then
+    # created_at, then id as last-resort tie-break only. NULL started_at sorts
+    # after known started_at values (nullslast) so incomplete legacy rows do
+    # not outrank real runs. UUID id alone is NOT a semantic latest discriminator.
     return q.order_by(
-        models.ResearchRun.created_at.desc(), models.ResearchRun.id.desc()
+        nullslast(models.ResearchRun.started_at.desc()),
+        models.ResearchRun.created_at.desc(),
+        models.ResearchRun.id.desc(),
     ).all()
 
 
@@ -335,6 +347,7 @@ def load_latest_run(
     owner_id: int,
     user_id: Optional[str] = None,
 ) -> Optional[models.ResearchRun]:
+    """Return the chronologically newest ResearchRun for the study/tenant."""
     runs = list_runs_for_study(
         db, study_id=study_id, owner_id=owner_id, user_id=user_id
     )

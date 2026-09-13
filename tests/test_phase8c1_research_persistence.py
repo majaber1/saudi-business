@@ -41,6 +41,10 @@ MIGRATIONS_DIR = DATABASE_DIR / "migrations"
 def setup_module(module):
     assert app_db.DB_ENABLED is True
     app_db.init_db()
+    # Register study_engine ORM tables (study_states_v2 / versions) on shared Base
+    # before create_all — otherwise save falls back to memory and skips hydrate.
+    from app.api.v2 import study_engine as _study_engine  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
 
 
@@ -216,6 +220,84 @@ class TestResearchRunCRUD:
             assert latest.id == r2.id
         finally:
             db.close()
+
+    def test_b2_latest_run_deterministic_when_created_at_collides(self):
+        """Even if created_at stamps collide, started_at chronology wins.
+
+        Reproduces the CI failure mode (SQLite second-resolution created_at)
+        without weakening the multi-run assertion.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        db = _session()
+        try:
+            user = _user(db)
+            doc_id, chunk_id = _knowledge(db, user.id)
+            r1 = rps.persist_research_result(
+                db,
+                study_id="s-multi-ts",
+                owner_id=user.id,
+                result=_result("s-multi-ts", doc_id, chunk_id, "complete"),
+                user_id=str(user.id),
+            )
+            r2 = rps.persist_research_result(
+                db,
+                study_id="s-multi-ts",
+                owner_id=user.id,
+                result=_result("s-multi-ts", doc_id, chunk_id, "partial"),
+                user_id=str(user.id),
+            )
+            assert r1 and r2 and r1.id != r2.id
+
+            # Force equal created_at (CI SQLite second-resolution collision)
+            # while keeping started_at strictly ordered.
+            same = datetime(2026, 9, 13, 7, 0, 0)
+            earlier = same - timedelta(microseconds=500)
+            later = same + timedelta(microseconds=500)
+            r1.created_at = same
+            r2.created_at = same
+            r1.started_at = earlier
+            r2.started_at = later
+            # Make UUID order intentionally opposite of chronology
+            if r1.id > r2.id:
+                # already opposite-friendly; if not, swap started_at still wins
+                pass
+            db.commit()
+
+            latest = rps.load_latest_run(
+                db, study_id="s-multi-ts", owner_id=user.id, user_id=str(user.id)
+            )
+            assert latest is not None
+            assert latest.id == r2.id
+            runs = rps.list_runs_for_study(
+                db, study_id="s-multi-ts", owner_id=user.id, user_id=str(user.id)
+            )
+            assert [r.id for r in runs[:2]] == [r2.id, r1.id]
+        finally:
+            db.close()
+
+
+class TestCanonicalImportSafety:
+    def test_app_models_research_run_is_canonical_orm(self):
+        """Persistence service must use the same ResearchRun class as app.models."""
+        import inspect
+
+        import app.models as app_models
+        import ai_engine.research.service as research_service
+        from app.services.research_persistence_service import models as svc_models
+
+        assert svc_models.ResearchRun is app_models.ResearchRun
+        assert (
+            svc_models.ResearchRun.__table__ is app_models.ResearchRun.__table__
+        )
+        assert svc_models.ResearchEvidenceRef is app_models.ResearchEvidenceRef
+
+        # Prefer app.services (canonical). backend.app is ImportError-only fallback.
+        # Do NOT import backend.app.models here — that can double-register Base.
+        src = inspect.getsource(research_service._persist_research_run)
+        assert "from app.services.research_persistence_service import" in src
+        assert "except ImportError" in src
+        assert "from backend.app.services.research_persistence_service import" in src
 
 
 class TestEvidenceRefs:

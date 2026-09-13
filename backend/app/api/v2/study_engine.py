@@ -138,7 +138,33 @@ def _load_study(study_id: str, user_id: str) -> dict | None:
             pass
         finally:
             db.close()
-    return _fallback_studies.get(study_id)
+
+    # In-memory fallback (demo / table-not-ready). Still prefer durable ResearchRun
+    # rows when the shared DB is available — research persistence must not depend
+    # solely on StudyVersion snapshots.
+    record = _fallback_studies.get(study_id)
+    if not record or record.get("user_id") != user_id:
+        return None
+    try:
+        db = _get_db_session()
+        if db is not None:
+            try:
+                from app.services.research_persistence_service import (
+                    hydrate_research_into_state,
+                )
+
+                state = record.setdefault("state", {})
+                hydrate_research_into_state(
+                    db,
+                    study_id=study_id,
+                    user_id=user_id,
+                    state=state,
+                )
+            finally:
+                db.close()
+    except Exception:
+        pass
+    return record
 
 
 def _save_study(study_id: str, state_dict: dict, user_id: str):

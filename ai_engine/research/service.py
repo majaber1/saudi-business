@@ -268,7 +268,15 @@ def _persist_research_run(
     project_id: str | None = None,
     user_id: str | None = None,
 ) -> None:
-    """Best-effort Phase 8C.1 dual-write. Never raises into the study path."""
+    """Best-effort Phase 8C.1 dual-write. Never raises into the study path.
+
+    Import policy (Phase 8C.1): prefer the canonical runtime path
+    ``app.services...`` (``sys.path`` includes ``backend/`` under CI and the
+    FastAPI process). The ``backend.app...`` fallback exists only for scripts
+    that put the repo root on ``PYTHONPATH`` without ``backend/``. Both resolve
+    to the same module object when ``backend/`` is already on ``sys.path``;
+    we never import both ORM registries.
+    """
     if db is None or owner_id is None:
         return
     try:
@@ -276,7 +284,7 @@ def _persist_research_run(
             from app.services.research_persistence_service import (  # type: ignore
                 persist_research_result,
             )
-        except ImportError:
+        except ImportError:  # pragma: no cover - script/layout fallback only
             from backend.app.services.research_persistence_service import (
                 persist_research_result,
             )
