@@ -1,0 +1,58 @@
+{
+  "phase": "8C.1",
+  "title": "Persistent Research Runs + Durable Provenance Foundation",
+  "baseline_main": "563255f43b05c772da2abc15e093751c06ebdae9",
+  "branch": "cursor/v4-phase8c1-research-persistence-1831",
+  "status": "PASS",
+  "stop": "Do not start Phase 8C.2",
+  "ci_fix": {
+    "issue": "load_latest_run returned first run when created_at collided (SQLite second resolution); UUID id DESC is non-chronological",
+    "fix": "Order by nullslast(started_at.desc()), created_at.desc(), id.desc(); set created_at/started_at application-side with microsecond UTC; hydrate fallback study path; register study_engine tables in test setup"
+  },
+  "migration": {
+    "id": "0031_research_runs",
+    "revises": "0030_knowledge_sources",
+    "upgrade": "PASS",
+    "downgrade": "PASS",
+    "additive_only": true
+  },
+  "gates": {
+    "latest_run_determinism": "PASS",
+    "canonical_import_safety": "PASS",
+    "research_run_persistence": "PASS",
+    "evidence_reference_persistence": "PASS",
+    "fresh_session_reload": "PASS",
+    "legacy_snapshot_compatibility": "PASS",
+    "dual_write": "PASS",
+    "idempotency": "PASS",
+    "transaction_safety": "PASS",
+    "tenant_isolation": "PASS",
+    "api_compatibility": "PASS",
+    "regression": "PASS"
+  },
+  "automated_tests": {
+    "phase8c1_persistence_gate": {
+      "passed": 15,
+      "failed": 0
+    },
+    "full_backend_sqlite": {
+      "passed": 847,
+      "failed": 0,
+      "collected": 847
+    }
+  },
+  "architecture": {
+    "primary_store": "research_runs + research_evidence_refs",
+    "compatibility_store": "study_state_versions.snapshot_json",
+    "read_preference": "dedicated_rows_then_snapshot_fallback",
+    "latest_run_order": ["started_at DESC NULLS LAST", "created_at DESC", "id DESC"],
+    "canonical_import": "app.services.research_persistence_service (backend.app only on ImportError)",
+    "workflow_engine": false,
+    "financial_risk_decision_report_changed": false
+  },
+  "limitations": [
+    "No UI research history screen yet",
+    "Non-knowledge live document IDs recorded as unresolved provenance only",
+    "Phase 8C.2 not started"
+  ]
+}

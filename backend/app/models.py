@@ -1768,3 +1768,99 @@ class KnowledgeSource(TimestampMixin, Base):
     last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_failure_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_error: Mapped[Optional[str]] = mapped_column(Text)
+
+
+# ---------------------------------------------------------------------------
+# Research Persistence + Durable Provenance (Phase 8C.1)
+# ---------------------------------------------------------------------------
+
+
+class ResearchRun(TimestampMixin, Base):
+    """Persistent research run (audit/persistence only — not a workflow engine).
+
+    Canonical content remains in the Knowledge Layer; this row stores run state,
+    structured result projection, and links to ResearchEvidenceRef rows.
+    """
+
+    __tablename__ = "research_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    study_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    project_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    # Tenant scope: owner_id matches Knowledge Layer; user_id matches study_states_v2.
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+
+    research_type: Mapped[str] = mapped_column(String(80), nullable=False, default="gap_research")
+    question: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="PLANNED", index=True)
+
+    plan_json: Mapped[Optional[dict]] = mapped_column(JSON)
+    result_json: Mapped[Optional[dict]] = mapped_column(JSON)
+    source_keys_json: Mapped[Optional[list]] = mapped_column(JSON)
+
+    knowledge_reused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    live_fetch_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    sanitized_error_code: Mapped[Optional[str]] = mapped_column(String(80))
+    sanitized_error_message: Mapped[Optional[str]] = mapped_column(Text)
+
+    evidence_refs: Mapped[list["ResearchEvidenceRef"]] = relationship(
+        back_populates="research_run", cascade="all, delete-orphan"
+    )
+
+
+class ResearchEvidenceRef(Base):
+    """Durable reference to Knowledge evidence used by a ResearchRun.
+
+    Does not duplicate document/chunk bodies — only IDs + provenance metadata.
+    """
+
+    __tablename__ = "research_evidence_refs"
+    __table_args__ = (
+        UniqueConstraint(
+            "research_run_id",
+            "idempotency_key",
+            name="uq_research_evidence_ref_run_idem",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    research_run_id: Mapped[str] = mapped_column(
+        ForeignKey("research_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    study_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+
+    source_key: Mapped[Optional[str]] = mapped_column(String(80), index=True)
+    source_name: Mapped[Optional[str]] = mapped_column(String(255))
+
+    # Soft references to Knowledge Layer (nullable; never invent IDs).
+    source_document_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("knowledge_documents.id", ondelete="SET NULL"), index=True
+    )
+    chunk_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("knowledge_chunks.id", ondelete="SET NULL"), index=True
+    )
+
+    official_url: Mapped[Optional[str]] = mapped_column(String(1000))
+    authority_type: Mapped[Optional[str]] = mapped_column(String(80))
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    retrieved_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    evidence_type: Mapped[Optional[str]] = mapped_column(String(80))
+    confidence: Mapped[Optional[float]] = mapped_column(Float)
+    provenance_json: Mapped[Optional[dict]] = mapped_column(JSON)
+
+    # Stable key for idempotent re-attach within a run (not across runs).
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    research_run: Mapped["ResearchRun"] = relationship(back_populates="evidence_refs")
