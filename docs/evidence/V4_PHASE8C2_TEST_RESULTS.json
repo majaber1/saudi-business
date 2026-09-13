@@ -61,5 +61,7 @@
     "tests/test_phase8c2_research_quality.py",
     "docs/evidence/V4_PHASE8C2_RESEARCH_QUALITY_VALIDATION.md",
     "docs/evidence/V4_PHASE8C2_TEST_RESULTS.json"
-  ]
+  ],
+  "head_sha": "851f9a585a795d04f89cf225b14b63e09785b0f2",
+  "pr": "https://github.com/majaber1/saudi-business/pull/50"
 }
