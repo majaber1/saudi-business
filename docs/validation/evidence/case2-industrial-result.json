@@ -1,0 +1,202 @@
+{
+  "id": "case2-industrial",
+  "name": "Jeddah Plastic Recycling Plant",
+  "email": "validation_case2-industrial_1789335781198@example.com",
+  "actions": [
+    "archetype@0",
+    "discovery@0",
+    "approve-evidence@0",
+    "approve-assumptions@0",
+    "continue-to-risks-btn@0",
+    "continue-to-decision-btn@0",
+    "report-ready@0"
+  ],
+  "phasesSeen": [
+    "Archetype Classification"
+  ],
+  "snap": {
+    "url": "http://127.0.0.1:3000/projects/716/studies/study_ad43cb532251/workspace",
+    "phase": "Report Ready",
+    "hasResearchQuality": true,
+    "hasResearchQualitySummary": true,
+    "hasResearchQualityClaims": true,
+    "drawerOpened": true,
+    "hasClaims": true,
+    "hasAssumptions": true,
+    "hasDecision": true,
+    "hasMarketResearch": true,
+    "hasIrr": true,
+    "hasFinancialPanel": false,
+    "hasRisks": false,
+    "hasReport": true,
+    "hasJourneyNav": true,
+    "signals": {
+      "competitor": false,
+      "pricing": true,
+      "risk": true,
+      "evidence": true,
+      "assumption": true,
+      "freshness": true,
+      "conflict": false,
+      "recommendation": true,
+      "supply": true,
+      "cac": false
+    },
+    "excerpt": "← Projects\nStudy Workspace\nReport Ready\nNO_GO\nClassification\n›\nDiscovery\n›\nAssumptions\n›\nFinancial\n›\nRisks\n›\nDecision\n›\nReport\nIndustrial / Manufacturing\nPlastic recycling and pelletizing plant\nidea\nfeasibility\nKnowledge Intelligence\n\nUpload prior feasibility studies (PDF/DOCX/XLSX) to ground assumptions with traceable evidence — not a chatbot.\n\nUpload document\n\nNo knowledge documents yet.\n\nResearch quality health\n\nPreferred\n\n5\n\nUnresolved\n\n0\n\nStale\n\n0\n\nFreshness unknown\n\n7\n\nLow quality\n\n3\n\nOfficial\n\n4\n\nClaim quality (5)\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\nFinal report\n\nVerdict: NO_GO\n\nThe financial analysis indicates a negative NPV of -10,000 USD and an undefined IRR, meaning the project cannot generate sufficient returns under the current assumptions. Additionally, critical risks such as regulatory licensing complexity, volatile supply of PET/HDPE waste, and uncertain demand for recycled pellets have no robust mitigation plans in place. These factors collectively render the project infeasible at this stage.\n\nRisk summary\n\nNegative NPV and undefined IRR indicating poor financial viability\nRegulatory licensing and permitting complexity (SASO, EPA)\nVolatile supply chain for PET/HDPE waste\nUncertain and potentially low demand for recycled pellets\nLack of clear mitigation strategies for market price fluctuations of virgin plastic\nNPV: -10000\nIRR: IRR cannot"
+  },
+  "api": {
+    "phase": "REPORT_READY",
+    "claims_count": 10,
+    "assumptions_count": 6,
+    "research_status": "complete",
+    "research_attempts": 3,
+    "has_rq_observability": true,
+    "rq_summary": {
+      "claim_count": 5,
+      "freshness": null,
+      "conflicts": null
+    },
+    "market_research_status": "VERIFIED",
+    "verdict": "NO_GO",
+    "decision_rationale": "The financial analysis indicates a negative NPV of -10,000 USD and an undefined IRR, meaning the project cannot generate sufficient returns under the current assumptions. Additionally, critical risks such as regulatory licensing complexity, volatile supply of PET/HDPE waste, and uncertain demand for recycled pellets have no robust mitigation plans in place. These factors collectively render the project infeasible at this stage.",
+    "decision_risks": [
+      "Negative NPV and undefined IRR indicating poor financial viability",
+      "Regulatory licensing and permitting complexity (SASO, EPA)",
+      "Volatile supply chain for PET/HDPE waste",
+      "Uncertain and potentially low demand for recycled pellets",
+      "Lack of clear mitigation strategies for market price fluctuations of virgin plastic"
+    ],
+    "financial_keys": [
+      "revenue_projections",
+      "cost_projections",
+      "capex",
+      "npv",
+      "irr",
+      "payback_months",
+      "breakeven_months",
+      "scenarios",
+      "analysis_complete",
+      "warnings",
+      "irr_display",
+      "irr_available",
+      "irr_state",
+      "payback_display",
+      "payback_available",
+      "payback_state",
+      "cash_flows",
+      "discount_rate",
+      "projection_years",
+      "extract_notes"
+    ],
+    "claimSnips": [
+      {
+        "statement": "Inflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026\n\n15-04-2026\n\nThe annual inflation rate of the Consumer Price Index (CPI) ",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "GASTAT: Saudi economy records 3.0% growth in Q1 of 2026: GASTAT: Saudi economy records 3.0% growth in Q1 of 2026\n\n09-06-2026\n\n‌This policy aims to ensure the implementation of the ",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "GASTAT: Operating Revenues Index for Wholesale and Retail Trade Increases by 3.2% in Q2 of 2026: GASTAT: Operating Revenues Index for Wholesale and Retail Trade Increases by 3.2% i",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "orum 2026 and the Second Saudi Statistics Forum GASTAT: Saudi Arabia among the world safest countries in 2025 29-06-2026 The Kingdom of Saudi Arabia ranked first among the G20 coun",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "cpi_inflation=1.8 (March)",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "The plant will source PET/HDPE waste from local municipalities and private waste collectors operating within the Jeddah industrial area.",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "A small PET/HDPE recycling and pelletizing plant with a capacity of approximately 5,000 tonnes per annum typically requires a capital expenditure of USD 3–5 million.",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "The facility must comply with SASO (Saudi Standards, Metrology and Quality Organization) standards for recycled plastic pellets and with environmental regulations issued by the Sau",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      }
+    ],
+    "assumptionSnips": [
+      {
+        "key": "production_capacity",
+        "label": "Annual production capacity",
+        "value": "10000",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "raw_material_cost",
+        "label": "Raw material cost / unit",
+        "value": "10000",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "unit_cost",
+        "label": "Fully loaded unit cost",
+        "value": "10000",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "selling_price",
+        "label": "Selling price / unit",
+        "value": "1200000",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "utilization",
+        "label": "Plant utilization",
+        "value": "10",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "capex_machinery",
+        "label": "Machinery / plant CAPEX",
+        "value": "10000",
+        "origin": "knowledge_reference"
+      }
+    ],
+    "knowledge_hit_count": 3,
+    "next_action": null,
+    "error": null
+  },
+  "scores": {
+    "ux": "PASS",
+    "research_quality": "PASS",
+    "trust": "PASS",
+    "business_value": "PASS"
+  },
+  "screenshots": [
+    "/opt/cursor/artifacts/product-validation/case2-industrial-01-project.png",
+    "/opt/cursor/artifacts/product-validation/case2-industrial-02-workspace-brief.png",
+    "/opt/cursor/artifacts/product-validation/case2-industrial-03-progress.png",
+    "/opt/cursor/artifacts/product-validation/case2-industrial-04-arabic.png",
+    "/opt/cursor/artifacts/product-validation/case2-industrial-05-final.png"
+  ],
+  "consoleErrors": [],
+  "notes": [
+    "Research Quality Observability present (UI and/or API).",
+    "Financial/decision output present.",
+    "Phases observed: Archetype Classification"
+  ]
+}

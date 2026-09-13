@@ -1,0 +1,181 @@
+{
+  "id": "case3-digital",
+  "name": "SME Accounting SaaS KSA",
+  "email": "validation_case3-digital_1789335855341@example.com",
+  "actions": [
+    "archetype@0",
+    "discovery@0",
+    "approve-evidence@0",
+    "approve-assumptions@0",
+    "continue-to-risks-btn@0",
+    "continue-to-decision-btn@0",
+    "report-ready@0"
+  ],
+  "phasesSeen": [
+    "Archetype Classification"
+  ],
+  "snap": {
+    "url": "http://127.0.0.1:3000/projects/717/studies/study_e8c7d1c0732d/workspace",
+    "phase": "Report Ready",
+    "hasResearchQuality": true,
+    "hasResearchQualitySummary": true,
+    "hasResearchQualityClaims": true,
+    "drawerOpened": true,
+    "hasClaims": true,
+    "hasAssumptions": true,
+    "hasDecision": true,
+    "hasMarketResearch": true,
+    "hasIrr": true,
+    "hasFinancialPanel": false,
+    "hasRisks": false,
+    "hasReport": true,
+    "hasJourneyNav": true,
+    "signals": {
+      "competitor": true,
+      "pricing": true,
+      "risk": true,
+      "evidence": true,
+      "assumption": true,
+      "freshness": true,
+      "conflict": false,
+      "recommendation": true,
+      "supply": true,
+      "cac": true
+    },
+    "excerpt": "← Projects\nStudy Workspace\nReport Ready\nGO_WITH_CONDITIONS\nClassification\n›\nDiscovery\n›\nAssumptions\n›\nFinancial\n›\nRisks\n›\nDecision\n›\nReport\nSaaS / Digital Platform\nB2B SaaS accounting and invoicing for Saudi micro/small businesses\nidea\nfeasibility\nKnowledge Intelligence\n\nUpload prior feasibility studies (PDF/DOCX/XLSX) to ground assumptions with traceable evidence — not a chatbot.\n\nUpload document\n\nNo knowledge documents yet.\n\nResearch quality health\n\nPreferred\n\n5\n\nUnresolved\n\n0\n\nStale\n\n0\n\nFreshness unknown\n\n7\n\nLow quality\n\n3\n\nOfficial\n\n4\n\nClaim quality (5)\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\n\nInflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026 15-04-2026 The annual inflation rate of the Consumer Price Index (CPI) in Saudi Arabia reached 1.9% in March 2026, compared with March 2025. On a monthly basis, the index recorded a relative increase of 0.3% compared to February 2025. In the same context, the annual rate of the Wholesale Price Index (WPI) reached 3.3% in March 2026 compared to its counterpart in 2025. On a monthly basis,\n\nFreshness unknown\nView evidence\nFinal report\n\nVerdict: GO_WITH_CONDITIONS\n\nBase-case NPV is positive (2180883.29) with IRR=None. Proceed under staged conditions while monitoring critical risks.\n\nConditions\n\nRe-validate top assumptions after pilot / first operating period\nKeep contingency for the highest-impact critical risk\n\nRisk summary\n\nCustomer acquisition cost inflation\nChurn above plan\nSaudi data-residency compliance\nNPV: 2180883.29\nIRR: IRR cannot be calculated for these cash flows.\n\nNo valid internal rate of return was found in range — often because cash flows do not change sign, or the profile is too extreme for a stable IRR.\n\nPayback Period: Payback period cannot be calculated for these cash flows.\n\nCumulative cash flow never recovers the initial investment inside the projection window.\n\n"
+  },
+  "api": {
+    "phase": "REPORT_READY",
+    "claims_count": 5,
+    "assumptions_count": 6,
+    "research_status": "complete",
+    "research_attempts": 4,
+    "has_rq_observability": true,
+    "rq_summary": {
+      "claim_count": 5,
+      "freshness": null,
+      "conflicts": null
+    },
+    "market_research_status": "VERIFIED",
+    "verdict": "GO_WITH_CONDITIONS",
+    "decision_rationale": "Base-case NPV is positive (2180883.29) with IRR=None. Proceed under staged conditions while monitoring critical risks.",
+    "decision_risks": [
+      "Customer acquisition cost inflation",
+      "Churn above plan",
+      "Saudi data-residency compliance"
+    ],
+    "financial_keys": [
+      "capex",
+      "revenue_projections",
+      "cost_projections",
+      "projection_years",
+      "cash_flows",
+      "discount_rate",
+      "npv",
+      "irr",
+      "irr_display",
+      "irr_available",
+      "irr_state",
+      "payback_months",
+      "payback_display",
+      "payback_available",
+      "payback_state",
+      "warnings",
+      "extract_notes",
+      "scenarios",
+      "analysis_complete"
+    ],
+    "claimSnips": [
+      {
+        "statement": "Inflation in Saudi Arabia reaches 1.8% in March 2026: Inflation in Saudi Arabia reaches 1.8% in March 2026\n\n15-04-2026\n\nThe annual inflation rate of the Consumer Price Index (CPI) ",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "GASTAT: Saudi economy records 3.0% growth in Q1 of 2026: GASTAT: Saudi economy records 3.0% growth in Q1 of 2026\n\n09-06-2026\n\n‌This policy aims to ensure the implementation of the ",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "GASTAT: Operating Revenues Index for Wholesale and Retail Trade Increases by 3.2% in Q2 of 2026: GASTAT: Operating Revenues Index for Wholesale and Retail Trade Increases by 3.2% i",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "ereby enhancing the quality of statistical outputs and strengthening transparency and confidence in official statistics.",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      },
+      {
+        "statement": "cpi_inflation=1.8 (March)",
+        "source": null,
+        "evidence_id": null,
+        "has_rq": false
+      }
+    ],
+    "assumptionSnips": [
+      {
+        "key": "target_customers",
+        "label": "Target customers (year 1)",
+        "value": "200",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "pricing",
+        "label": "Subscription / pricing",
+        "value": "500",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "arr",
+        "label": "ARR",
+        "value": "1200000",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "cac",
+        "label": "CAC",
+        "value": "800",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "churn",
+        "label": "Monthly churn",
+        "value": "3",
+        "origin": "knowledge_reference"
+      },
+      {
+        "key": "acquisition_channels",
+        "label": "Acquisition channels",
+        "value": "Organic",
+        "origin": "knowledge_reference"
+      }
+    ],
+    "knowledge_hit_count": 3,
+    "next_action": null,
+    "error": null
+  },
+  "scores": {
+    "ux": "PASS",
+    "research_quality": "PASS",
+    "trust": "PASS",
+    "business_value": "PASS"
+  },
+  "screenshots": [
+    "/opt/cursor/artifacts/product-validation/case3-digital-01-project.png",
+    "/opt/cursor/artifacts/product-validation/case3-digital-02-workspace-brief.png",
+    "/opt/cursor/artifacts/product-validation/case3-digital-03-progress.png",
+    "/opt/cursor/artifacts/product-validation/case3-digital-04-arabic.png",
+    "/opt/cursor/artifacts/product-validation/case3-digital-05-final.png"
+  ],
+  "consoleErrors": [],
+  "notes": [
+    "Research Quality Observability present (UI and/or API).",
+    "Financial/decision output present.",
+    "Phases observed: Archetype Classification"
+  ]
+}
