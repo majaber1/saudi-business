@@ -553,6 +553,13 @@ class TestPhaseByPhaseProgression:
                           "language": "ar", "recommended_model": "saas_v1"},
             financial_results_json={"npv": 1234567, "irr": 0.345, "payback_months": 18},
             decision_risks=["market competition", "data localization"],
+            # Seed critical SaaS evidence themes so decision safety can keep GO_WITH_CONDITIONS.
+            claims_json=[
+                {"statement": "Subscription pricing 299 SAR/month", "source_type": "user_input", "confidence": 0.9},
+                {"statement": "Competitors include Asana and Monday.com", "source_type": "user_input", "confidence": 0.8},
+                {"statement": "Customer acquisition via LinkedIn ads CAC", "source_type": "user_input", "confidence": 0.8},
+                {"statement": "Retention strong with low churn and high LTV", "source_type": "user_input", "confidence": 0.8},
+            ],
         )
 
         r = client.post(f"/api/v2/studies/{sid}/message", json={
@@ -626,9 +633,15 @@ class TestCompletePipeline:
         assert r.status_code == 200
 
         # Step 4: Approve evidence → assumptions
+        saas_claims = [
+            {"statement": "Subscription pricing 299 SAR/month", "source_type": "user_input", "confidence": 0.9},
+            {"statement": "Competitors include Asana and Monday.com", "source_type": "user_input", "confidence": 0.8},
+            {"statement": "Customer acquisition via LinkedIn ads CAC", "source_type": "user_input", "confidence": 0.8},
+            {"statement": "Retention strong with low churn and high LTV", "source_type": "user_input", "confidence": 0.8},
+        ]
         _set_study_state(sid,
             phase="EVIDENCE_REVIEW",
-            claims_json=[{"statement": "test", "source_type": "user_input", "confidence": 0.8}],
+            claims_json=saas_claims,
         )
         r = client.post(f"/api/v2/studies/{sid}/approve/evidence", json={"approved": True}, headers=headers)
         assert r.status_code == 200
@@ -641,12 +654,20 @@ class TestCompletePipeline:
         assert r.status_code == 200
 
         # Step 6: Approve assumptions → financial analysis
+        # Hardening requires SaaS critical keys before approve_stage("assumptions").
         _set_study_state(sid,
             phase="ASSUMPTIONS_REVIEW",
-            assumptions_json=[{"key": "revenue", "value": "299", "source": "user", "confidence": "confirmed"}],
+            assumptions_json=[
+                {"key": "pricing", "value": "299", "source": "user", "confidence": "confirmed"},
+                {"key": "cac", "value": "450", "source": "user", "confidence": "confirmed"},
+                {"key": "churn", "value": "0.04", "source": "user", "confidence": "confirmed"},
+                {"key": "arr", "value": "1200000", "source": "user", "confidence": "confirmed"},
+                {"key": "target_customers", "value": "500", "source": "user", "confidence": "confirmed"},
+                {"key": "revenue", "value": "299", "source": "user", "confidence": "confirmed"},
+            ],
         )
         r = client.post(f"/api/v2/studies/{sid}/approve/assumptions", json={"approved": True}, headers=headers)
-        assert r.status_code == 200
+        assert r.status_code == 200, r.text
 
         # Step 7: Risk analysis
         _set_study_state(sid, phase="ANALYZED",
@@ -658,7 +679,9 @@ class TestCompletePipeline:
 
         # Step 8: Decision
         _set_study_state(sid, phase="DECISION_READY",
-            decision_risks=["competition", "data localization"])
+            decision_risks=["competition", "data localization"],
+            claims_json=saas_claims,
+        )
         r = client.post(f"/api/v2/studies/{sid}/message", json={
             "message": "القرار النهائي",
         }, headers=headers)
