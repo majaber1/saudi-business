@@ -1,0 +1,54 @@
+{
+  "phase": "8C.1",
+  "title": "Persistent Research Runs + Durable Provenance Foundation",
+  "baseline_main": "563255f43b05c772da2abc15e093751c06ebdae9",
+  "branch": "cursor/v4-phase8c1-research-persistence-1831",
+  "status": "PASS",
+  "stop": "Do not start Phase 8C.2",
+  "migration": {
+    "id": "0031_research_runs",
+    "revises": "0030_knowledge_sources",
+    "upgrade": "PASS",
+    "downgrade": "PASS",
+    "additive_only": true
+  },
+  "tables": {
+    "research_runs": true,
+    "research_evidence_refs": true,
+    "duplicates_knowledge_content": false
+  },
+  "gates": {
+    "research_run_persistence": "PASS",
+    "evidence_reference_persistence": "PASS",
+    "fresh_session_reload": "PASS",
+    "legacy_snapshot_compatibility": "PASS",
+    "dual_write": "PASS",
+    "idempotency": "PASS",
+    "transaction_safety": "PASS",
+    "tenant_isolation": "PASS",
+    "api_compatibility": "PASS",
+    "regression": "PASS"
+  },
+  "automated_tests": {
+    "phase8c1_persistence_gate": {
+      "passed": 13,
+      "failed": 0
+    },
+    "regression_aggregate_8b_8a_7a_7b_7c1_knowledge_financial": {
+      "passed": 134,
+      "failed": 0
+    }
+  },
+  "architecture": {
+    "primary_store": "research_runs + research_evidence_refs",
+    "compatibility_store": "study_state_versions.snapshot_json",
+    "read_preference": "dedicated_rows_then_snapshot_fallback",
+    "workflow_engine": false,
+    "financial_risk_decision_report_changed": false
+  },
+  "limitations": [
+    "No UI research history screen yet",
+    "Non-knowledge live document IDs recorded as unresolved provenance only",
+    "Phase 8C.2 not started"
+  ]
+}

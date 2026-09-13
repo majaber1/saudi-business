@@ -118,6 +118,21 @@ def _load_study(study_id: str, user_id: str) -> dict | None:
                                 state[key] = snap[key]
                 except Exception:
                     pass
+                # Phase 8C.1: prefer durable ResearchRun rows when present.
+                try:
+                    from app.services.research_persistence_service import (
+                        hydrate_research_into_state,
+                    )
+
+                    state = record.setdefault("state", {})
+                    hydrate_research_into_state(
+                        db,
+                        study_id=study_id,
+                        user_id=user_id,
+                        state=state,
+                    )
+                except Exception:
+                    pass
                 return record
         except Exception:
             pass

@@ -144,6 +144,8 @@ def run_research(state: StudyState) -> StudyState:
             owner_id=owner_id,
             db=db,
             knowledge_context=state.knowledge_context,
+            project_id=getattr(state, "project_id", None),
+            user_id=str(owner_raw) if owner_raw is not None else None,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("research node failed: %s", exc)

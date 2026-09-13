@@ -260,12 +260,53 @@ def claims_from_knowledge_context(
     return claims
 
 
+def _persist_research_run(
+    *,
+    db: Any | None,
+    owner_id: int | None,
+    result: ResearchResult,
+    project_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
+    """Best-effort Phase 8C.1 dual-write. Never raises into the study path."""
+    if db is None or owner_id is None:
+        return
+    try:
+        try:
+            from app.services.research_persistence_service import (  # type: ignore
+                persist_research_result,
+            )
+        except ImportError:
+            from backend.app.services.research_persistence_service import (
+                persist_research_result,
+            )
+
+        persist_research_result(
+            db,
+            study_id=str(result.plan.study_id),
+            owner_id=int(owner_id),
+            result=result,
+            user_id=user_id or str(owner_id),
+            project_id=project_id,
+            research_type=(
+                "market_research"
+                if isinstance(getattr(result, "market_research", None), dict)
+                and result.market_research
+                else "gap_research"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("research run persistence skipped: %s", exc)
+
+
 def execute_research(
     plan: ResearchPlan,
     *,
     owner_id: int | None = None,
     db: Any | None = None,
     knowledge_context: dict[str, Any] | None = None,
+    project_id: str | None = None,
+    user_id: str | None = None,
 ) -> ResearchResult:
     """
     Knowledge-first research execution.
@@ -438,6 +479,13 @@ def execute_research(
             "market_status": (market_payload or {}).get("status"),
         },
     )
+    _persist_research_run(
+        db=db,
+        owner_id=owner_id,
+        result=result,
+        project_id=project_id,
+        user_id=user_id,
+    )
     return result
 
 
@@ -449,6 +497,8 @@ def research_gaps(
     db: Any | None = None,
     queries: list[str] | None = None,
     knowledge_context: dict[str, Any] | None = None,
+    project_id: str | None = None,
+    user_id: str | None = None,
 ) -> ResearchResult:
     plan = build_research_plan(study_id=study_id, gaps=gaps, queries=queries)
     return execute_research(
@@ -456,6 +506,8 @@ def research_gaps(
         owner_id=owner_id,
         db=db,
         knowledge_context=knowledge_context,
+        project_id=project_id,
+        user_id=user_id,
     )
 
 

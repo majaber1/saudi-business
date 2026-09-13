@@ -60,7 +60,8 @@ def test_alembic_single_head_and_revision_chain():
         "0028_knowledge_intel",
         "0029_knowledge_intel_learning",
         "0030_knowledge_sources",
-    ), f"Expected head to be 0021–0030 lineage tip, got {heads[0]}"
+        "0031_research_runs",
+    ), f"Expected head to be 0021–0031 lineage tip, got {heads[0]}"
 
     rev_0021 = script.get_revision("0021_validation_os")
     assert rev_0021.down_revision == "0020_opportunity_fit_matching"
