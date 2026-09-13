@@ -164,19 +164,99 @@ def _hostname(url: Any) -> str | None:
     return host or None
 
 
-def resolve_governed_source_identity(candidate: dict[str, Any]) -> tuple[str | None, list[str]]:
-    """Server-validate official source identity; never trust raw source_key alone.
+def _derive_source_key_from_document(doc: Any) -> str | None:
+    """Derive governed source key from persisted KnowledgeDocument fields only."""
+    if doc is None:
+        return None
+    raw = str(getattr(doc, "source", "") or "").strip().lower()
+    if raw in _GOVERNED_SOURCE_KEYS:
+        return raw
+    assumptions = getattr(doc, "assumptions", None)
+    if isinstance(assumptions, dict):
+        for key in ("source_key", "registry_key", "authority_key", "official_source_key"):
+            val = assumptions.get(key)
+            if val is None:
+                continue
+            token = str(val).strip().lower()
+            if token in _GOVERNED_SOURCE_KEYS:
+                return token
+    return None
 
-    Returns (validated_quality_source_key, reason_codes).
+
+def _resolve_knowledge_provenance(
+    candidate: dict[str, Any],
+    *,
+    db: Any | None = None,
+    owner_id: int | None = None,
+) -> tuple[str | None, list[str]]:
+    """Resolve official identity from tenant-owned KnowledgeDocument/Chunk.
+
+    Client-provided document_id/chunk_id/source_key alone never elevate.
+    Requires a server-side DB session and owner_id; cross-tenant rows are treated
+    as unverified without revealing existence.
     """
     reasons: list[str] = []
-    claimed_raw = candidate.get("source_key")
-    claimed = str(claimed_raw).strip().lower() if claimed_raw else None
-    url = candidate.get("official_url") or candidate.get("source_url") or candidate.get("url")
-    source_type = str(candidate.get("source_type") or candidate.get("evidence_type") or "official")
+    doc_id = candidate.get("document_id") or candidate.get("source_document_id")
+    chunk_id = candidate.get("chunk_id")
+    if not doc_id and not chunk_id:
+        return None, reasons
+    if db is None or owner_id is None:
+        reasons.append("SOURCE_IDENTITY_UNVERIFIED")
+        return None, reasons
+    try:
+        from app import models  # type: ignore
 
+        oid = int(owner_id)
+        doc = None
+        if chunk_id:
+            chunk = (
+                db.query(models.KnowledgeChunk)
+                .filter(
+                    models.KnowledgeChunk.id == str(chunk_id),
+                    models.KnowledgeChunk.owner_id == oid,
+                )
+                .first()
+            )
+            if chunk is None:
+                reasons.append("SOURCE_IDENTITY_UNVERIFIED")
+                return None, reasons
+            doc = (
+                db.query(models.KnowledgeDocument)
+                .filter(
+                    models.KnowledgeDocument.id == chunk.document_id,
+                    models.KnowledgeDocument.owner_id == oid,
+                )
+                .first()
+            )
+        else:
+            doc = (
+                db.query(models.KnowledgeDocument)
+                .filter(
+                    models.KnowledgeDocument.id == str(doc_id),
+                    models.KnowledgeDocument.owner_id == oid,
+                )
+                .first()
+            )
+        if doc is None:
+            reasons.append("SOURCE_IDENTITY_UNVERIFIED")
+            return None, reasons
+        derived = _derive_source_key_from_document(doc)
+        if derived is None:
+            reasons.append("SOURCE_IDENTITY_UNVERIFIED")
+            return None, reasons
+        # Optional: confirm key exists in Source Registry seed/classifier map.
+        if derived not in _load_registry_domains() and derived not in _GOVERNED_SOURCE_KEYS:
+            reasons.append("SOURCE_IDENTITY_UNVERIFIED")
+            return None, reasons
+        reasons.append("KNOWLEDGE_PROVENANCE_VALIDATED")
+        return derived, reasons
+    except Exception:
+        reasons.append("SOURCE_IDENTITY_UNVERIFIED")
+        return None, reasons
+
+
+def _match_url_source_key(url: Any, source_type: str) -> str | None:
     matched_quality: str | None = None
-    # Prefer existing Source Registry classifier when importable.
     try:
         from app.services.source_registry import classify_authority  # type: ignore
 
@@ -186,7 +266,6 @@ def resolve_governed_source_identity(candidate: dict[str, Any]) -> tuple[str | N
             matched_quality = _REGISTRY_TO_QUALITY.get(reg_key, reg_key)
     except Exception:
         matched_quality = None
-
     if matched_quality is None:
         host = _hostname(url)
         if host:
@@ -198,20 +277,78 @@ def resolve_governed_source_identity(candidate: dict[str, Any]) -> tuple[str | N
                         break
                 if matched_quality:
                     break
+    return matched_quality
 
-    # Candidate authority_type must never self-certify.
-    # (Ignored by design — validated key alone drives authority.)
 
+def resolve_governed_source_identity(
+    candidate: dict[str, Any],
+    *,
+    db: Any | None = None,
+    owner_id: int | None = None,
+) -> tuple[str | None, list[str]]:
+    """Server-validate official source identity; never trust raw source_key alone.
+
+    Validation paths (any one may establish identity):
+    A. governed official domain on URL
+    B. trusted connector/source identity already established server-side
+    C. persisted KnowledgeDocument / KnowledgeChunk provenance for this tenant
+
+    Returns (validated_quality_source_key, reason_codes).
+    """
+    reasons: list[str] = []
+    claimed_raw = candidate.get("source_key")
+    claimed = str(claimed_raw).strip().lower() if claimed_raw else None
+    url = candidate.get("official_url") or candidate.get("source_url") or candidate.get("url")
+    source_type = str(candidate.get("source_type") or candidate.get("evidence_type") or "official")
+
+    url_matched = _match_url_source_key(url, source_type) if url else None
+
+    # Server-injected trusted connector identity (never client-forged flags alone).
+    connector_matched: str | None = None
+    if candidate.get("_server_trusted_source") and candidate.get("_server_source_key"):
+        sk = str(candidate.get("_server_source_key")).strip().lower()
+        if sk in _GOVERNED_SOURCE_KEYS:
+            connector_matched = sk
+            reasons.append("SERVER_CONNECTOR_IDENTITY")
+
+    knowledge_matched, knowledge_reasons = _resolve_knowledge_provenance(
+        candidate, db=db, owner_id=owner_id
+    )
+    reasons.extend(knowledge_reasons)
+
+    # Detect provenance disagreements between independent trusted signals.
+    trusted_keys = [k for k in (url_matched, connector_matched, knowledge_matched) if k]
+    if len(set(trusted_keys)) > 1:
+        reasons.append("SOURCE_PROVENANCE_MISMATCH")
+        # Do not award official identity until deterministic resolution exists.
+        return None, reasons
+
+    matched_quality = trusted_keys[0] if trusted_keys else None
+
+    # Candidate authority_type / trust_score / source_key must never self-certify.
     if claimed and claimed in _GOVERNED_SOURCE_KEYS:
+        if matched_quality is None:
+            # Claimed official key without any trusted matching provenance.
+            # If a URL was supplied but did not validate to the claimed key,
+            # treat as identity mismatch (spoofed official key).
+            if url:
+                reasons.append("SOURCE_IDENTITY_MISMATCH")
+            else:
+                reasons.append("SOURCE_IDENTITY_UNVERIFIED")
+            return None, reasons
         if matched_quality != claimed:
             reasons.append("SOURCE_IDENTITY_MISMATCH")
-            return matched_quality, reasons
+            return None, reasons
         return claimed, reasons
 
-    # Non-governed claimed keys cannot elevate; URL match may still validate.
+    # Non-governed claimed keys cannot elevate; trusted match may still validate.
     if matched_quality:
         return matched_quality, reasons
+    if (candidate.get("document_id") or candidate.get("chunk_id")) and not matched_quality:
+        if "SOURCE_IDENTITY_UNVERIFIED" not in reasons:
+            reasons.append("SOURCE_IDENTITY_UNVERIFIED")
     return None, reasons
+
 
 _AUTHORITY_RANK = {
     "PRIMARY": 5,
@@ -741,6 +878,8 @@ def evaluate_candidate(
     question: str | None = None,
     expected_geography: str | None = "SA",
     as_of: datetime | None = None,
+    db: Any | None = None,
+    owner_id: int | None = None,
 ) -> EvidenceQualityResult:
     eid = candidate_evidence_id(candidate)
     ctype: ClaimType = claim_type or classify_claim_type(
@@ -750,7 +889,9 @@ def evaluate_candidate(
     )
     eligible, elig_reasons = is_eligible_evidence(candidate)
     claimed_key = str(candidate["source_key"]).strip().lower() if candidate.get("source_key") else None
-    validated_key, identity_reasons = resolve_governed_source_identity(candidate)
+    validated_key, identity_reasons = resolve_governed_source_identity(
+        candidate, db=db, owner_id=owner_id
+    )
     # Authority uses only server-validated identity for governed sources.
     # Candidate authority_type / trust_score never elevate.
     # Non-governed claimed keys still classify as UNRELATED (not UNKNOWN).
@@ -863,6 +1004,48 @@ def comparable_key(candidate: dict[str, Any]) -> tuple[str | None, str | None, s
     )
 
 
+_UNKNOWN_SCOPE = "__UNK__"
+
+
+def _methodology_scope(candidate: dict[str, Any]) -> str | None:
+    """Return deterministically represented methodology/scope when present."""
+    for key in (
+        "methodology",
+        "methodology_scope",
+        "measurement_scope",
+        "scope",
+        "series",
+        "series_key",
+    ):
+        val = _norm(candidate.get(key))
+        if val:
+            return val
+    return None
+
+
+def fact_scope_key(
+    claim_type: ClaimType,
+    candidate: dict[str, Any],
+) -> tuple[str, str, str, str, str, str]:
+    """Comparable fact-scope for preferred ranking and conflict grouping.
+
+    Uses claim_type + metric + period + geography + unit + methodology/scope
+    when available. Missing scope tokens use a deterministic UNKNOWN sentinel
+    so known distinct periods/geographies/units never collapse together.
+    Does not invent missing metadata.
+    """
+    metric, period, geography, unit = comparable_key(candidate)
+    method = _methodology_scope(candidate)
+    return (
+        str(claim_type),
+        metric or _UNKNOWN_SCOPE,
+        period if period is not None else _UNKNOWN_SCOPE,
+        geography if geography is not None else _UNKNOWN_SCOPE,
+        unit if unit is not None else _UNKNOWN_SCOPE,
+        method if method is not None else _UNKNOWN_SCOPE,
+    )
+
+
 def values_differ(a: Any, b: Any) -> bool:
     if a is None or b is None:
         return False
@@ -883,6 +1066,10 @@ def classify_non_conflict(a: dict[str, Any], b: dict[str, Any]) -> ConflictStatu
         return "SCOPE_MISMATCH"
     if ua and ub and ua != ub:
         return "SCOPE_MISMATCH"
+    sa = _methodology_scope(a)
+    sb = _methodology_scope(b)
+    if sa and sb and sa != sb:
+        return "SCOPE_MISMATCH"
     return None
 
 
@@ -897,16 +1084,24 @@ def detect_and_resolve_conflicts(candidates: list[dict[str, Any]], evaluations: 
         ev = by_id.get(eid)
         if ev is None or not ev.eligible:
             continue
+        # Require known metric + period + geography for conflict comparability.
         metric, period, geography, unit = comparable_key(c)
         if not metric or period is None or geography is None:
             continue
-        # Comparable conflicts only within the same claim_type (+ metric/scope).
-        groups.setdefault((ev.claim_type, metric, period, geography, unit or ""), []).append(eid)
+        scope = fact_scope_key(ev.claim_type, c)
+        groups.setdefault(scope, []).append(eid)
     results: list[ConflictResult] = []
     for key, eids in groups.items():
         if len(eids) < 2:
             continue
-        _claim_type, metric, period, geography, unit = key
+        _claim_type, metric, period, geography, unit, _method = key
+        if metric == _UNKNOWN_SCOPE:
+            continue
+        # Restore None semantics for unknown unit sentinel in conflict payload.
+        if unit == _UNKNOWN_SCOPE:
+            unit = ""
+        if period == _UNKNOWN_SCOPE or geography == _UNKNOWN_SCOPE:
+            continue
         values = [cand_by_id[eid].get("value") for eid in eids]
         distinct: list[Any] = []
         for v in values:
@@ -971,6 +1166,12 @@ def _as_candidate(item: Any, *, question: str | None = None) -> dict[str, Any]:
             "trust_score": getattr(item, "trust_score", None),
             "authority_type": getattr(item, "authority_type", None),
             "evidence_id": getattr(item, "evidence_id", None),
+            "methodology": getattr(item, "methodology", None),
+            "methodology_scope": getattr(item, "methodology_scope", None),
+            "measurement_scope": getattr(item, "measurement_scope", None),
+            "scope": getattr(item, "scope", None),
+            "series": getattr(item, "series", None),
+            "series_key": getattr(item, "series_key", None),
         }
     if question and not out.get("question"):
         out["question"] = question
@@ -988,6 +1189,8 @@ def evaluate_research_quality(
     expected_geography: str | None = "SA",
     as_of: datetime | None = None,
     metric_key: str | None = None,
+    db: Any | None = None,
+    owner_id: int | None = None,
 ) -> QualityEvaluationResult:
     as_of_dt = as_of or datetime.now(timezone.utc)
     if as_of_dt.tzinfo is None:
@@ -1015,18 +1218,18 @@ def evaluate_research_quality(
                 question=question,
                 expected_geography=expected_geography,
                 as_of=as_of_dt,
+                db=db,
+                owner_id=owner_id,
             )
         )
 
-    # Rank and prefer only within comparable claim groups.
+    # Rank and prefer only within comparable fact-scope groups.
     def _group_key(ev: EvidenceQualityResult, cand: dict[str, Any]) -> tuple:
-        # Ranking groups are claim-comparable: claim_type + metric.
-        # Geography/period are ranking signals and conflict-scope fields, not
-        # separate preferred pools (preserves single-claim backward compat).
-        if explicit_claim_type is not None:
-            return ("__explicit__",)
-        metric, _period, _geography, _unit = comparable_key(cand)
-        return (ev.claim_type, metric or "")
+        # Preferred pools are fact-scoped: claim_type + metric + period +
+        # geography + unit + methodology/scope when available.
+        # Explicit claim_type must NOT collapse distinct periods/geographies
+        # into one preferred pool.
+        return fact_scope_key(ev.claim_type, cand)
 
     preferred_ids: list[str] = []
     by_group: dict[tuple, list[tuple[EvidenceQualityResult, dict[str, Any]]]] = {}
@@ -1060,6 +1263,17 @@ def evaluate_research_quality(
     indexed = list(zip(evaluations, candidates))
     indexed.sort(key=lambda pair: ranking_tuple(pair[0], pair[1]), reverse=True)
     ranked = [ev for ev, _c in indexed]
+    cand_by_eid = {candidate_evidence_id(c): c for c in candidates}
+    # Keep one preferred per fact-scope, but order preferred_ids by strength so
+    # callers reading preferred_evidence_ids[0] still see the top preferred.
+    preferred_ids = sorted(
+        preferred_ids,
+        key=lambda eid: ranking_tuple(
+            next(ev for ev in ranked if ev.evidence_id == eid),
+            cand_by_eid.get(eid, {}),
+        ),
+        reverse=True,
+    )
 
     conflicts = detect_and_resolve_conflicts(candidates, ranked)
     for conflict in conflicts:

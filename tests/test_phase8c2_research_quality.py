@@ -1651,3 +1651,640 @@ class TestCorrectnessGate8C2:
             assert evals["spoof"]["authority_fit"] != "PRIMARY"
         finally:
             db2.close()
+
+
+
+class TestFactScopePreferredGrouping:
+    """P0 — preferred pools follow comparable fact-scope, not claim_type alone."""
+
+    def test_a_same_metric_different_period_both_preferred(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="gdp-2025",
+                    source_key="gastat",
+                    statement="Saudi GDP growth 2025 was 3.1%",
+                    metric_key="gdp_growth",
+                    value=3.1,
+                    period="2025",
+                    published_at="2026-01-15",
+                    source_url="https://www.stats.gov.sa/en/gdp-2025",
+                ),
+                _cand(
+                    evidence_id="gdp-2026",
+                    source_key="gastat",
+                    statement="Saudi GDP growth 2026 was 3.5%",
+                    metric_key="gdp_growth",
+                    value=3.5,
+                    period="2026",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/gdp-2026",
+                ),
+            ],
+            question="Saudi GDP growth",
+            claim_type="GDP",
+            as_of=AS_OF,
+        )
+        assert result.conflicts == []
+        assert set(result.preferred_evidence_ids) == {"gdp-2025", "gdp-2026"}
+        by_id = {e.evidence_id: e for e in result.evaluations}
+        assert by_id["gdp-2025"].selection_status == "PREFERRED"
+        assert by_id["gdp-2026"].selection_status == "PREFERRED"
+        assert by_id["gdp-2025"].selection_status != "ALTERNATE"
+        assert by_id["gdp-2026"].selection_status != "ALTERNATE"
+
+    def test_b_same_metric_different_geography_both_preferred(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="cpi-sa",
+                    source_key="gastat",
+                    statement="Saudi national CPI inflation 1.6%",
+                    metric_key="cpi_inflation",
+                    value=1.6,
+                    period="2026-08",
+                    geography="SA",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/cpi-national",
+                ),
+                _cand(
+                    evidence_id="cpi-riyadh",
+                    source_key="gastat",
+                    statement="Riyadh CPI inflation 1.9%",
+                    metric_key="cpi_inflation",
+                    value=1.9,
+                    period="2026-08",
+                    geography="RIYADH",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/cpi-riyadh",
+                ),
+            ],
+            question="Saudi CPI inflation",
+            claim_type="INFLATION",
+            as_of=AS_OF,
+        )
+        assert result.conflicts == []
+        assert set(result.preferred_evidence_ids) == {"cpi-sa", "cpi-riyadh"}
+        by_id = {e.evidence_id: e for e in result.evaluations}
+        assert by_id["cpi-sa"].selection_status == "PREFERRED"
+        assert by_id["cpi-riyadh"].selection_status == "PREFERRED"
+
+    def test_c_same_scope_different_values_conflict(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="gastat-cpi",
+                    source_key="gastat",
+                    statement="Saudi CPI inflation 1.6%",
+                    metric_key="cpi_inflation",
+                    value=1.6,
+                    period="2026-08",
+                    geography="SA",
+                    unit="percent",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/cpi",
+                ),
+                _cand(
+                    evidence_id="blog-cpi",
+                    source_key="macro_blog",
+                    statement="Saudi CPI inflation 3.0%",
+                    metric_key="cpi_inflation",
+                    value=3.0,
+                    period="2026-08",
+                    geography="SA",
+                    unit="percent",
+                    published_at="2026-08-20",
+                    source_url="https://example.com/cpi",
+                ),
+            ],
+            question="Saudi CPI inflation",
+            claim_type="INFLATION",
+            as_of=AS_OF,
+        )
+        assert len(result.conflicts) == 1
+        c = result.conflicts[0]
+        assert c.status == "RESOLVED_PREFERRED_SOURCE"
+        assert c.preferred_evidence_ref == "gastat-cpi"
+        by_id = {e.evidence_id: e for e in result.evaluations}
+        assert by_id["gastat-cpi"].selection_status == "PREFERRED"
+        assert by_id["blog-cpi"].selection_status in {"ALTERNATE", "CONFLICT_UNRESOLVED"}
+        assert "blog-cpi" in c.candidates
+
+    def test_d_explicit_claim_type_multi_period_safe(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="gdp-2024",
+                    source_key="gastat",
+                    statement="Saudi GDP 2024 grew 2.8%",
+                    metric_key="gdp_growth",
+                    value=2.8,
+                    period="2024",
+                    published_at="2025-01-15",
+                    source_url="https://www.stats.gov.sa/en/gdp-2024",
+                ),
+                _cand(
+                    evidence_id="gdp-2025",
+                    source_key="gastat",
+                    statement="Saudi GDP 2025 grew 3.1%",
+                    metric_key="gdp_growth",
+                    value=3.1,
+                    period="2025",
+                    published_at="2026-01-15",
+                    source_url="https://www.stats.gov.sa/en/gdp-2025",
+                ),
+            ],
+            question="Saudi GDP",
+            claim_type="GDP",  # explicit must not collapse periods
+            as_of=AS_OF,
+        )
+        assert set(result.preferred_evidence_ids) == {"gdp-2024", "gdp-2025"}
+        assert result.conflicts == []
+
+    def test_e_multiple_independent_fact_groups_survive(self):
+        result = evaluate_research_quality(
+            [
+                # CPI conflict group
+                _cand(
+                    evidence_id="cpi-a",
+                    source_key="blog_a",
+                    statement="CPI inflation 1.5%",
+                    metric_key="cpi_inflation",
+                    value=1.5,
+                    period="2026-08",
+                    published_at="2026-08-10",
+                    source_url="https://example.com/cpi-a",
+                ),
+                _cand(
+                    evidence_id="cpi-b",
+                    source_key="blog_b",
+                    statement="CPI inflation 1.9%",
+                    metric_key="cpi_inflation",
+                    value=1.9,
+                    period="2026-08",
+                    published_at="2026-08-11",
+                    source_url="https://example.com/cpi-b",
+                ),
+                # FDI conflict group
+                _cand(
+                    evidence_id="fdi-a",
+                    source_key="blog_c",
+                    statement="FDI inflow 10",
+                    metric_key="fdi_inflow",
+                    value=10,
+                    unit="billion_sar",
+                    period="2025",
+                    published_at="2026-03-01",
+                    source_url="https://example.com/fdi-a",
+                ),
+                _cand(
+                    evidence_id="fdi-b",
+                    source_key="blog_d",
+                    statement="FDI inflow 12",
+                    metric_key="fdi_inflow",
+                    value=12,
+                    unit="billion_sar",
+                    period="2025",
+                    published_at="2026-03-02",
+                    source_url="https://example.com/fdi-b",
+                ),
+                # Non-conflicting GDP historical
+                _cand(
+                    evidence_id="gdp-2024",
+                    source_key="gastat",
+                    statement="Saudi GDP 2024 grew 2.8%",
+                    metric_key="gdp_growth",
+                    value=2.8,
+                    period="2024",
+                    published_at="2025-01-15",
+                    source_url="https://www.stats.gov.sa/en/gdp-2024",
+                ),
+            ],
+            question="CPI FDI GDP",
+            as_of=AS_OF,
+        )
+        statuses = {c.status for c in result.conflicts}
+        assert "UNRESOLVED" in statuses
+        # CPI and FDI unresolved groups leave no preferred for those scopes
+        assert "cpi-a" not in result.preferred_evidence_ids
+        assert "cpi-b" not in result.preferred_evidence_ids
+        assert "fdi-a" not in result.preferred_evidence_ids
+        assert "fdi-b" not in result.preferred_evidence_ids
+        # GDP historical preferred survives independently
+        assert "gdp-2024" in result.preferred_evidence_ids
+        by_id = {e.evidence_id: e for e in result.evaluations}
+        assert by_id["gdp-2024"].selection_status == "PREFERRED"
+        assert by_id["cpi-a"].selection_status == "CONFLICT_UNRESOLVED"
+        assert by_id["fdi-a"].selection_status == "CONFLICT_UNRESOLVED"
+
+    def test_f_unit_difference_separate_scopes(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="cpi-pct",
+                    source_key="gastat",
+                    statement="Saudi CPI inflation 1.6 percent",
+                    metric_key="cpi_inflation",
+                    value=1.6,
+                    period="2026-08",
+                    geography="SA",
+                    unit="percent",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/cpi-percent",
+                ),
+                _cand(
+                    evidence_id="cpi-index",
+                    source_key="gastat",
+                    statement="Saudi CPI index 112.4",
+                    metric_key="cpi_inflation",
+                    value=112.4,
+                    period="2026-08",
+                    geography="SA",
+                    unit="index",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/cpi-index",
+                ),
+            ],
+            question="Saudi CPI",
+            claim_type="INFLATION",
+            as_of=AS_OF,
+        )
+        assert result.conflicts == []
+        assert set(result.preferred_evidence_ids) == {"cpi-pct", "cpi-index"}
+
+
+class TestKnowledgeProvenanceIdentity:
+    """P1 — official identity via persisted Knowledge provenance without URL."""
+
+    def _seed_doc(self, db, user, *, source: str, title: str):
+        doc_id, chunk_id = str(uuid.uuid4()), str(uuid.uuid4())
+        db.add(
+            models.KnowledgeDocument(
+                id=doc_id,
+                owner_id=user.id,
+                title=title,
+                source=source,
+                country="SA",
+                document_type="official",
+                assumptions={},
+                confidence=0.9,
+                visibility="private",
+                extraction_status="ready",
+            )
+        )
+        db.add(
+            models.KnowledgeChunk(
+                id=chunk_id,
+                document_id=doc_id,
+                owner_id=user.id,
+                content=f"{title} body",
+                embedding=[],
+                chunk_metadata={},
+                importance=0.9,
+            )
+        )
+        db.commit()
+        return doc_id, chunk_id
+
+    def test_a_persisted_gastat_document_no_url_primary(self):
+        db = _session()
+        try:
+            user = _user(db)
+            doc_id, chunk_id = self._seed_doc(
+                db, user, source="gastat", title="GASTAT CPI"
+            )
+            result = evaluate_research_quality(
+                [
+                    _cand(
+                        evidence_id="cpi-know",
+                        source_key="gastat",
+                        statement="Saudi CPI inflation 1.6%",
+                        metric_key="cpi_inflation",
+                        value=1.6,
+                        period="2026-08",
+                        published_at="2026-08-15",
+                        source_url=None,
+                        document_id=doc_id,
+                        chunk_id=chunk_id,
+                    )
+                ],
+                question="Saudi CPI",
+                claim_type="INFLATION",
+                as_of=AS_OF,
+                db=db,
+                owner_id=user.id,
+            )
+            ev = result.evaluations[0]
+            assert ev.authority_fit == "PRIMARY"
+            assert ev.eligible is True
+            assert "KNOWLEDGE_PROVENANCE_VALIDATED" in ev.ranking_reason
+            assert result.preferred_evidence_ids == ["cpi-know"]
+        finally:
+            db.close()
+
+    def test_b_persisted_misa_document_no_url_primary_for_fdi(self):
+        db = _session()
+        try:
+            user = _user(db)
+            doc_id, chunk_id = self._seed_doc(
+                db, user, source="misa", title="MISA FDI"
+            )
+            result = evaluate_research_quality(
+                [
+                    _cand(
+                        evidence_id="fdi-know",
+                        source_key="misa",
+                        statement="Foreign direct investment (FDI) inflow 19",
+                        metric_key="fdi_inflow",
+                        value=19,
+                        unit="billion_sar",
+                        period="2025",
+                        published_at="2026-03-01",
+                        source_url=None,
+                        document_id=doc_id,
+                        chunk_id=chunk_id,
+                    )
+                ],
+                question="Saudi FDI",
+                claim_type="INVESTMENT_FDI",
+                as_of=AS_OF,
+                db=db,
+                owner_id=user.id,
+            )
+            assert result.evaluations[0].authority_fit == "PRIMARY"
+            assert "KNOWLEDGE_PROVENANCE_VALIDATED" in result.evaluations[0].ranking_reason
+        finally:
+            db.close()
+
+    def test_c_fake_document_id_not_elevated(self):
+        db = _session()
+        try:
+            user = _user(db)
+            result = evaluate_research_quality(
+                [
+                    _cand(
+                        evidence_id="fake",
+                        source_key="gastat",
+                        statement="Saudi CPI inflation 9%",
+                        metric_key="cpi_inflation",
+                        value=9.0,
+                        period="2026-08",
+                        published_at="2026-08-15",
+                        source_url=None,
+                        document_id=str(uuid.uuid4()),
+                        chunk_id=str(uuid.uuid4()),
+                    )
+                ],
+                question="Saudi CPI",
+                claim_type="INFLATION",
+                as_of=AS_OF,
+                db=db,
+                owner_id=user.id,
+            )
+            ev = result.evaluations[0]
+            assert ev.authority_fit != "PRIMARY"
+            assert ev.authority_fit not in {"SECONDARY", "RELATED"}
+            assert "SOURCE_IDENTITY_UNVERIFIED" in ev.selection_reason_codes
+        finally:
+            db.close()
+
+    def test_d_cross_tenant_document_not_validated(self):
+        db = _session()
+        try:
+            owner_a = _user(db)
+            owner_b = _user(db)
+            doc_id, chunk_id = self._seed_doc(
+                db, owner_a, source="gastat", title="GASTAT tenant A"
+            )
+            result = evaluate_research_quality(
+                [
+                    _cand(
+                        evidence_id="xtenant",
+                        source_key="gastat",
+                        statement="Saudi CPI inflation 1.6%",
+                        metric_key="cpi_inflation",
+                        value=1.6,
+                        period="2026-08",
+                        published_at="2026-08-15",
+                        source_url=None,
+                        document_id=doc_id,
+                        chunk_id=chunk_id,
+                    )
+                ],
+                question="Saudi CPI",
+                claim_type="INFLATION",
+                as_of=AS_OF,
+                db=db,
+                owner_id=owner_b.id,  # different tenant
+            )
+            ev = result.evaluations[0]
+            assert ev.authority_fit != "PRIMARY"
+            assert "SOURCE_IDENTITY_UNVERIFIED" in ev.selection_reason_codes
+            # Must not leak existence via a distinct mismatch code.
+            assert "KNOWLEDGE_PROVENANCE_VALIDATED" not in ev.ranking_reason
+        finally:
+            db.close()
+
+    def test_e_persisted_source_mismatch_with_claimed_key(self):
+        db = _session()
+        try:
+            user = _user(db)
+            doc_id, chunk_id = self._seed_doc(
+                db, user, source="misa", title="MISA doc"
+            )
+            result = evaluate_research_quality(
+                [
+                    _cand(
+                        evidence_id="mismatch",
+                        source_key="gastat",  # claimed GASTAT
+                        statement="Saudi CPI inflation 1.6%",
+                        metric_key="cpi_inflation",
+                        value=1.6,
+                        period="2026-08",
+                        published_at="2026-08-15",
+                        source_url=None,
+                        document_id=doc_id,
+                        chunk_id=chunk_id,
+                    )
+                ],
+                question="Saudi CPI",
+                claim_type="INFLATION",
+                as_of=AS_OF,
+                db=db,
+                owner_id=user.id,
+            )
+            ev = result.evaluations[0]
+            assert ev.authority_fit != "PRIMARY"
+            assert "SOURCE_IDENTITY_MISMATCH" in ev.selection_reason_codes
+        finally:
+            db.close()
+
+    def test_f_url_and_document_disagree(self):
+        db = _session()
+        try:
+            user = _user(db)
+            doc_id, chunk_id = self._seed_doc(
+                db, user, source="misa", title="MISA doc"
+            )
+            result = evaluate_research_quality(
+                [
+                    _cand(
+                        evidence_id="disagree",
+                        source_key="gastat",
+                        statement="Saudi CPI inflation 1.6%",
+                        metric_key="cpi_inflation",
+                        value=1.6,
+                        period="2026-08",
+                        published_at="2026-08-15",
+                        source_url="https://www.stats.gov.sa/en/cpi",
+                        document_id=doc_id,
+                        chunk_id=chunk_id,
+                    )
+                ],
+                question="Saudi CPI",
+                claim_type="INFLATION",
+                as_of=AS_OF,
+                db=db,
+                owner_id=user.id,
+            )
+            ev = result.evaluations[0]
+            assert ev.authority_fit != "PRIMARY"
+            assert "SOURCE_PROVENANCE_MISMATCH" in ev.ranking_reason or (
+                "SOURCE_PROVENANCE_MISMATCH" in ev.selection_reason_codes
+            )
+        finally:
+            db.close()
+
+    def test_g_fact_scope_and_knowledge_survive_fresh_session(self):
+        db = _session()
+        try:
+            user = _user(db)
+            study_id = f"s-8c2-final-{uuid.uuid4().hex[:8]}"
+            doc_id, chunk_id = self._seed_doc(
+                db, user, source="gastat", title="GASTAT CPI persist"
+            )
+            cands = [
+                _cand(
+                    evidence_id="gdp-2025",
+                    source_key="gastat",
+                    statement="Saudi GDP 2025 grew 3.1%",
+                    metric_key="gdp_growth",
+                    value=3.1,
+                    period="2025",
+                    published_at="2026-01-15",
+                    source_url="https://www.stats.gov.sa/en/gdp-2025",
+                ),
+                _cand(
+                    evidence_id="gdp-2026",
+                    source_key="gastat",
+                    statement="Saudi GDP 2026 grew 3.5%",
+                    metric_key="gdp_growth",
+                    value=3.5,
+                    period="2026",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/gdp-2026",
+                ),
+                _cand(
+                    evidence_id="cpi-know",
+                    source_key="gastat",
+                    statement="Saudi CPI inflation 1.6%",
+                    metric_key="cpi_inflation",
+                    value=1.6,
+                    period="2026-08",
+                    published_at="2026-08-15",
+                    source_url=None,
+                    document_id=doc_id,
+                    chunk_id=chunk_id,
+                ),
+                _cand(
+                    evidence_id="fake",
+                    source_key="gastat",
+                    statement="Fake CPI 9%",
+                    metric_key="cpi_inflation",
+                    value=9.0,
+                    period="2026-08",
+                    published_at="2026-08-01",
+                    source_url=None,
+                    document_id=str(uuid.uuid4()),
+                ),
+            ]
+            quality = evaluate_research_quality(
+                cands,
+                question="GDP and CPI",
+                as_of=AS_OF,
+                db=db,
+                owner_id=user.id,
+            )
+            claims = []
+            for item in enrich_claims_with_quality(cands, quality):
+                claims.append(
+                    ResearchClaim(
+                        statement=str(item.get("statement") or ""),
+                        source_type="official",
+                        source_url=item.get("source_url"),
+                        confidence=0.9,
+                        source_key=item.get("source_key"),
+                        metric_key=item.get("metric_key"),
+                        value=item.get("value"),
+                        unit=item.get("unit") or "percent",
+                        period=item.get("period"),
+                        published_at=item.get("published_at"),
+                        geography="SA",
+                        document_id=item.get("document_id"),
+                        chunk_id=item.get("chunk_id"),
+                        research_quality=item.get("research_quality"),
+                    )
+                )
+            plan = ResearchPlan(
+                study_id=study_id,
+                gaps=["GDP periods and CPI knowledge"],
+                sources=[
+                    ResearchSourceRef(
+                        source_key="gastat",
+                        connector_id="live.gastat",
+                        reason="official",
+                    )
+                ],
+                queries=["GDP", "CPI"],
+            )
+            result = ResearchResult(
+                plan=plan,
+                status="complete",
+                claims=claims,
+                knowledge_hits=1,
+                research_quality=quality.to_public_dict(),
+            )
+            run = rps.persist_research_result(
+                db,
+                study_id=study_id,
+                owner_id=user.id,
+                user_id=str(user.id),
+                result=result,
+                research_type="gap_research",
+            )
+            assert run is not None
+            run_id = run.id
+            db.commit()
+        finally:
+            db.close()
+
+        db2 = _session()
+        try:
+            run2 = (
+                db2.query(models.ResearchRun)
+                .filter(models.ResearchRun.id == run_id)
+                .one()
+            )
+            rq = (run2.result_json or {}).get("research_quality") or {}
+            preferred = set(rq.get("preferred_evidence_ids") or [])
+            assert "gdp-2025" in preferred
+            assert "gdp-2026" in preferred
+            assert "cpi-know" in preferred
+            evals = {e["evidence_id"]: e for e in (rq.get("evaluations") or [])}
+            assert evals["cpi-know"]["authority_fit"] == "PRIMARY"
+            assert evals["fake"]["authority_fit"] != "PRIMARY"
+            # Cross-tenant still blocked via persistence API
+            other = _user(db2)
+            assert rps.get_run(db2, run_id=run_id, owner_id=other.id) is None
+        finally:
+            db2.close()

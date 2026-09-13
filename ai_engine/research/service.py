@@ -478,6 +478,8 @@ def execute_research(
         quality = evaluate_research_quality(
             claims,
             question=question_text or None,
+            db=db,
+            owner_id=owner_id,
         )
         research_quality_payload = quality.to_public_dict()
         enriched = enrich_claims_with_quality(claims, quality)
