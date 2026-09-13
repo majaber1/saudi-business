@@ -198,5 +198,13 @@
     "Research Quality Observability present (UI and/or API).",
     "Financial/decision output present.",
     "Phases observed: Archetype Classification"
+  ],
+  "scenario_source_classification": "REAL_USER_FLOW",
+  "seeded_validation": false,
+  "mock_only": false,
+  "integrity_notes": [
+    "Created through live product UI workflow and persisted via study API.",
+    "No seed-research-quality endpoint called.",
+    "Not a UI-only mock."
   ]
 }

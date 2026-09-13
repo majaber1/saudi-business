@@ -1,0 +1,109 @@
+{
+  "rule": "VALIDATION_INTEGRITY_RULE",
+  "baseline_sha_8c3": "93d6ed378b345565e7eee06a583ef836998e44a5",
+  "main_sha_at_start": "9f2eeb511e89b2f71ff3b060d650141c99695884",
+  "definitions": {
+    "REAL_USER_FLOW": "Created through actual product workflow; real persisted Study/Research/Financial/Risk flow",
+    "SEEDED_VALIDATION": "Approved isolated validation fixture; clearly marked; not a production customer workflow",
+    "MOCK_ONLY": "UI-only simulation without real backend persistence \u2014 NOT acceptable for product validation"
+  },
+  "seeded_validation_used": false,
+  "mock_only_used": false,
+  "product_ready_claimed": false,
+  "cases": [
+    {
+      "case_id": "case1-sme",
+      "classification": "REAL_USER_FLOW",
+      "not": [
+        "SEEDED_VALIDATION",
+        "MOCK_ONLY"
+      ],
+      "evidence": {
+        "study_id": "study_9169d7642e33",
+        "http_status": 200,
+        "persisted_run_id": "6ff18fd7-1c26-492c-9d06-9d373d652af9",
+        "created_at": "2026-09-13T21:41:03.558655+00:00",
+        "updated_at": "2026-09-13T21:42:40.833757+00:00",
+        "phase": "REPORT_READY",
+        "verdict": "GO_WITH_CONDITIONS",
+        "research_attempts": 3,
+        "live_fetches": 1,
+        "knowledge_hits": 3,
+        "seed_endpoint_called": false,
+        "assumption_origins": [
+          "knowledge_reference"
+        ]
+      },
+      "notes": [
+        "Created via product UI: register \u2192 project \u2192 AI study workspace \u2192 briefing \u2192 stage progression.",
+        "Validated by GET study API returning persisted Study/Research/Financial/Risk state.",
+        "Research path includes live connector attempts plus knowledge hits \u2014 product research pipeline, not seed fixture.",
+        "ALLOW_TEST_SEED may be present in backend env but harness did not invoke seed endpoints.",
+        "Assumptions origin knowledge_reference is product knowledge-pack behavior, not an isolated validation fixture."
+      ]
+    },
+    {
+      "case_id": "case2-industrial",
+      "classification": "REAL_USER_FLOW",
+      "not": [
+        "SEEDED_VALIDATION",
+        "MOCK_ONLY"
+      ],
+      "evidence": {
+        "study_id": "study_ad43cb532251",
+        "http_status": 200,
+        "persisted_run_id": "673d9143-892f-48a8-8572-2d7a5a8cc8c1",
+        "created_at": "2026-09-13T21:43:04.909888+00:00",
+        "updated_at": "2026-09-13T21:44:03.955088+00:00",
+        "phase": "REPORT_READY",
+        "verdict": "NO_GO",
+        "research_attempts": 3,
+        "live_fetches": 1,
+        "knowledge_hits": 3,
+        "seed_endpoint_called": false,
+        "assumption_origins": [
+          "knowledge_reference"
+        ]
+      },
+      "notes": [
+        "Created via product UI: register \u2192 project \u2192 AI study workspace \u2192 briefing \u2192 stage progression.",
+        "Validated by GET study API returning persisted Study/Research/Financial/Risk state.",
+        "Research path includes live connector attempts plus knowledge hits \u2014 product research pipeline, not seed fixture.",
+        "ALLOW_TEST_SEED may be present in backend env but harness did not invoke seed endpoints.",
+        "Assumptions origin knowledge_reference is product knowledge-pack behavior, not an isolated validation fixture."
+      ]
+    },
+    {
+      "case_id": "case3-digital",
+      "classification": "REAL_USER_FLOW",
+      "not": [
+        "SEEDED_VALIDATION",
+        "MOCK_ONLY"
+      ],
+      "evidence": {
+        "study_id": "study_e8c7d1c0732d",
+        "http_status": 200,
+        "persisted_run_id": "5892e339-e5f1-4f2f-b77a-b199cc98e396",
+        "created_at": "2026-09-13T21:44:19.715456+00:00",
+        "updated_at": "2026-09-13T21:45:21.335498+00:00",
+        "phase": "REPORT_READY",
+        "verdict": "GO_WITH_CONDITIONS",
+        "research_attempts": 4,
+        "live_fetches": 1,
+        "knowledge_hits": 3,
+        "seed_endpoint_called": false,
+        "assumption_origins": [
+          "knowledge_reference"
+        ]
+      },
+      "notes": [
+        "Created via product UI: register \u2192 project \u2192 AI study workspace \u2192 briefing \u2192 stage progression.",
+        "Validated by GET study API returning persisted Study/Research/Financial/Risk state.",
+        "Research path includes live connector attempts plus knowledge hits \u2014 product research pipeline, not seed fixture.",
+        "ALLOW_TEST_SEED may be present in backend env but harness did not invoke seed endpoints.",
+        "Assumptions origin knowledge_reference is product knowledge-pack behavior, not an isolated validation fixture."
+      ]
+    }
+  ],
+  "aggregate_note": "All three business cases are REAL_USER_FLOW. No SEEDED_VALIDATION and no MOCK_ONLY results are used for readiness claims. Product ready is NOT claimed."
+}

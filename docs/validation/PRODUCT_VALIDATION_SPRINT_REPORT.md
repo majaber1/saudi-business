@@ -20,6 +20,49 @@ Across three live cases, a business user gets a polished journey and a GO / NO_G
 
 **Phase 9A recommendation: DELAY.**
 
+**Product-ready claim:** **NOT MADE.** This sprint does **not** declare the product ready. Findings are based on **REAL_USER_FLOW** runs (persisted Study / Research / Financial / Risk), not mocked UI.
+
+---
+
+## Validation Integrity Rule
+
+This sprint is a **product validation** exercise, not a test-data exercise.
+
+| Classification | Meaning | Acceptable for product validation? |
+|----------------|---------|-------------------------------------|
+| **REAL_USER_FLOW** | Created through the actual product workflow; uses real persisted Study / Research / Financial / Risk flow | Yes — primary evidence |
+| **SEEDED_VALIDATION** | Uses an approved isolated validation fixture; clearly marked; not a production customer workflow | Yes — only when labeled; cannot alone prove readiness |
+| **MOCK_ONLY** | UI-only simulation without real backend persistence | **No** — not acceptable as product validation |
+
+### Integrity outcome for this sprint
+
+| Case | Classification | Seeded? | Mock-only? |
+|------|----------------|---------|------------|
+| Case 1 SME (Riyadh coffee) | **REAL_USER_FLOW** | No | No |
+| Case 2 Industrial (Jeddah recycling) | **REAL_USER_FLOW** | No | No |
+| Case 3 Digital (SME accounting SaaS) | **REAL_USER_FLOW** | No | No |
+
+| Bucket | What was used |
+|--------|----------------|
+| Real workflow validation | All three cases below |
+| Seeded validation | **None** — no approved seed fixture was used for scorecard claims |
+| Mock-only | **None** — no UI-only simulation counted |
+
+**How REAL_USER_FLOW was proven (each case):**
+1. Account registration → project create → open AI study workspace in the live UI  
+2. Briefing submitted through the product composer (not a fixture inject)  
+3. Stage progression via product controls (archetype, discovery, evidence, assumptions, continue-to-risks/decision)  
+4. `GET` study API returned **persisted** study state (`created_at` / `updated_at`, `persisted_run_id`, research attempts, financials, verdict)  
+5. Research path included **live connector attempts** (e.g. GASTAT `mcp_live`) plus knowledge hits — product research pipeline  
+6. Harness did **not** call `seed-research-quality` or other seed endpoints (confirmed in driver source + study payload)
+
+**Honest caveats (still REAL_USER_FLOW, not MOCK_ONLY):**
+- A Playwright driver automated clicks; humans did not manually type — still the **same product APIs and persistence** as a user.  
+- Backend env had `ALLOW_TEST_SEED=1` available, but **no seed endpoint was invoked** for these cases.  
+- Assumptions often carry origin `knowledge_reference` (product knowledge packs). That is **product behaviour**, not an isolated validation fixture, and is documented under gaps where the pack misfits the business.
+
+Machine-readable proof: `docs/validation/evidence/integrity-classification.json` and `/opt/cursor/artifacts/product-validation/integrity-classification.json`.
+
 ---
 
 ## Baseline
@@ -31,7 +74,7 @@ Across three live cases, a business user gets a polished journey and a GO / NO_G
 | `main` at validation start | Phase **8C.2** `9f2eeb511e89b2f71ff3b060d650141c99695884` (PR #51 open) |
 | Validation branch | `cursor/product-validation-sprint-1831` |
 | Runtime | Local web `:3000` + API `:8000`, PostgreSQL connected, `GROQ_API_KEY` present |
-| Method | Real UI workflow (Playwright driver against live servers) — no mock-only verdicts |
+| Method | **REAL_USER_FLOW** via Playwright against live servers; no MOCK_ONLY verdicts; no SEEDED_VALIDATION scorecard claims |
 | Evidence | `/opt/cursor/artifacts/product-validation/` + `docs/validation/evidence/` |
 
 **Caveat:** Product behaviour validated on the **8C.3 tip**, not merged `main`. Commercial readiness claims for `main` require 8C.3 merge first.
@@ -47,11 +90,17 @@ Across three live cases, a business user gets a polished journey and a GO / NO_G
 | Evidence Trust | PASS | Sources visible; wrong/weak link to decision | **FAIL** |
 | Business Value | PASS | Verdict exists; not investable | **FAIL** |
 
-Harness “PASS” means panels/APIs appeared. Owner scorecard below uses **business trust**, not technical presence.
+Harness “PASS” means panels/APIs appeared. Owner scorecard below uses **business trust**, not technical presence.  
+**Do not read harness PASS as “product ready.”** Readiness is **not** claimed from mocked or seeded-only data.
 
 ---
 
 ## Case 1 — SME service (Riyadh specialty coffee)
+
+### Scenario source classification
+**REAL_USER_FLOW** — register → create project → AI study workspace → briefing → persisted research/financial/risk/report.  
+**Not** SEEDED_VALIDATION. **Not** MOCK_ONLY.  
+Persisted study evidence: `docs/validation/evidence/case1-sme-result.json` (+ study API dump under `/opt/cursor/artifacts/product-validation/case1-sme-study-api.json`).
 
 ### Business scenario
 Specialty coffee shop in Riyadh, sit-in + takeaway, young professionals, startup budget **~450,000 SAR**.
@@ -66,7 +115,6 @@ Specialty coffee shop in Riyadh, sit-in + takeaway, young professionals, startup
 Reached **Report Ready** with verdict **GO_WITH_CONDITIONS**.  
 Journey: Classification → Discovery → Assumptions → Financial → Risks → Decision → Report.  
 Research Quality health + evidence drawer opened (GASTAT preferred; freshness often unknown).
-
 ### Strengths
 - End-to-end path completes without crashing.
 - Clear journey chrome and bilingual surface (EN/AR exercised).
@@ -103,9 +151,12 @@ FAIL — “Why should I believe this?” fails once assumptions look like a con
 
 ## Case 2 — Industrial (Jeddah plastic recycling)
 
+### Scenario source classification
+**REAL_USER_FLOW** — same live product path and persisted Study/Research/Financial/Risk state.  
+**Not** SEEDED_VALIDATION. **Not** MOCK_ONLY.
+
 ### Business scenario
 Small PET/HDPE recycling + pelletizing plant in Jeddah industrial area, budget **~3.5M SAR**. Need supply chain, CAPEX, regulation, demand, ops risk.
-
 ### Input
 - Industry: industrial  
 - Investment: 3,500,000 SAR  
@@ -150,6 +201,10 @@ FAIL — NO_GO may be directionally safe, but for the **wrong quantitative reaso
 
 ## Case 3 — Digital (SME accounting SaaS / ZATCA)
 
+### Scenario source classification
+**REAL_USER_FLOW** — same live product path and persisted Study/Research/Financial/Risk state.  
+**Not** SEEDED_VALIDATION. **Not** MOCK_ONLY.
+
 ### Business scenario
 B2B SaaS accounting/invoicing for Saudi micro/SMEs with ZATCA e-invoicing readiness; budget **~800,000 SAR**.
 
@@ -192,6 +247,45 @@ FAIL for investment use — contradictory finance destroys “why believe this?�
 1. Consistency gate: do not show GO if payback never recovers while NPV is celebrated.  
 2. Force digital research prompts toward competitors, ZATCA, pricing pages.  
 3. Show unit economics (LTV/CAC) explicitly in report, not only NPV.
+
+---
+
+## Separated findings (integrity buckets)
+
+### A. Real workflow validation (REAL_USER_FLOW)
+
+All scorecard judgments in this report come from **real persisted product runs**:
+
+| Case | Study persistence | Research | Financial / Risk / Verdict |
+|------|-------------------|----------|----------------------------|
+| 1 SME | Persisted study id + timestamps | Live connector attempts + knowledge hits; RQ observability from research context | GO_WITH_CONDITIONS + NPV/IRR present |
+| 2 Industrial | Persisted study id + timestamps | Live connector attempts + knowledge hits; RQ observability present | NO_GO + financials present |
+| 3 Digital | Persisted study id + timestamps | Live connector attempts + blocked Monsha’at + knowledge hits; RQ present | GO_WITH_CONDITIONS + NPV present (IRR/payback inconsistent) |
+
+These runs validate **product behaviour**, including failures of trust/model-fit. Failures are product gaps, not test-harness gaps.
+
+### B. Seeded validation (SEEDED_VALIDATION)
+
+**None used for this sprint’s scorecard.**
+
+No approved isolated fixture was injected. No `seed-research-quality` (or similar) call was part of the case evidence.  
+Therefore readiness is **not** argued from seeded demos.
+
+### C. Mock-only (MOCK_ONLY)
+
+**None used.** No UI-only simulation without backend persistence was accepted.
+
+### D. Missing capabilities (documented only — not fixed)
+
+Documented product gaps discovered on REAL_USER_FLOW (do not treat as seeded/mock):
+
+1. Archetype/industry assumption schema misfit (F&B coffee → consulting drivers).  
+2. Investment budget not enforced as CAPEX constraint.  
+3. Research claim relevance too macro-generic for sector decisions.  
+4. Evidence gaps (e.g. pricing NOT_FOUND) do not hard-block optimistic GO.  
+5. Financial coherence failures (NPV vs IRR/payback; USD vs SAR).  
+6. Industrial unit economics not credible at plant scale.  
+7. Sector packs thin for F&B comps, industrial offtake, ZATCA/SaaS competitors.
 
 ---
 
@@ -241,7 +335,7 @@ FAIL for investment use — contradictory finance destroys “why believe this?�
 | Gate | Result |
 |------|--------|
 | PRODUCT VALIDATION STATUS | **COMPLETED** |
-| Baseline SHA |  (Phase 8C.3 tip) |
+| Baseline SHA | `93d6ed378b345565e7eee06a583ef836998e44a5` (Phase 8C.3 tip) |
 | Cases Tested | 3 |
 | Case 1 SME | **FAIL** |
 | Case 2 Industrial | **FAIL** |
@@ -250,6 +344,7 @@ FAIL for investment use — contradictory finance destroys “why believe this?�
 | Evidence Trust | **FAIL** |
 | User Experience | **PASS** |
 | Business Value | **FAIL** |
+| Scenario source classes | **REAL_USER_FLOW ×3** (0 seeded, 0 mock-only) |
 | Phase 9A | **DELAY** |
 
 ### Top Strengths
@@ -278,4 +373,5 @@ FAIL for investment use — contradictory finance destroys “why believe this?�
 ## STOP
 
 Do **not** start Phase 9A.  
+Do **not** claim product ready from MOCK_ONLY or seeded-only evidence.  
 Await owner review.

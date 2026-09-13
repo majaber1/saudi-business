@@ -2,8 +2,12 @@
  * Product Validation Sprint — browser driver (docs/validation artifact only).
  * Targets already-running local servers. Does not modify application code.
  *
- * Exercises real V2 study workflow for three business scenarios:
- * SME coffee (Riyadh), industrial recycling (Jeddah), digital SaaS (KSA).
+ * VALIDATION INTEGRITY:
+ * - Exercises REAL_USER_FLOW only (register → project → study → persisted API state).
+ * - Must NOT call seed endpoints or UI-only mocks for scorecard evidence.
+ * - SEEDED_VALIDATION / MOCK_ONLY results are not acceptable as product-ready proof.
+ *
+ * Cases: SME coffee (Riyadh), industrial recycling (Jeddah), digital SaaS (KSA).
  */
 import { expect, test, type Page } from "@playwright/test";
 import fs from "fs";
