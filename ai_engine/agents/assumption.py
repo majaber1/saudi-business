@@ -16,6 +16,10 @@ from ..archetypes import (
     detect_services_variant,
     normalize_archetype,
 )
+from ..hardening import (
+    assumption_requirement_explanations,
+    schema_archetype_for,
+)
 
 SYSTEM_PROMPT_AR = """
 أنت محلل افتراضات لدراسات الجدوى في السوق السعودي.
@@ -60,7 +64,7 @@ Output JSON:
 
 def run_assumptions(state: StudyState) -> StudyState:
     lang = state.language
-    archetype = normalize_archetype(state.profile.archetype if state.profile else "other")
+    raw_archetype = normalize_archetype(state.profile.archetype if state.profile else "other")
     services_variant = getattr(state.profile, "services_variant", None) if state.profile else None
     # Rebuild context from recent user messages for variant safety.
     context_bits = []
@@ -75,6 +79,8 @@ def run_assumptions(state: StudyState) -> StudyState:
             if len(context_bits) >= 3:
                 break
     context_text = "\n".join(reversed(context_bits))
+    # Hardening: map business archetype → schema id (e.g. marketplace→services).
+    archetype = schema_archetype_for(raw_archetype) if raw_archetype else "other"
     schema = get_assumption_schema(
         archetype, context_text=context_text, services_variant=services_variant
     )
@@ -92,6 +98,23 @@ def run_assumptions(state: StudyState) -> StudyState:
             f"- {f['key']}: {f['label_en']} ({f['input_type']}, unit={f.get('unit')})" for f in schema
         ),
     ]
+    try:
+        req = assumption_requirement_explanations(
+            raw_archetype or archetype, language=lang, context_text=context_text
+        )
+        context_parts.append(
+            "Requirement guidance (do not invent extra keys):\n"
+            + f"- Banner: {req.get('banner')}\n"
+            + f"- Critical keys: {', '.join(req.get('critical_keys') or [])}"
+        )
+        state.assumption_requirements = {
+            "archetype": req.get("archetype"),
+            "banner": req.get("banner"),
+            "critical_keys": req.get("critical_keys") or [],
+            "required_keys": req.get("required_keys") or [],
+        }
+    except Exception:
+        pass
     if state.structured_answers:
         context_parts.append(
             "Structured answers already collected:\n"

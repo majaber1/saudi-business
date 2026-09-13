@@ -10,6 +10,7 @@ SUPPORTED_ARCHETYPES = (
     "data_center",
     "industrial",
     "retail",
+    "fnb",
     "services",
     "other",
 )
@@ -20,6 +21,7 @@ ARCHETYPE_LABELS: dict[str, dict[str, str]] = {
     "data_center": {"en": "Data Center / Infrastructure", "ar": "مركز بيانات / بنية تحتية"},
     "industrial": {"en": "Industrial / Manufacturing", "ar": "صناعي / تصنيع"},
     "retail": {"en": "Retail / Trading", "ar": "تجزئة / تجارة"},
+    "fnb": {"en": "F&B / Restaurant / Café", "ar": "مطاعم ومقاهي"},
     "services": {"en": "Service Business", "ar": "أعمال خدمية"},
     "other": {"en": "Other", "ar": "أخرى"},
 }
@@ -28,6 +30,15 @@ ARCHETYPE_LABELS: dict[str, dict[str, str]] = {
 def classify_archetype(text: str) -> str:
     """Keyword heuristic to stabilize golden scenarios when LLM is unavailable."""
     t = (text or "").lower()
+
+    # F&B before retail/services — Validation Sprint: coffee was mis-schema'd as consulting.
+    fnb_kw = (
+        "coffee", "café", "cafe", "restaurant", "specialty coffee", "bakery", "catering",
+        "food truck", "cloud kitchen", "quick service", "qsr", "f&b", "fnb",
+        "قهوة", "مقهى", "مطعم", "مخبز", "مأكولات", "مشروبات", "مطبخ سحابي",
+    )
+    if any(k in t for k in fnb_kw):
+        return "fnb"
 
     # Strong SaaS signals win early so phrases like "not real estate" do not hijack.
     # Ignore negated mentions ("not a saas", "not saas").
@@ -84,6 +95,8 @@ def classify_archetype(text: str) -> str:
         "factory", "manufacturing", "industrial", "مصنع", "تصنيع",
         "production capacity", "raw material", "machinery", "plant utilization",
         "food plant", "manufacturing plant", "production plant",
+        "recycling", "recycle", "pellet", "plastic waste", "تدوير", "إعادة تدوير",
+        "waste processing", "معالجة نفايات",
     )
     if any(k in t for k in industrial_kw):
         return "industrial"
@@ -126,6 +139,12 @@ def normalize_archetype(value: str | None) -> str:
         "industrial": "industrial",
         "retail": "retail",
         "trading": "retail",
+        "fnb": "fnb",
+        "food_beverage": "fnb",
+        "food_and_beverage": "fnb",
+        "restaurant": "fnb",
+        "cafe": "fnb",
+        "coffee": "fnb",
         "service": "services",
         "services": "services",
         "service_business": "services",

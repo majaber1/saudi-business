@@ -551,6 +551,24 @@ def run_financial_analysis(state: StudyState) -> StudyState:
             },
         },
     }
+    # Hardening: attach financial trust gates (detect inconsistencies; never silent-fix).
+    try:
+        from ai_engine.hardening import evaluate_financial_trust_gates
+
+        arch = getattr(getattr(state, "profile", None), "archetype", None)
+        trust_gate = evaluate_financial_trust_gates(
+            financial_results=computed,
+            assumptions=state.assumptions,
+            archetype=arch,
+            language=lang or "en",
+        )
+        computed["trust_gates"] = trust_gate
+        if trust_gate.get("messages"):
+            computed["warnings"] = list(
+                dict.fromkeys([*(computed.get("warnings") or []), *trust_gate["messages"]])
+            )
+    except Exception:
+        pass
 
     assumptions_text = "\n".join(
         f"- {a.key}: {a.value}" for a in state.assumptions
