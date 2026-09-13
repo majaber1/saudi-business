@@ -6,7 +6,7 @@
 **Frozen base (main):** `3ac591229c47d6408c26311a2bbf8232803a8223`  
 **Previous hardening head (pre-rebase):** `dc0a7e792d2942db41f5d9f70958182fbc839286`  
 **Implementation head (pre-docs):** `69896abd324c6916492d2fc7a3eac6eb99eecd0e`  
-**New hardening head:** `32a711375fe7777855c1afb0cc08f3e60b170a29`  
+**New hardening head:** see PR #53 branch tip (implementation head `69896abd324c6916492d2fc7a3eac6eb99eecd0e`; docs commits may advance tip)
 **Rebase:** PASS (clean onto frozen main; no conflicts)  
 **Retarget:** PASS (PR base = `main`)  
 **Phase 9A:** DELAY (not started — no benchmarks / competitor scoring / market ranges)
