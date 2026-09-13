@@ -464,6 +464,45 @@ def execute_research(
             }
         )
 
+    # Phase 8C.2 — deterministic quality / ranking / conflict (no LLM, no extra I/O)
+    research_quality_payload: dict[str, Any] | None = None
+    try:
+        from ai_engine.research.quality import (
+            enrich_claims_with_quality,
+            evaluate_research_quality,
+        )
+
+        question_text = " | ".join(
+            [*(plan.gaps or []), *(plan.queries or [])]
+        ).strip()
+        quality = evaluate_research_quality(
+            claims,
+            question=question_text or None,
+            db=db,
+            owner_id=owner_id,
+        )
+        research_quality_payload = quality.to_public_dict()
+        enriched = enrich_claims_with_quality(claims, quality)
+        by_eid = {
+            str(item.get("evidence_id")): item.get("research_quality")
+            for item in enriched
+            if isinstance(item, dict) and item.get("evidence_id")
+        }
+        for claim, enriched_item in zip(claims, enriched):
+            rq = None
+            if isinstance(enriched_item, dict):
+                rq = enriched_item.get("research_quality")
+            if rq is None:
+                continue
+            try:
+                claim.research_quality = rq
+            except Exception:  # noqa: BLE001
+                pass
+        _ = by_eid  # reserved for future claim-id alignment helpers
+    except Exception as exc:  # noqa: BLE001
+        logger.info("research quality evaluation skipped: %s", exc)
+        errors.append(f"research_quality: {exc}")
+
     result = ResearchResult(
         plan=plan,
         status=status,  # type: ignore[arg-type]
@@ -475,6 +514,7 @@ def execute_research(
         errors=errors,
         attempts=attempts,
         market_research=market_payload,
+        research_quality=research_quality_payload,
     )
     _trace(
         "phase8a_research_result",
@@ -485,6 +525,7 @@ def execute_research(
             "blocked": blocked,
             "unavailable": unavailable,
             "market_status": (market_payload or {}).get("status"),
+            "quality_claim_type": (research_quality_payload or {}).get("claim_type"),
         },
     )
     _persist_research_run(

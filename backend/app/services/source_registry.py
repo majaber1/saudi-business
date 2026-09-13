@@ -66,6 +66,7 @@ SAUDI_AUTHORITIES: dict[str, tuple[str, str, str, str]] = {
     "modon": ("Saudi Authority for Industrial Cities and Technology Zones (MODON)", "الهيئة السعودية للمدن الصناعية وتقنية المعلومات (مدن)", "modon.gov.sa", "OFFICIAL_PRIMARY"),
     "balady": ("Ministry of Municipal, Rural Affairs and Housing (Balady)", "وزارة الشؤون البلدية والقروية والإسكان (بلدي)", "balady.gov.sa", "OFFICIAL_PRIMARY"),
     "sama": ("Saudi Central Bank (SAMA)", "البنك المركزي السعودي", "sama.gov.sa", "REGULATOR"),
+    "nca": ("National Cybersecurity Authority (NCA)", "الهيئة الوطنية للأمن السيبراني", "nca.gov.sa", "REGULATOR"),
     "cma": ("Capital Market Authority (CMA)", "هيئة السوق المالية", "cma.org.sa", "REGULATOR"),
     "sfda": ("Saudi Food and Drug Authority (SFDA)", "الهيئة العامة للغذاء والدواء", "sfda.gov.sa", "REGULATOR"),
     "vision_2030": ("Vision 2030", "رؤية 2030", "vision2030.gov.sa", "OFFICIAL_PRIMARY"),

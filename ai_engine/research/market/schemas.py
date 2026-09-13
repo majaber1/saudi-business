@@ -58,6 +58,9 @@ class MarketSignal:
     document_id: str | None = None
     chunk_id: str | None = None
     confidence: float = 0.8
+    # Phase 8C.2 — optional scope fields for precise conflict detection
+    geography: str | None = None
+    unit: str | None = None
 
     def to_public_dict(self) -> dict[str, Any]:
         return asdict(self)

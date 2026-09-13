@@ -74,6 +74,8 @@ def extract_market_signals(
             if key in seen:
                 continue
             seen.add(key)
+            geo = item.get("geography") or item.get("country") or item.get("geo")
+            unit = item.get("unit")
             signals.append(
                 MarketSignal(
                     metric=metric,
@@ -94,19 +96,49 @@ def extract_market_signals(
                     ),
                     chunk_id=str(item["chunk_id"]) if item.get("chunk_id") else None,
                     confidence=0.85 if source_type == "official" else 0.7,
+                    geography=str(geo).strip() if geo else None,
+                    unit=str(unit).strip() if unit else None,
                 )
             )
     return signals
 
 
+def _norm_geo(geo: str | None) -> str | None:
+    if geo is None or not str(geo).strip():
+        return None
+    g = str(geo).strip().upper()
+    if g in {"SA", "SAU", "KSA", "SAUDI", "SAUDI ARABIA", "KINGDOM OF SAUDI ARABIA"}:
+        return "SA"
+    return g
+
+
+def _norm_unit(unit: str | None) -> str | None:
+    if unit is None or not str(unit).strip():
+        return None
+    u = str(unit).strip().lower()
+    return {
+        "%": "percent",
+        "pct": "percent",
+        "percent": "percent",
+        "percentage": "percent",
+    }.get(u, u)
+
+
 def detect_signal_conflicts(signals: list[MarketSignal]) -> list[dict[str, Any]]:
-    """Flag same metric+period with differing values — never silent override."""
-    by_key: dict[tuple[str, str | None], list[MarketSignal]] = {}
+    """Flag comparable metric conflicts — never silent override.
+
+    Phase 8C.2: require matching period + geography + unit when present.
+    Different period/geography/unit is NOT a numeric conflict.
+    """
+    by_key: dict[tuple[str, str | None, str | None, str | None], list[MarketSignal]] = {}
     for s in signals:
-        by_key.setdefault((s.metric, s.period), []).append(s)
+        by_key.setdefault(
+            (s.metric, s.period, _norm_geo(s.geography), _norm_unit(s.unit)),
+            [],
+        ).append(s)
 
     conflicts: list[dict[str, Any]] = []
-    for (metric, period), group in by_key.items():
+    for (metric, period, geography, unit), group in by_key.items():
         values = {str(s.value) for s in group}
         if len(values) > 1:
             for s in group:
@@ -115,10 +147,13 @@ def detect_signal_conflicts(signals: list[MarketSignal]) -> list[dict[str, Any]]
                 {
                     "metric": metric,
                     "period": period,
+                    "geography": geography,
+                    "unit": unit,
                     "values": sorted(values),
                     "sources": [s.source for s in group],
                     "evidence_references": [s.evidence_reference for s in group],
                     "status": "CONFLICT",
+                    "candidates": [s.evidence_reference for s in group],
                 }
             )
     return conflicts

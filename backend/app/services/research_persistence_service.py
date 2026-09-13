@@ -521,8 +521,51 @@ def evidence_refs_from_claims(claims: Sequence[Any]) -> List[Dict[str, Any]]:
                 "chunk_id": getattr(c, "chunk_id", None),
                 "metric_key": getattr(c, "metric_key", None),
                 "origin": getattr(c, "origin", None),
+                "published_at": getattr(c, "published_at", None),
+                "authority_type": getattr(c, "authority_type", None),
+                "research_quality": getattr(c, "research_quality", None),
+                "geography": getattr(c, "geography", None),
+                "value": getattr(c, "value", None),
+                "unit": getattr(c, "unit", None),
+                "period": getattr(c, "period", None),
             }
             from_knowledge = bool(getattr(c, "from_knowledge", False))
+        provenance = {
+            "origin": d.get("origin"),
+            "metric_key": d.get("metric_key"),
+        }
+        # Phase 8C.2 — persist quality/ranking/conflict metadata without new columns.
+        rq = d.get("research_quality")
+        if isinstance(rq, dict) and rq:
+            provenance["research_quality"] = rq
+            evaluation = rq.get("evaluation") if isinstance(rq.get("evaluation"), dict) else {}
+            for key in (
+                "claim_type",
+                "authority_fit",
+                "relevance",
+                "freshness",
+                "geography_fit",
+                "quality_score",
+                "quality_state",
+                "ranking_position",
+                "selection_status",
+                "selection_reason_codes",
+                "policy_version",
+            ):
+                if evaluation.get(key) is not None:
+                    provenance[key] = evaluation.get(key)
+            if rq.get("conflict") is not None:
+                provenance["conflict"] = rq.get("conflict")
+            if rq.get("preferred_evidence_ids") is not None:
+                provenance["preferred_evidence_ids"] = rq.get("preferred_evidence_ids")
+        if d.get("geography") is not None:
+            provenance.setdefault("geography", d.get("geography"))
+        if d.get("value") is not None:
+            provenance.setdefault("value", d.get("value"))
+        if d.get("unit") is not None:
+            provenance.setdefault("unit", d.get("unit"))
+        if d.get("period") is not None:
+            provenance.setdefault("period", d.get("period"))
         refs.append(
             {
                 "source_key": d.get("source_key"),
@@ -539,10 +582,7 @@ def evidence_refs_from_claims(claims: Sequence[Any]) -> List[Dict[str, Any]]:
                 "source_name": d.get("source_name"),
                 "statement": d.get("statement"),
                 "from_knowledge": from_knowledge,
-                "provenance_json": {
-                    "origin": d.get("origin"),
-                    "metric_key": d.get("metric_key"),
-                },
+                "provenance_json": provenance,
             }
         )
     return refs
