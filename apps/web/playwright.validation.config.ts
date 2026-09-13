@@ -5,7 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
  * Does not start its own webServer (avoids wiping the live validation DB/session).
  */
 export default defineConfig({
-  testDir: "../../docs/validation",
+  testDir: "./e2e",
   testMatch: /product_validation_sprint\.spec\.ts/,
   timeout: 420000,
   expect: { timeout: 30000 },
