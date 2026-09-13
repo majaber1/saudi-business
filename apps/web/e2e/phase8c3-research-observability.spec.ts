@@ -47,21 +47,21 @@ async function seedResearchQuality(page: Page) {
   const studyId = match![1];
   expect(studyId).not.toBe("new");
 
-  const token = await page.evaluate(() => window.localStorage.getItem("sb_token"));
-  expect(token, "auth token missing").toBeTruthy();
-
-  const headers: Record<string, string> = {};
-  if (token && token !== "session") {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const res = await page.request.post(
-    `/api/backend/api/v2/studies/${studyId}/test/seed-research-quality`,
-    { headers },
-  );
+  // Cookie session auth is httpOnly (`sb_session`); seed via same-origin fetch
+  // so the browser sends credentials through the Next.js backend proxy.
+  const seedResult = await page.evaluate(async (id) => {
+    const res = await fetch(`/api/backend/api/v2/studies/${id}/test/seed-research-quality`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    const text = await res.text();
+    return { ok: res.ok, status: res.status, text };
+  }, studyId);
   expect(
-    res.ok(),
-    `seed failed status=${res.status()} body=${await res.text()}`,
+    seedResult.ok,
+    `seed failed status=${seedResult.status} body=${seedResult.text}`,
   ).toBeTruthy();
 
   await page.reload();
