@@ -412,6 +412,17 @@ class TestFreshness:
         assert state == "NOT_APPLICABLE"
         assert "regulation_age_not_decisive" in reasons
 
+    def test_f2_regulation_missing_published_is_unknown(self):
+        state, _, reasons = evaluate_freshness(
+            claim_type="CYBER_REGULATION",
+            published_at=None,
+            retrieved_at="2026-09-13",
+            as_of=AS_OF,
+        )
+        assert state == "UNKNOWN"
+        assert "published_at_missing" in reasons
+        assert state != "NOT_APPLICABLE"
+
     def test_g_future_date_not_current(self):
         state, _, reasons = evaluate_freshness(
             claim_type="INFLATION", published_at="2027-01-01", as_of=AS_OF
@@ -607,6 +618,12 @@ class TestConflict:
         assert len(result.conflicts) == 1
         assert result.conflicts[0].status == "UNRESOLVED"
         assert result.conflicts[0].preferred_evidence_ref is None
+        assert result.preferred_evidence_ids == []
+        by_id = {e.evidence_id: e for e in result.evaluations}
+        assert by_id["blog-a"].selection_status == "CONFLICT_UNRESOLVED"
+        assert by_id["blog-b"].selection_status == "CONFLICT_UNRESOLVED"
+        assert "blog-a" not in result.preferred_evidence_ids
+        assert "blog-b" not in result.preferred_evidence_ids
 
     def test_g_never_averaged(self):
         result = evaluate_research_quality(
@@ -1201,3 +1218,436 @@ class TestControlledScenarios:
         )
         assert status == "CONFLICT"
         assert conflicts
+
+class TestCorrectnessGate8C2:
+    """Independent review blockers — claim isolation, identity, IDs, unresolved safety."""
+
+    def test_mixed_claim_types_isolated_in_one_run(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="cpi",
+                    source_key="gastat",
+                    statement="Saudi CPI inflation 1.6%",
+                    metric_key="cpi_inflation",
+                    value=1.6,
+                    period="2026-08",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/cpi",
+                ),
+                _cand(
+                    evidence_id="fdi",
+                    source_key="misa",
+                    statement="Foreign direct investment (FDI) inflow reached 19",
+                    metric_key="fdi_inflow",
+                    value=19,
+                    unit="billion_sar",
+                    period="2025",
+                    published_at="2026-03-01",
+                    source_url="https://misa.gov.sa/en/fdi",
+                ),
+                _cand(
+                    evidence_id="price",
+                    source_key="market_blog",
+                    statement="Average meal pricing is 45 SAR",
+                    metric_key="meal_price",
+                    value=45,
+                    unit="sar",
+                    period="2026-08",
+                    published_at="2026-08-01",
+                    source_url="https://example.com/pricing",
+                ),
+            ],
+            question="Saudi CPI inflation | FDI investment inflow | meal pricing",
+            as_of=AS_OF,
+        )
+        by_id = {e.evidence_id: e for e in result.evaluations}
+        assert by_id["cpi"].claim_type == "INFLATION"
+        assert by_id["cpi"].authority_fit == "PRIMARY"
+        assert by_id["fdi"].claim_type == "INVESTMENT_FDI"
+        assert by_id["fdi"].authority_fit == "PRIMARY"
+        assert by_id["price"].claim_type == "PRICING"
+        assert "cpi" in result.preferred_evidence_ids
+        assert "fdi" in result.preferred_evidence_ids
+        assert "price" in result.preferred_evidence_ids
+        assert result.conflicts == []
+        assert result.claim_type == "UNKNOWN"
+
+    def test_unresolved_conflict_has_zero_preferred(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="a",
+                    source_key="blog_a",
+                    statement="CPI inflation 1.5%",
+                    metric_key="cpi_inflation",
+                    value=1.5,
+                    period="2026-08",
+                    published_at="2026-08-10",
+                    source_url="https://example.com/a",
+                ),
+                _cand(
+                    evidence_id="b",
+                    source_key="blog_b",
+                    statement="CPI inflation 1.9%",
+                    metric_key="cpi_inflation",
+                    value=1.9,
+                    period="2026-08",
+                    published_at="2026-08-11",
+                    source_url="https://example.com/b",
+                ),
+            ],
+            question="Saudi CPI inflation",
+            claim_type="INFLATION",
+            as_of=AS_OF,
+        )
+        assert result.conflicts[0].status == "UNRESOLVED"
+        assert result.conflicts[0].preferred_evidence_ref is None
+        assert result.preferred_evidence_ids == []
+        for e in result.evaluations:
+            assert e.selection_status == "CONFLICT_UNRESOLVED"
+            assert e.selection_status != "PREFERRED"
+        assert {e.evidence_id for e in result.evaluations} == {"a", "b"}
+
+    def test_spoofed_official_source_key_rejected(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="spoof",
+                    source_key="gastat",
+                    statement="Saudi CPI inflation 9%",
+                    metric_key="cpi_inflation",
+                    value=9.0,
+                    period="2026-08",
+                    published_at="2026-08-01",
+                    source_url="https://evil.example/cpi",
+                    trust_score=1.0,
+                    authority_type="PRIMARY",
+                )
+            ],
+            question="Saudi CPI",
+            claim_type="INFLATION",
+            as_of=AS_OF,
+        )
+        ev = result.evaluations[0]
+        assert ev.authority_fit != "PRIMARY"
+        blob = " ".join(ev.ranking_reason + ev.selection_reason_codes)
+        assert "SOURCE_IDENTITY_MISMATCH" in blob
+
+    def test_candidate_trust_score_cannot_self_elevate(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="boosted",
+                    source_key="random_blog",
+                    statement="CPI inflation 8%",
+                    metric_key="cpi_inflation",
+                    value=8.0,
+                    period="2026-08",
+                    published_at="2026-08-20",
+                    source_url="https://random.example/cpi",
+                    trust_score=1.0,
+                    quality_score=1.0,
+                ),
+                _cand(
+                    evidence_id="gastat-cpi",
+                    source_key="gastat",
+                    statement="Saudi CPI inflation 1.6%",
+                    metric_key="cpi_inflation",
+                    value=1.6,
+                    period="2026-08",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/cpi",
+                    trust_score=0.5,
+                ),
+            ],
+            question="Saudi CPI",
+            claim_type="INFLATION",
+            as_of=AS_OF,
+        )
+        assert result.preferred_evidence_ids[0] == "gastat-cpi"
+        by_id = {e.evidence_id: e for e in result.evaluations}
+        assert by_id["boosted"].authority_fit == "UNRELATED"
+        assert by_id["gastat-cpi"].authority_fit == "PRIMARY"
+
+    def test_candidate_authority_type_cannot_self_certify(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="self-cert",
+                    source_key="unknown_blog",
+                    statement="CPI is 9%",
+                    metric_key="cpi_inflation",
+                    value=9.0,
+                    period="2026-08",
+                    published_at="2026-08-01",
+                    source_url="https://random.example/cpi",
+                    trust_score=1.0,
+                    authority_type="PRIMARY",
+                ),
+                _cand(
+                    evidence_id="gastat-cpi",
+                    source_key="gastat",
+                    statement="Saudi CPI inflation 1.6%",
+                    metric_key="cpi_inflation",
+                    value=1.6,
+                    period="2026-08",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/cpi",
+                    trust_score=0.5,
+                ),
+            ],
+            question="Saudi CPI",
+            claim_type="INFLATION",
+            as_of=AS_OF,
+        )
+        by_id = {e.evidence_id: e for e in result.evaluations}
+        assert by_id["self-cert"].authority_fit == "UNRELATED"
+        assert result.preferred_evidence_ids[0] == "gastat-cpi"
+
+    def test_real_gastat_provenance_primary_for_cpi(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="gastat-real",
+                    source_key="gastat",
+                    statement="Saudi CPI inflation 1.6%",
+                    metric_key="cpi_inflation",
+                    value=1.6,
+                    period="2026-08",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/statistics-programs/cpi",
+                    document_id=str(uuid.uuid4()),
+                    chunk_id=str(uuid.uuid4()),
+                )
+            ],
+            question="Saudi CPI",
+            claim_type="INFLATION",
+            as_of=AS_OF,
+        )
+        assert result.evaluations[0].authority_fit == "PRIMARY"
+
+    def test_real_misa_provenance_primary_for_fdi(self):
+        result = evaluate_research_quality(
+            [
+                _cand(
+                    evidence_id="misa-real",
+                    source_key="misa",
+                    statement="Foreign direct investment (FDI) inflow 19",
+                    metric_key="fdi_inflow",
+                    value=19,
+                    period="2025",
+                    published_at="2026-03-01",
+                    source_url="https://misa.gov.sa/en/investment-statistics",
+                    document_id=str(uuid.uuid4()),
+                )
+            ],
+            question="Saudi FDI investment",
+            claim_type="INVESTMENT_FDI",
+            as_of=AS_OF,
+        )
+        assert result.evaluations[0].authority_fit == "PRIMARY"
+
+    def test_same_url_different_metrics_unique_deterministic_ids(self):
+        from ai_engine.research.quality.engine import candidate_evidence_id
+
+        url = "https://www.stats.gov.sa/en/indicators"
+        cpi = {
+            "source_url": url,
+            "metric_key": "cpi_inflation",
+            "value": 1.6,
+            "period": "2026-08",
+            "geography": "SA",
+            "unit": "percent",
+            "statement": "CPI 1.6%",
+        }
+        gdp = {
+            "source_url": url,
+            "metric_key": "gdp_growth",
+            "value": 3.2,
+            "period": "2026-08",
+            "geography": "SA",
+            "unit": "percent",
+            "statement": "GDP 3.2%",
+        }
+        id_cpi = candidate_evidence_id(cpi)
+        id_gdp = candidate_evidence_id(gdp)
+        assert id_cpi != id_gdp
+        assert candidate_evidence_id(cpi) == id_cpi
+
+    def test_same_document_different_claims_unique_ids(self):
+        from ai_engine.research.quality.engine import candidate_evidence_id
+
+        doc = "doc-shared-1"
+        a = {
+            "document_id": doc,
+            "metric_key": "cpi_inflation",
+            "value": 1.6,
+            "period": "2026-08",
+            "geography": "SA",
+            "unit": "percent",
+            "statement": "CPI claim",
+        }
+        b = {
+            "document_id": doc,
+            "metric_key": "gdp_growth",
+            "value": 3.2,
+            "period": "2026-08",
+            "geography": "SA",
+            "unit": "percent",
+            "statement": "GDP claim",
+        }
+        assert candidate_evidence_id(a) != candidate_evidence_id(b)
+
+    def test_claim_level_ids_keep_conflict_grouping(self):
+        url = "https://www.stats.gov.sa/en/cpi-page"
+        result = evaluate_research_quality(
+            [
+                {
+                    "source_key": "blog_a",
+                    "source_type": "official",
+                    "statement": "CPI inflation 1.5%",
+                    "metric_key": "cpi_inflation",
+                    "value": 1.5,
+                    "period": "2026-08",
+                    "geography": "SA",
+                    "unit": "percent",
+                    "published_at": "2026-08-10",
+                    "source_url": url,
+                },
+                {
+                    "source_key": "blog_b",
+                    "source_type": "official",
+                    "statement": "CPI inflation 1.9%",
+                    "metric_key": "cpi_inflation",
+                    "value": 1.9,
+                    "period": "2026-08",
+                    "geography": "SA",
+                    "unit": "percent",
+                    "published_at": "2026-08-11",
+                    "source_url": url,
+                },
+            ],
+            question="Saudi CPI",
+            claim_type="INFLATION",
+            as_of=AS_OF,
+        )
+        assert len(result.evaluations) == 2
+        assert result.evaluations[0].evidence_id != result.evaluations[1].evidence_id
+        assert len(result.conflicts) == 1
+        assert result.conflicts[0].status == "UNRESOLVED"
+        assert result.preferred_evidence_ids == []
+
+    def test_fresh_session_persistence_of_gate_states(self):
+        db = _session()
+        try:
+            user = _user(db)
+            study_id = f"s-8c2-gate-{uuid.uuid4().hex[:8]}"
+            cands = [
+                _cand(
+                    evidence_id="cpi",
+                    source_key="gastat",
+                    statement="Saudi CPI inflation 1.6%",
+                    metric_key="cpi_inflation",
+                    value=1.6,
+                    period="2026-08",
+                    published_at="2026-08-15",
+                    source_url="https://www.stats.gov.sa/en/cpi",
+                ),
+                _cand(
+                    evidence_id="fdi",
+                    source_key="misa",
+                    statement="FDI inflow 19",
+                    metric_key="fdi_inflow",
+                    value=19,
+                    unit="billion_sar",
+                    period="2025",
+                    published_at="2026-03-01",
+                    source_url="https://misa.gov.sa/en/fdi",
+                ),
+                _cand(
+                    evidence_id="spoof",
+                    source_key="gastat",
+                    statement="Fake CPI 9%",
+                    metric_key="cpi_inflation",
+                    value=9.0,
+                    period="2026-08",
+                    published_at="2026-08-01",
+                    source_url="https://evil.example/cpi",
+                    trust_score=1.0,
+                    authority_type="PRIMARY",
+                ),
+            ]
+            quality = evaluate_research_quality(
+                cands,
+                question="Saudi CPI | FDI",
+                as_of=AS_OF,
+            )
+            claims = []
+            for item in enrich_claims_with_quality(cands[:2], quality):
+                claims.append(
+                    ResearchClaim(
+                        statement=str(item.get("statement") or ""),
+                        source_type="official",
+                        source_url=item.get("source_url"),
+                        confidence=0.9,
+                        source_key=item.get("source_key"),
+                        metric_key=item.get("metric_key"),
+                        value=item.get("value"),
+                        unit=item.get("unit") or "percent",
+                        period=item.get("period"),
+                        published_at=item.get("published_at"),
+                        geography="SA",
+                        research_quality=item.get("research_quality"),
+                    )
+                )
+            plan = ResearchPlan(
+                study_id=study_id,
+                gaps=["mixed CPI and FDI"],
+                sources=[
+                    ResearchSourceRef(
+                        source_key="gastat",
+                        connector_id="live.gastat",
+                        reason="cpi",
+                    )
+                ],
+                queries=["CPI", "FDI"],
+            )
+            result = ResearchResult(
+                plan=plan,
+                status="complete",
+                claims=claims,
+                knowledge_hits=0,
+                research_quality=quality.to_public_dict(),
+            )
+            run = rps.persist_research_result(
+                db,
+                study_id=study_id,
+                owner_id=user.id,
+                user_id=str(user.id),
+                result=result,
+                research_type="gap_research",
+            )
+            assert run is not None
+            run_id = run.id
+            db.commit()
+        finally:
+            db.close()
+
+        db2 = _session()
+        try:
+            run2 = (
+                db2.query(models.ResearchRun)
+                .filter(models.ResearchRun.id == run_id)
+                .one()
+            )
+            rq = (run2.result_json or {}).get("research_quality") or {}
+            preferred = rq.get("preferred_evidence_ids") or []
+            assert "cpi" in preferred
+            assert "fdi" in preferred
+            evals = {e["evidence_id"]: e for e in (rq.get("evaluations") or [])}
+            assert evals["cpi"]["claim_type"] == "INFLATION"
+            assert evals["fdi"]["claim_type"] == "INVESTMENT_FDI"
+            assert evals["spoof"]["authority_fit"] != "PRIMARY"
+        finally:
+            db2.close()

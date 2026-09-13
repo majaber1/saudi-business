@@ -190,4 +190,19 @@ External live GASTAT/MISA connectors may be BLOCKED_EXTERNAL depending on enviro
 ## 13. STOP gates
 
 - Do not merge automatically  
-- Do not start Phase 8C.3  
+- Do not start Phase 8C.3
+
+## Correctness Fix Gate (follow-up)
+
+Status: **PASS**
+
+Blockers closed:
+1. Claim-type / ranking isolation per claim group (no CPI↔FDI cross-ranking)
+2. UNRESOLVED conflicts clear preferred (`CONFLICT_UNRESOLVED`, empty `preferred_evidence_ids`)
+3. Official source identity validated via Source Registry domains (`SOURCE_IDENTITY_MISMATCH`)
+4. Candidate `trust_score` / `authority_type` cannot self-elevate
+5. Regulation with missing `published_at` → freshness `UNKNOWN` (not `NOT_APPLICABLE`)
+6. Claim-level deterministic evidence IDs (same URL/doc, different claims → distinct IDs)
+
+Retest: full backend **901 / 901 PASS** (was 889/889 baseline).
+

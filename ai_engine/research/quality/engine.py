@@ -45,6 +45,7 @@ QualityState = Literal["HIGH", "MEDIUM", "LOW", "UNKNOWN"]
 SelectionStatus = Literal[
     "PREFERRED",
     "ALTERNATE",
+    "CONFLICT_UNRESOLVED",
     "REJECTED_INELIGIBLE",
     "REJECTED_AI_ASSUMPTION",
     "UNRANKED",
@@ -89,6 +90,129 @@ _SAUDI_OFFICIAL = {
     "nca",
     "saudi_open_data",
 }
+
+# Quality-layer keys for governed authorities (aligned with Source Registry).
+_GOVERNED_SOURCE_KEYS = frozenset(_SAUDI_OFFICIAL)
+
+# Registry key <-> quality source_key aliases (registry uses gastat/misa/monshaat).
+_REGISTRY_TO_QUALITY = {
+    "gastat": "gastat",
+    "misa": "misa",
+    "monshaat": "monshaat",
+    "sama": "sama",
+    "zatca": "zatca",
+    "nca": "nca",
+    "saudi_open_data": "saudi_open_data",
+}
+_QUALITY_TO_REGISTRY = {v: k for k, v in _REGISTRY_TO_QUALITY.items()}
+
+# Domain fallbacks drawn from Source Registry / seed sources (not a second registry).
+_GOVERNED_DOMAINS: dict[str, tuple[str, ...]] = {
+    "gastat": ("stats.gov.sa",),
+    "misa": ("misa.gov.sa",),
+    "monshaat": ("monshaat.gov.sa",),
+    "sama": ("sama.gov.sa",),
+    "zatca": ("zatca.gov.sa",),
+    "nca": ("nca.gov.sa",),
+    "saudi_open_data": ("data.gov.sa",),
+}
+
+
+def _load_registry_domains() -> dict[str, tuple[str, ...]]:
+    """Merge domains from the existing Source Registry path when available."""
+    domains: dict[str, set[str]] = {k: set(v) for k, v in _GOVERNED_DOMAINS.items()}
+    try:
+        from app.services.source_registry import SAUDI_AUTHORITIES  # type: ignore
+
+        for reg_key, (_en, _ar, domain, _level) in SAUDI_AUTHORITIES.items():
+            qkey = _REGISTRY_TO_QUALITY.get(reg_key, reg_key)
+            if qkey in _GOVERNED_SOURCE_KEYS and domain:
+                domains.setdefault(qkey, set()).add(str(domain).lower())
+    except Exception:
+        pass
+    try:
+        from app.services.source_registry_service import SEED_SOURCES  # type: ignore
+
+        for row in SEED_SOURCES:
+            key = str(row.get("key") or "").strip().lower()
+            base = row.get("base_url") or row.get("base_url")
+            if not key or not base:
+                continue
+            qkey = _REGISTRY_TO_QUALITY.get(key, key)
+            if qkey not in _GOVERNED_SOURCE_KEYS:
+                continue
+            host = urlparse(str(base)).hostname or ""
+            host = host.lower()
+            if host.startswith("www."):
+                host = host[4:]
+            if host:
+                domains.setdefault(qkey, set()).add(host)
+    except Exception:
+        pass
+    return {k: tuple(sorted(v)) for k, v in domains.items() if v}
+
+
+def _hostname(url: Any) -> str | None:
+    if not url:
+        return None
+    try:
+        host = (urlparse(str(url)).hostname or "").lower()
+    except Exception:
+        return None
+    if host.startswith("www."):
+        host = host[4:]
+    return host or None
+
+
+def resolve_governed_source_identity(candidate: dict[str, Any]) -> tuple[str | None, list[str]]:
+    """Server-validate official source identity; never trust raw source_key alone.
+
+    Returns (validated_quality_source_key, reason_codes).
+    """
+    reasons: list[str] = []
+    claimed_raw = candidate.get("source_key")
+    claimed = str(claimed_raw).strip().lower() if claimed_raw else None
+    url = candidate.get("official_url") or candidate.get("source_url") or candidate.get("url")
+    source_type = str(candidate.get("source_type") or candidate.get("evidence_type") or "official")
+
+    matched_quality: str | None = None
+    # Prefer existing Source Registry classifier when importable.
+    try:
+        from app.services.source_registry import classify_authority  # type: ignore
+
+        st = "ai_inference" if source_type in _AI_TYPES else source_type
+        _level, reg_key = classify_authority(str(url) if url else None, st)
+        if reg_key:
+            matched_quality = _REGISTRY_TO_QUALITY.get(reg_key, reg_key)
+    except Exception:
+        matched_quality = None
+
+    if matched_quality is None:
+        host = _hostname(url)
+        if host:
+            for qkey, domains in _load_registry_domains().items():
+                for domain in domains:
+                    d = domain.lower()
+                    if host == d or host.endswith("." + d):
+                        matched_quality = qkey
+                        break
+                if matched_quality:
+                    break
+
+    # Candidate authority_type must never self-certify.
+    # (Ignored by design — validated key alone drives authority.)
+
+    if claimed and claimed in _GOVERNED_SOURCE_KEYS:
+        if matched_quality != claimed:
+            reasons.append("SOURCE_IDENTITY_MISMATCH")
+            return matched_quality, reasons
+        return claimed, reasons
+
+    # Non-governed claimed keys cannot elevate; URL match may still validate.
+    if matched_quality:
+        return matched_quality, reasons
+    return None, reasons
+
 _AUTHORITY_RANK = {
     "PRIMARY": 5,
     "SECONDARY": 4,
@@ -364,9 +488,10 @@ def evaluate_freshness(
     regulation = claim_type in _REGULATION
     if pub is None:
         reasons.append("published_at_missing")
+        # Missing publication/effective date is UNKNOWN for all claim types,
+        # including regulation. retrieved_at must never substitute.
         if regulation:
-            reasons.append("regulation_age_not_decisive")
-            return "NOT_APPLICABLE", None, reasons
+            reasons.append("regulation_publication_unknown")
         return "UNKNOWN", None, reasons
     pub_iso = pub.date().isoformat()
     if pub > now:
@@ -389,15 +514,59 @@ def evaluate_freshness(
 
 
 def candidate_evidence_id(candidate: dict[str, Any]) -> str:
-    return str(
-        candidate.get("evidence_id")
-        or candidate.get("id")
-        or candidate.get("idempotency_key")
-        or candidate.get("official_url")
-        or candidate.get("source_url")
-        or candidate.get("document_id")
-        or "unknown"
-    )
+    """Preserve durable IDs; otherwise fingerprint claim-level identity.
+
+    Same URL/document with different metrics/claims must not collide.
+    Same claim fields always yield the same deterministic ID.
+    """
+    for key in ("evidence_id", "id", "idempotency_key"):
+        raw = candidate.get(key)
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if text and text.lower() != "unknown":
+            return text
+
+    geo = candidate.get("geography") or candidate.get("country") or candidate.get("geo")
+    geo_n = str(geo).strip().upper() if geo is not None and str(geo).strip() else ""
+    if geo_n in {"SAU", "KSA", "SAUDI", "SAUDI ARABIA", "KINGDOM OF SAUDI ARABIA"}:
+        geo_n = "SA"
+    unit = candidate.get("unit")
+    unit_n = ""
+    if unit is not None and str(unit).strip():
+        u = str(unit).strip().lower()
+        unit_n = {
+            "%": "percent",
+            "pct": "percent",
+            "percent": "percent",
+            "percentage": "percent",
+            "sar": "sar",
+            "riyal": "sar",
+        }.get(u, u)
+
+    def _tok(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    parts = [
+        _tok(candidate.get("source_key")).lower(),
+        _tok(candidate.get("document_id") or candidate.get("source_document_id")),
+        _tok(candidate.get("chunk_id")),
+        _tok(
+            candidate.get("official_url")
+            or candidate.get("source_url")
+            or candidate.get("url")
+        ),
+        _tok(candidate.get("metric_key") or candidate.get("metric")).lower(),
+        _tok(candidate.get("period")),
+        geo_n,
+        unit_n,
+        _tok(candidate.get("value")),
+        _tok(candidate.get("statement")),
+    ]
+    digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:24]
+    return f"ev_{digest}"
 
 
 def is_eligible_evidence(candidate: dict[str, Any]) -> tuple[bool, list[str]]:
@@ -539,8 +708,17 @@ def compose_quality_score(components: QualityComponents) -> tuple[int, QualitySt
 
 
 def source_trust_bonus(candidate: dict[str, Any]) -> float:
-    trust = candidate.get("trust_score")
-    quality = candidate.get("source_quality_score", candidate.get("quality_score"))
+    """Use only server-side registry trust metadata — never candidate self-scores."""
+    # Candidate trust_score / quality_score / authority_type are untrusted.
+    if not (
+        candidate.get("from_registry")
+        or candidate.get("registry_verified")
+        or candidate.get("from_source_registry")
+        or candidate.get("registry_trust_score") is not None
+    ):
+        return 0.0
+    trust = candidate.get("registry_trust_score")
+    quality = candidate.get("registry_quality_score")
     try:
         t = float(trust) if trust is not None else 0.0
     except (TypeError, ValueError):
@@ -571,16 +749,37 @@ def evaluate_candidate(
         research_type=str(candidate["research_type"]) if candidate.get("research_type") is not None else None,
     )
     eligible, elig_reasons = is_eligible_evidence(candidate)
-    source_key = str(candidate["source_key"]).strip().lower() if candidate.get("source_key") else None
+    claimed_key = str(candidate["source_key"]).strip().lower() if candidate.get("source_key") else None
+    validated_key, identity_reasons = resolve_governed_source_identity(candidate)
+    # Authority uses only server-validated identity for governed sources.
+    # Candidate authority_type / trust_score never elevate.
+    # Non-governed claimed keys still classify as UNRELATED (not UNKNOWN).
+    if validated_key:
+        source_key = validated_key
+    elif claimed_key and claimed_key not in _GOVERNED_SOURCE_KEYS:
+        source_key = claimed_key
+    else:
+        source_key = None
     authority = authority_fit_for_source(claim_type=ctype, source_key=source_key, eligible=eligible)
-    relevance: RelevanceState = evaluate_relevance(claim_type=ctype, candidate=candidate, question=question) if eligible else "NONE"
+    # Relevance EXACT checks should use validated key; temporarily expose it.
+    cand_for_relevance = dict(candidate)
+    if validated_key:
+        cand_for_relevance["source_key"] = validated_key
+    elif claimed_key and claimed_key in _GOVERNED_SOURCE_KEYS and "SOURCE_IDENTITY_MISMATCH" in identity_reasons:
+        cand_for_relevance["source_key"] = ""
+    relevance: RelevanceState = evaluate_relevance(claim_type=ctype, candidate=cand_for_relevance, question=question) if eligible else "NONE"
     freshness, pub_iso, fresh_reasons = evaluate_freshness(
         claim_type=ctype,
         published_at=candidate.get("published_at"),
         retrieved_at=candidate.get("retrieved_at") or candidate.get("retrieved_date"),
         as_of=as_of,
     )
-    geography = evaluate_geography(candidate=candidate, expected_geography=expected_geography)
+    cand_for_geo = dict(candidate)
+    if validated_key:
+        cand_for_geo["source_key"] = validated_key
+    elif claimed_key and claimed_key in _GOVERNED_SOURCE_KEYS and "SOURCE_IDENTITY_MISMATCH" in identity_reasons:
+        cand_for_geo["source_key"] = ""
+    geography = evaluate_geography(candidate=cand_for_geo, expected_geography=expected_geography)
     if not eligible:
         provenance: ProvenanceState = "INVALID" if "invalid_url" in elig_reasons else "MISSING"
         selection: SelectionStatus = "REJECTED_AI_ASSUMPTION" if "ai_assumption_ineligible" in elig_reasons else "REJECTED_INELIGIBLE"
@@ -591,7 +790,11 @@ def evaluate_candidate(
         comps = _ranks(authority, relevance, freshness, geography, provenance)
         score, qstate = compose_quality_score(comps)
     comps = _ranks(authority, relevance, freshness, geography, provenance)
-    reasons = list(elig_reasons) + list(fresh_reasons) + [f"authority_fit={authority}", f"relevance={relevance}", f"geography={geography}"]
+    reasons = list(elig_reasons) + list(identity_reasons) + list(fresh_reasons) + [f"authority_fit={authority}", f"relevance={relevance}", f"geography={geography}"]
+    if claimed_key and claimed_key != validated_key:
+        reasons.append(f"claimed_source_key={claimed_key}")
+    if validated_key:
+        reasons.append(f"validated_source_key={validated_key}")
     retrieved = candidate.get("retrieved_at") or candidate.get("retrieved_date")
     return EvidenceQualityResult(
         evidence_id=eid,
@@ -607,8 +810,8 @@ def evaluate_candidate(
         quality_components=comps,
         selection_status=selection,
         ranking_reason=reasons,
-        selection_reason_codes=list(elig_reasons),
-        source_key=source_key,
+        selection_reason_codes=list(dict.fromkeys(list(elig_reasons) + list(identity_reasons))),
+        source_key=claimed_key or validated_key,
         published_at=pub_iso,
         retrieved_at=str(retrieved) if retrieved is not None else None,
     )
@@ -697,12 +900,13 @@ def detect_and_resolve_conflicts(candidates: list[dict[str, Any]], evaluations: 
         metric, period, geography, unit = comparable_key(c)
         if not metric or period is None or geography is None:
             continue
-        groups.setdefault((metric, period, geography, unit or ""), []).append(eid)
+        # Comparable conflicts only within the same claim_type (+ metric/scope).
+        groups.setdefault((ev.claim_type, metric, period, geography, unit or ""), []).append(eid)
     results: list[ConflictResult] = []
     for key, eids in groups.items():
         if len(eids) < 2:
             continue
-        metric, period, geography, unit = key
+        _claim_type, metric, period, geography, unit = key
         values = [cand_by_id[eid].get("value") for eid in eids]
         distinct: list[Any] = []
         for v in values:
@@ -789,37 +993,85 @@ def evaluate_research_quality(
     if as_of_dt.tzinfo is None:
         as_of_dt = as_of_dt.replace(tzinfo=timezone.utc)
     candidates = [_as_candidate(c, question=question) for c in evidence_candidates]
-    resolved: ClaimType = claim_type or classify_claim_type(text=question, metric_key=metric_key)
-    if resolved in {"UNKNOWN", "OTHER"} and candidates:
-        resolved = classify_claim_type(
-            text=str(candidates[0].get("statement") or question or ""),
-            metric_key=str(candidates[0]["metric_key"]) if candidates[0].get("metric_key") is not None else metric_key,
+    explicit_claim_type = claim_type
+    evaluations: list[EvidenceQualityResult] = []
+    for c in candidates:
+        if explicit_claim_type is not None:
+            ctype: ClaimType = explicit_claim_type
+        else:
+            ctype = classify_claim_type(
+                text=str(c.get("statement") or c.get("question") or question or ""),
+                metric_key=(
+                    str(c["metric_key"])
+                    if c.get("metric_key") is not None
+                    else metric_key
+                ),
+                research_type=str(c["research_type"]) if c.get("research_type") is not None else None,
+            )
+        evaluations.append(
+            evaluate_candidate(
+                c,
+                claim_type=ctype,
+                question=question,
+                expected_geography=expected_geography,
+                as_of=as_of_dt,
+            )
         )
-    evaluations = [
-        evaluate_candidate(c, claim_type=resolved, question=question, expected_geography=expected_geography, as_of=as_of_dt)
-        for c in candidates
-    ]
-    indexed = list(zip(evaluations, candidates))
-    indexed.sort(key=lambda pair: ranking_tuple(pair[0], pair[1]), reverse=True)
-    ranked: list[EvidenceQualityResult] = []
+
+    # Rank and prefer only within comparable claim groups.
+    def _group_key(ev: EvidenceQualityResult, cand: dict[str, Any]) -> tuple:
+        # Ranking groups are claim-comparable: claim_type + metric.
+        # Geography/period are ranking signals and conflict-scope fields, not
+        # separate preferred pools (preserves single-claim backward compat).
+        if explicit_claim_type is not None:
+            return ("__explicit__",)
+        metric, _period, _geography, _unit = comparable_key(cand)
+        return (ev.claim_type, metric or "")
+
     preferred_ids: list[str] = []
-    position = 1
-    for ev, _c in indexed:
-        ev.ranking_position = position if ev.eligible else None
-        if ev.eligible:
-            if not preferred_ids:
+    by_group: dict[tuple, list[tuple[EvidenceQualityResult, dict[str, Any]]]] = {}
+    for ev, cand in zip(evaluations, candidates):
+        by_group.setdefault(_group_key(ev, cand), []).append((ev, cand))
+
+    for _gk, pairs in by_group.items():
+        pairs.sort(key=lambda pair: ranking_tuple(pair[0], pair[1]), reverse=True)
+        group_preferred = False
+        position = 1
+        for ev, _c in pairs:
+            if not ev.eligible:
+                ev.ranking_position = None
+                continue
+            ev.ranking_position = position
+            position += 1
+            if not group_preferred:
                 ev.selection_status = "PREFERRED"
-                ev.selection_reason_codes = list(dict.fromkeys(ev.selection_reason_codes + ["top_ranked_eligible"]))
+                ev.selection_reason_codes = list(
+                    dict.fromkeys(ev.selection_reason_codes + ["top_ranked_eligible"])
+                )
                 preferred_ids.append(ev.evidence_id)
+                group_preferred = True
             elif ev.selection_status == "UNRANKED":
                 ev.selection_status = "ALTERNATE"
-                ev.selection_reason_codes = list(dict.fromkeys(ev.selection_reason_codes + ["ranked_alternate"]))
-            position += 1
-        ranked.append(ev)
+                ev.selection_reason_codes = list(
+                    dict.fromkeys(ev.selection_reason_codes + ["ranked_alternate"])
+                )
+
+    # Stable overall order by ranking tuple (eligible first).
+    indexed = list(zip(evaluations, candidates))
+    indexed.sort(key=lambda pair: ranking_tuple(pair[0], pair[1]), reverse=True)
+    ranked = [ev for ev, _c in indexed]
+
     conflicts = detect_and_resolve_conflicts(candidates, ranked)
     for conflict in conflicts:
         if conflict.status == "RESOLVED_PREFERRED_SOURCE" and conflict.preferred_evidence_ref:
-            preferred_ids = [conflict.preferred_evidence_ref]
+            # Update preferred within this conflict group only — do not wipe other claim groups.
+            preferred_ids = [
+                p
+                for p in preferred_ids
+                if p not in conflict.candidates or p == conflict.preferred_evidence_ref
+            ]
+            if conflict.preferred_evidence_ref not in preferred_ids:
+                preferred_ids.append(conflict.preferred_evidence_ref)
             for ev in ranked:
                 if ev.evidence_id == conflict.preferred_evidence_ref:
                     ev.selection_status = "PREFERRED"
@@ -830,6 +1082,28 @@ def evaluate_research_quality(
                         ev.selection_status = "ALTERNATE"
                     if "conflict_non_preferred" not in ev.selection_reason_codes:
                         ev.selection_reason_codes.append("conflict_non_preferred")
+        elif conflict.status == "UNRESOLVED":
+            preferred_ids = [p for p in preferred_ids if p not in conflict.candidates]
+            for ev in ranked:
+                if ev.evidence_id in conflict.candidates:
+                    ev.selection_status = "CONFLICT_UNRESOLVED"
+                    ev.selection_reason_codes = list(
+                        dict.fromkeys(
+                            ev.selection_reason_codes
+                            + ["conflict_unresolved", "no_preferred_fact"]
+                        )
+                    )
+
+    types = {ev.claim_type for ev in ranked}
+    if explicit_claim_type is not None:
+        resolved: ClaimType = explicit_claim_type
+    elif len(types) == 1:
+        resolved = next(iter(types))
+    elif not types:
+        resolved = classify_claim_type(text=question, metric_key=metric_key)
+    else:
+        resolved = "UNKNOWN"
+
     return QualityEvaluationResult(
         policy_version=RESEARCH_QUALITY_POLICY_VERSION,
         claim_type=resolved,
@@ -869,7 +1143,7 @@ def enrich_claims_with_quality(claims: Sequence[Any], quality: QualityEvaluation
         ev = by_id.get(eid)
         base["research_quality"] = {
             "policy_version": quality.policy_version,
-            "claim_type": quality.claim_type,
+            "claim_type": (ev.claim_type if ev else quality.claim_type),
             "evaluation": ev.to_public_dict() if ev else None,
             "conflict": conflict_by_eid.get(eid),
             "preferred_evidence_ids": list(quality.preferred_evidence_ids),
