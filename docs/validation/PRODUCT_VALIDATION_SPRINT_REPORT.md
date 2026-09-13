@@ -241,7 +241,7 @@ FAIL for investment use — contradictory finance destroys “why believe this?�
 | Gate | Result |
 |------|--------|
 | PRODUCT VALIDATION STATUS | **COMPLETED** |
-| Baseline SHA | `93d6ed378b345565e7eee06a583ef836998e44a5` (8C.3 tip) |
+| Baseline SHA |  (Phase 8C.3 tip) |
 | Cases Tested | 3 |
 | Case 1 SME | **FAIL** |
 | Case 2 Industrial | **FAIL** |
