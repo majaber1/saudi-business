@@ -94,3 +94,11 @@ Without replacing those layers, without migrations, and without Phase 9A.
 ## STOP
 
 Awaiting owner review. Do **not** start Phase 9A.
+
+## Follow-up (API choke points)
+
+Wired explorer recommendations into `backend/app/api/v2/study_engine.py` without migrations:
+
+- Archetype confirm attaches why-required banners on discovery questions
+- `approve_stage("assumptions")` blocks when critical archetype keys are empty
+- Study payloads expose `assumption_requirements`, `sector_pack`, and `decision_safety`
