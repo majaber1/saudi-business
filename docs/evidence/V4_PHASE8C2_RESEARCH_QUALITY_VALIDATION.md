@@ -206,3 +206,41 @@ Blockers closed:
 
 Retest: full backend **901 / 901 PASS** (was 889/889 baseline).
 
+---
+
+## Final Correctness Gate (fact-scope + knowledge provenance)
+
+Status: **PASS**
+
+SHAs (do not self-reference a docs-only tip as `tested_code_sha`):
+
+| Field | Value |
+|-------|-------|
+| `baseline_sha` | `1a594a4a21ade09a2d8f6055cfe797ff603ee615` |
+| `tested_code_sha` | `d7df0edd5e910a194f1b3b9225310d04b61e61a6` |
+| `final_head_sha` | tip after this docs sync |
+| GitHub Actions run | `34771225935` (mandatory jobs PASS) |
+
+Mandatory GitHub CI: Backend tests, Frontend build, Alembic/Postgres, Docker Compose, Secret scan — all **PASS**.
+
+Platform noise (not chased): Vercel `feasibilityos-ai` preview provisioning/quota failure.
+
+Blockers closed:
+1. **P0 Fact-scope preferred grouping** — preferred/conflict groups use `claim_type + metric + period + geography + unit + methodology/scope`; explicit claim_type no longer collapses periods/geographies
+2. **P1 Knowledge provenance without URL** — official identity from governed URL domain **or** server connector trust **or** tenant-owned persisted KnowledgeDocument/Chunk; client ids/keys alone never elevate
+
+Mandatory regressions added in `tests/test_phase8c2_research_quality.py`:
+- Independent period / geography / unit preferred evidence
+- Explicit claim_type multi-period safety
+- Multiple independent conflict groups
+- GASTAT/MISA persisted no-URL identity
+- Fake document / cross-tenant / claimed-key mismatch / URL-vs-document mismatch
+
+Counts:
+- Phase 8C.2: **67 / 67** (was 54)
+- Full backend: **914 / 914** (was 901)
+
+Architecture: no migration, no second Source Registry, no Financial/Risk/Decision/Report drift.
+
+STOP: Do not merge PR #50. Do not start Phase 8C.3.
+

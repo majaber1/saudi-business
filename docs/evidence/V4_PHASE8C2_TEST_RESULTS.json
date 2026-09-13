@@ -1,93 +1,108 @@
 {
   "phase": "8C.2",
-  "title": "Source Ranking, Freshness & Conflict Intelligence",
+  "title": "Source Ranking, Freshness & Conflict Intelligence \u2014 Final Correctness Gate",
   "policy_version": "8c2-v1",
+  "baseline_sha": "1a594a4a21ade09a2d8f6055cfe797ff603ee615",
   "baseline_main": "151d8b6b8d09ed59764f74a5c04689983bfbe906",
+  "tested_code_sha": "d7df0edd5e910a194f1b3b9225310d04b61e61a6",
+  "final_head_sha": "d7df0edd5e910a194f1b3b9225310d04b61e61a6",
   "branch": "cursor/v4-phase8c2-research-quality-1831",
   "migration_required": false,
-  "timestamp_utc": "2026-09-13T11:42:42.457854+00:00",
+  "timestamp_utc": "2026-09-13T17:27:14.219466+00:00",
+  "test_timestamp": "2026-09-13T17:27:14.219466+00:00",
+  "test_command": "env -u DATABASE_URL pytest tests/test_phase8c2_research_quality.py -q ; env -u DATABASE_URL pytest tests/ -q",
+  "github_actions_run_id": "34771225935",
+  "github_actions_url": "https://github.com/majaber1/saudi-business/actions/runs/34771225935",
+  "github_ci_status": "PASS",
+  "github_ci_mandatory": {
+    "backend_tests": "PASS",
+    "frontend_build": "PASS",
+    "alembic_postgres": "PASS",
+    "docker_compose": "PASS",
+    "secret_scan": "PASS"
+  },
   "suites": {
     "phase8c2_research_quality": {
-      "passed": 54,
+      "passed": 67,
       "failed": 0,
-      "total": 54
+      "total": 67
     },
-    "phase8a_8b_8c1_8c2_combined": {
-      "passed": 100,
+    "phase8a_8b_8c1": {
+      "passed": 58,
       "failed": 0,
-      "total": 100
+      "total": 58,
+      "note": "8C.1+8B+8A combined subset"
     },
-    "phase7a_7b_misa_knowledge_financial_trust_8c1_8c2": {
-      "passed": 128,
+    "phase7a_7b_misa_knowledge_financial_trust_alembic": {
+      "passed": 77,
       "failed": 0,
-      "total": 128
-    },
-    "alembic_related": {
-      "passed": 17,
-      "failed": 0,
-      "total": 17
+      "total": 77
     },
     "full_backend": {
-      "passed": 901,
+      "passed": 914,
       "failed": 0,
-      "total": 901,
-      "note": "Ran with env -u DATABASE_URL; includes correctness-gate follow-up"
+      "total": 914,
+      "note": "Ran with env -u DATABASE_URL; includes fact-scope + knowledge provenance regressions"
     }
   },
   "gates": {
-    "claim_type_authority": "PASS",
-    "source_ranking": "PASS",
+    "fact_scope_grouping": "PASS",
+    "independent_period_preference": "PASS",
+    "independent_geography_preference": "PASS",
+    "explicit_claim_type_multi_period_safety": "PASS",
+    "multiple_conflict_groups_safety": "PASS",
+    "knowledge_provenance_identity": "PASS",
+    "gastat_persisted_no_url_identity": "PASS",
+    "misa_persisted_no_url_identity": "PASS",
+    "fake_document_spoof_protection": "PASS",
+    "cross_tenant_knowledge_identity": "PASS",
+    "source_mismatch_detection": "PASS",
+    "url_vs_document_mismatch": "PASS",
     "freshness": "PASS",
-    "evidence_quality": "PASS",
-    "conflict_detection": "PASS",
-    "conflict_resolution": "PASS",
-    "unresolved_conflict_safety": "PASS",
+    "conflict_safety": "PASS",
     "no_fabricated_evidence": "PASS",
     "research_persistence": "PASS",
     "tenant_isolation": "PASS",
     "api_compatibility": "PASS",
-    "architecture_scope": "PASS",
-    "security": "PASS",
-    "gastat_scenario": "PASS",
-    "misa_scenario": "PASS",
     "mixed_claim_isolation": "PASS",
     "source_identity_validation": "PASS",
     "candidate_trust_injection_protection": "PASS",
     "regulation_unknown_freshness": "PASS",
-    "evidence_identity": "PASS"
+    "evidence_identity": "PASS",
+    "architecture_scope": "PASS"
   },
   "changed_paths": [
-    "ai_engine/research/quality/",
-    "ai_engine/research/schemas.py",
+    "ai_engine/research/quality/engine.py",
     "ai_engine/research/service.py",
-    "ai_engine/research/market/market_signal.py",
-    "ai_engine/research/market/schemas.py",
-    "backend/app/services/research_persistence_service.py",
     "tests/test_phase8c2_research_quality.py",
     "docs/evidence/V4_PHASE8C2_RESEARCH_QUALITY_VALIDATION.md",
     "docs/evidence/V4_PHASE8C2_TEST_RESULTS.json"
   ],
-  "head_sha": "2c5c04e2a31e483cf19a87fedef2f54ce2e24ea5",
   "pr": "https://github.com/majaber1/saudi-business/pull/50",
   "status": "PASS",
   "correctness_gate": "PASS",
   "full_backend": {
-    "passed": 901,
+    "passed": 914,
     "failed": 0,
-    "total": 901,
+    "total": 914,
     "command": "env -u DATABASE_URL pytest tests/ -q"
   },
   "phase8c2": {
-    "passed": 54,
+    "passed": 67,
     "failed": 0,
-    "total": 54
+    "total": 67
   },
   "blockers_fixed": [
+    "fact_scope_preferred_grouping",
+    "knowledge_provenance_identity_without_url",
     "claim_type_per_candidate_group",
     "unresolved_conflict_clears_preferred",
     "server_validated_source_identity",
     "candidate_trust_cannot_self_elevate",
     "regulation_missing_published_at_unknown",
     "claim_level_deterministic_evidence_ids"
+  ],
+  "known_platform_noise": [
+    "Vercel feasibilityos-ai preview provisioning/quota failure on dpl_8JuemmpPpLQvxvidHeX64P2VoRwV \u2014 not chased in application code"
   ]
 }
