@@ -33,6 +33,7 @@ export default defineConfig({
         DATABASE_URL: "sqlite:///./playwright_wave65.db",
         JWT_SECRET: "test-secret-at-least-32-characters-long",
         PYTHONPATH: "backend",
+        ALLOW_TEST_SEED: "1",
       },
     },
     {

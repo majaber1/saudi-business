@@ -1,0 +1,80 @@
+{
+  "phase": "8C.3",
+  "title": "Research Quality Observability & Evidence UX",
+  "observability_version": "8c3-v1",
+  "baseline_main": "9f2eeb511e89b2f71ff3b060d650141c99695884",
+  "tested_code_sha": "7ac0c6ae138e7ea2da8d44c5591f100b1c3358a9",
+  "final_head_sha": "945ab3b5a1f250565e84900cd99fb8a84a5e5231",
+  "branch": "cursor/v4-phase8c3-research-observability-1831",
+  "pr": "https://github.com/majaber1/saudi-business/pull/51",
+  "migration_required": false,
+  "timestamp_utc": "2026-09-13T18:50:00+00:00",
+  "architecture_compliance": "PASS",
+  "suites": {
+    "phase8c3_research_observability": {
+      "passed": 7,
+      "failed": 0,
+      "total": 7
+    },
+    "phase8c2_research_quality": {
+      "passed": 67,
+      "failed": 0,
+      "total": 67
+    },
+    "phase8c1_8c2_8c3_combined": {
+      "passed": 89,
+      "failed": 0,
+      "total": 89
+    },
+    "named_phase8a_8b_knowledge_misa_8c": {
+      "passed": 166,
+      "failed": 0,
+      "total": 166
+    },
+    "full_backend": {
+      "passed": 921,
+      "failed": 0,
+      "total": 921
+    },
+    "frontend_build": {
+      "passed": 1,
+      "failed": 0,
+      "total": 1
+    },
+    "playwright_phase8c3_e2e": {
+      "passed": 1,
+      "failed": 0,
+      "total": 1
+    }
+  },
+  "gates": {
+    "research_quality_ux": "PASS",
+    "claim_quality_indicators": "PASS",
+    "preferred_evidence_ux": "PASS",
+    "alternate_evidence_ux": "PASS",
+    "conflict_ux": "PASS",
+    "unresolved_conflict_safety": "PASS",
+    "freshness_ux": "PASS",
+    "knowledge_provenance_ux": "PASS",
+    "official_identity_safety": "PASS",
+    "arabic": "PASS",
+    "english": "PASS",
+    "browser_e2e": "PASS",
+    "refresh_persistence": "PASS",
+    "tenant_isolation": "PASS",
+    "api_compatibility": "PASS",
+    "phase8c2_regression": "67/67",
+    "full_backend": "921/921",
+    "frontend": "PASS",
+    "migration": "NONE"
+  },
+  "screenshots": [
+    "phase8c3-observability-en.png",
+    "phase8c3-observability-ar.png"
+  ],
+  "limitations": [
+    "Observability requires research_quality on study research_context (live research path or ALLOW_TEST_SEED seed).",
+    "No fabricated numeric AI confidence percentage; category counts only."
+  ],
+  "architecture_deviations": []
+}

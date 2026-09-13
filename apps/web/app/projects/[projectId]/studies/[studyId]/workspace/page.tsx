@@ -10,6 +10,11 @@ import { DiscoveryQuestionsPanel } from "@/components/study/DiscoveryQuestionsPa
 import { AssumptionReviewPanel } from "@/components/study/AssumptionReviewPanel";
 import { KnowledgePanel } from "@/components/study/KnowledgePanel";
 import { StudyJourneyNav, StudyLateStagePanels } from "@/components/study/StudyJourneyPanels";
+import {
+  ResearchQualityClaimsList,
+  ResearchQualitySummary,
+  type ResearchQualityObservability,
+} from "@/components/study/ResearchQualityObservability";
 import { formatIrrMetric, formatPaybackMetric } from "@/lib/financialDisplay";
 import { archetypeLabel } from "@/lib/archetypeLabels";
 
@@ -92,6 +97,7 @@ type StudyInfo = {
   error: string | null;
   research_status?: string | null;
   research_context?: Record<string, unknown> | null;
+  research_quality_observability?: ResearchQualityObservability | null;
   research_attempts?: Record<string, unknown>[] | null;
   market_research_context?: {
     status?: string;
@@ -632,6 +638,10 @@ export default function StudyWorkspacePage() {
   const assumptions = study?.assumptions || [];
   const financial = study?.financial_results || null;
   const missing = study?.profile?.missing_information || [];
+  const researchObservability: ResearchQualityObservability | null =
+    study?.research_quality_observability ||
+    ((study?.research_context as { research_quality_observability?: ResearchQualityObservability } | null)
+      ?.research_quality_observability ?? null);
 
   return (
     <main className="container-page flex h-[calc(100vh-4rem)] flex-col py-4" data-testid="v2-study-workspace">
@@ -705,6 +715,13 @@ export default function StudyWorkspacePage() {
 
 
       <KnowledgePanel ar={ar} apiBase={API_BASE} getToken={getToken} />
+
+      {researchObservability ? (
+        <div className="mb-3 space-y-3" data-testid="research-quality-observability">
+          <ResearchQualitySummary observability={researchObservability} ar={ar} />
+          <ResearchQualityClaimsList observability={researchObservability} ar={ar} />
+        </div>
+      ) : null}
 
       {study?.phase === "ARCHETYPE_CLASSIFICATION" && (
         <ArchetypeClassificationPanel
