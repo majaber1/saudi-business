@@ -145,4 +145,16 @@ None material. ResearchRun is persistence/audit state only (not a workflow engin
 - Live MCP document IDs that are not Knowledge rows are stored only as unresolved provenance (FK left null) — never invented Knowledge IDs.
 - Phase 8C.2 (ranking / freshness / conflict) not started.
 
+## 11. CI fix — latest-run determinism (post-PR)
+
+**Failure:** `TestResearchRunCRUD::test_b_multiple_runs_preserved` — `load_latest_run()` returned the first run when two runs shared the same SQLite `created_at` second, because tie-break used UUID `id DESC` (non-chronological).
+
+**Fix:**
+- Order: `started_at DESC NULLS LAST`, `created_at DESC`, `id DESC`
+- Application-side `created_at` / `started_at` / `updated_at` with microsecond UTC on `create_run`
+- `_load_study` memory fallback also hydrates from `ResearchRun`
+- Phase 8C.1 test setup registers `study_engine` tables before `create_all`
+
+**Canonical import:** `app.services.research_persistence_service` first; `backend.app...` only on `ImportError`. Identity test asserts the same `ResearchRun` ORM class/table.
+
 **STOP — do not start Phase 8C.2 automatically.**
