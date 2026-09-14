@@ -2,7 +2,7 @@
 
 **Branch:** `cursor/coffee-operating-economics-1831`  
 **Base:** `cursor/coffee-research-depth-parity-1831`  
-**SHA:** `21b09e2b7ab36259fef33af9c36932b4c79421d4`  
+**SHA:** `41cd737`  
 **DO NOT MERGE**
 
 ## Verdict: PARTIAL
@@ -18,7 +18,7 @@ Material labor / COGS% / seats→covers / fit-out / working capital remain **UNK
 
 ## 1. Branch / SHA
 
-Latest: `21b09e2` on `cursor/coffee-operating-economics-1831`.
+Latest: `41cd737` on `cursor/coffee-operating-economics-1831`.
 
 ## 2. Sources added or enabled (evidence-class strategy — not coffee allowlist patches)
 
