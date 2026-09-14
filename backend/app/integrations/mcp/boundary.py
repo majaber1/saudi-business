@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from app.integrations.sources.base import SourceConnector
+from app.integrations.sources.commercial_discovery import CommercialDiscoveryConnector
 from app.integrations.sources.fixture_connector import FixtureSaudiOpenDataConnector
 from app.integrations.sources.gastat import GastatConnector
 from app.integrations.sources.misa import MisaConnector
@@ -50,6 +51,8 @@ def connector_for_key(source_key: str) -> SourceConnector:
         return GastatConnector(enabled=True)
     if key == "misa":
         return MisaConnector(enabled=True)
+    if key in {"commercial_discovery", "commercial", "osm_nominatim"}:
+        return CommercialDiscoveryConnector(enabled=True)
     if key in {"saudi_open_data", "fixture"}:
         return FixtureSaudiOpenDataConnector(enabled=True)
     raise ValueError(f"unsupported source_key for MCP boundary: {source_key}")

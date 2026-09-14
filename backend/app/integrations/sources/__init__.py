@@ -12,6 +12,7 @@ from .validation import validate_source_document, provenance_is_complete
 from .fixture_connector import FixtureSaudiOpenDataConnector
 from .gastat import GastatConnector
 from .misa import MisaConnector
+from .commercial_discovery import CommercialDiscoveryConnector
 from .knowledge_adapter import ingest_source_document
 
 __all__ = [
@@ -28,5 +29,6 @@ __all__ = [
     "FixtureSaudiOpenDataConnector",
     "GastatConnector",
     "MisaConnector",
+    "CommercialDiscoveryConnector",
     "ingest_source_document",
 ]

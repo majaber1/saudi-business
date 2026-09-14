@@ -124,22 +124,65 @@ def _claims_from_mcp_documents(
         if not isinstance(doc, dict):
             continue
         title = str(doc.get("title") or doc.get("source_name") or source_key).strip()
-        preview = str(doc.get("content_preview") or "").strip()
+        preview = str(
+            doc.get("content")
+            or doc.get("content_preview")
+            or ""
+        ).strip()
         url = doc.get("canonical_url") or doc.get("url")
         statement = f"{title}: {preview}" if preview else title
         if not statement:
             continue
+        # Commercial discovery needs longer statements for competitor name extraction.
+        limit = 2500 if source_key == "commercial_discovery" else 500
+        meta = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
         claims.append(
             ResearchClaim(
-                statement=statement[:500],
-                source_type="official",
+                statement=statement[:limit],
+                source_type="official" if source_key in {"gastat", "misa"} else "document",
                 source_url=url,
                 retrieved_date=retrieved,
-                confidence=0.85,
+                confidence=float(doc.get("confidence") or 0.85),
                 metric_key=title,
                 source_key=source_key,
                 document_id=str(doc.get("source_id") or doc.get("id") or "") or None,
                 origin="research",
+                geography=str(doc.get("geography") or "") or None,
+            )
+        )
+        # Stash competitor_name on statement when present in metadata (via title already)
+        _ = meta
+    return claims
+
+
+def _claims_from_typed_docs(source_key: str, typed_docs: list[Any]) -> list[ResearchClaim]:
+    """Build richer claims from normalized SourceDocument objects."""
+    retrieved = datetime.now(timezone.utc).date().isoformat()
+    claims: list[ResearchClaim] = []
+    for doc in typed_docs or []:
+        title = str(getattr(doc, "title", None) or source_key)
+        content = str(getattr(doc, "content", None) or "")
+        url = getattr(doc, "canonical_url", None) or getattr(doc, "url", None)
+        meta = getattr(doc, "metadata", None) or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        competitor_name = meta.get("competitor_name")
+        statement = f"{title}: {content}" if content else title
+        if competitor_name and competitor_name not in statement:
+            statement = f"Competitor / local venue evidence: {competitor_name}. {statement}"
+        limit = 2500 if source_key == "commercial_discovery" else 800
+        claims.append(
+            ResearchClaim(
+                statement=statement[:limit],
+                source_type="official" if source_key in {"gastat", "misa"} else "document",
+                source_url=str(url) if url else None,
+                retrieved_date=retrieved,
+                confidence=float(getattr(doc, "confidence", None) or 0.7),
+                metric_key=title,
+                source_key=source_key,
+                document_id=str(getattr(doc, "source_id", None) or "") or None,
+                origin="research",
+                geography=str(getattr(doc, "geography", None) or "") or None,
             )
         )
     return claims
@@ -152,13 +195,11 @@ def _live_fetch(
     try:
         from backend.app.integrations.mcp.boundary import (
             connector_for_key,
-            source_fetch_payload,
             source_status_payload,
         )
     except ImportError:
         from app.integrations.mcp.boundary import (  # type: ignore
             connector_for_key,
-            source_fetch_payload,
             source_status_payload,
         )
 
@@ -179,28 +220,20 @@ def _live_fetch(
         attempt["outcome"] = "unavailable"
         return [], attempt, []
 
-    raw = source_fetch_payload(source_key, {"query": query} if query else {})
-    attempt["fetch_ok"] = bool(raw.get("ok"))
-    if not raw.get("ok"):
-        attempt["outcome"] = "fetch_failed"
-        attempt["error"] = raw.get("error") or raw.get("detail")
-        return [], attempt, []
-
-    documents = raw.get("documents") or []
-    claims = _claims_from_mcp_documents(
-        source_key, documents if isinstance(documents, list) else []
-    )
-    attempt["outcome"] = "ok" if claims else "empty"
-    attempt["claim_count"] = len(claims)
-    attempt["document_count"] = len(documents) if isinstance(documents, list) else 0
-
     typed_docs: list[Any] = []
     try:
         conn = connector_for_key(source_key)
         typed_docs = list(conn.retrieve(query=query) or [])
     except Exception as exc:  # noqa: BLE001
-        logger.info("typed retrieve for ingest skipped: %s", exc)
+        attempt["outcome"] = "fetch_failed"
+        attempt["error"] = str(exc)
+        return [], attempt, []
 
+    claims = _claims_from_typed_docs(source_key, typed_docs)
+    attempt["fetch_ok"] = True
+    attempt["outcome"] = "ok" if claims else "empty"
+    attempt["claim_count"] = len(claims)
+    attempt["document_count"] = len(typed_docs)
     return claims, attempt, typed_docs
 
 
@@ -315,6 +348,9 @@ def execute_research(
     knowledge_context: dict[str, Any] | None = None,
     project_id: str | None = None,
     user_id: str | None = None,
+    sector: str = "",
+    geography: str = "Saudi Arabia",
+    business_idea: str = "",
 ) -> ResearchResult:
     """
     Knowledge-first research execution.
@@ -370,7 +406,10 @@ def execute_research(
             db=db,
             study_id=plan.study_id,
         )
-        if k_claims:
+        # Commercial discovery must always attempt live multi-source search for depth.
+        # Knowledge hits alone are not sufficient research breadth for competitors/location.
+        always_live = src.source_key == "commercial_discovery"
+        if k_claims and not always_live:
             knowledge_hits += len(k_claims)
             claims.extend(k_claims)
             attempts.append(
@@ -382,9 +421,26 @@ def execute_research(
                 }
             )
             continue
+        if k_claims and always_live:
+            knowledge_hits += len(k_claims)
+            claims.extend(k_claims)
+            attempts.append(
+                {
+                    "source_key": src.source_key,
+                    "outcome": "knowledge_hit_plus_live",
+                    "claim_count": len(k_claims),
+                    "path": "knowledge",
+                }
+            )
 
         try:
-            live_claims, attempt, typed_docs = _live_fetch(src.source_key, query=query)
+            # Prefer multi-query commercial depth when available
+            live_query = query
+            if src.source_key == "commercial_discovery" and plan.queries:
+                live_query = " | ".join(plan.queries[:6])
+            live_claims, attempt, typed_docs = _live_fetch(
+                src.source_key, query=live_query
+            )
             attempts.append(attempt)
             if attempt.get("outcome") in {"unavailable", "fetch_failed"}:
                 unavailable.append(src.source_key)
@@ -428,11 +484,12 @@ def execute_research(
             market_result_to_research_claims,
         )
 
+        idea = business_idea or (" | ".join(plan.gaps[:3]) if plan.gaps else "")
         market = execute_market_research(
             study_id=plan.study_id,
-            business_idea=" | ".join(plan.gaps[:3]) if plan.gaps else "",
-            sector="",
-            geography="Saudi Arabia",
+            business_idea=idea,
+            sector=sector or "",
+            geography=geography or "Saudi Arabia",
             gaps=list(plan.gaps),
             evidence_items=evidence_items_from_research_claims(claims),
             use_cache=True,
@@ -548,8 +605,18 @@ def research_gaps(
     knowledge_context: dict[str, Any] | None = None,
     project_id: str | None = None,
     user_id: str | None = None,
+    sector: str = "",
+    geography: str = "Saudi Arabia",
+    business_idea: str = "",
 ) -> ResearchResult:
-    plan = build_research_plan(study_id=study_id, gaps=gaps, queries=queries)
+    plan = build_research_plan(
+        study_id=study_id,
+        gaps=gaps,
+        queries=queries,
+        sector=sector,
+        geography=geography,
+        business_idea=business_idea,
+    )
     return execute_research(
         plan,
         owner_id=owner_id,
@@ -557,6 +624,9 @@ def research_gaps(
         knowledge_context=knowledge_context,
         project_id=project_id,
         user_id=user_id,
+        sector=sector,
+        geography=geography,
+        business_idea=business_idea,
     )
 
 

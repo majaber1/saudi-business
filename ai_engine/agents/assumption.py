@@ -354,6 +354,105 @@ def run_assumptions(state: StudyState) -> StudyState:
 
     assumptions = list(seeded.values())
     assumptions = _apply_knowledge_refs(assumptions, getattr(state, "knowledge_context", None) or {})
+
+    # Evidence-backed SYSTEM_ESTIMATE fill for UNKNOWN operating keys (never invent).
+    try:
+        from ai_engine.research.market.operating_estimates import (
+            apply_estimates_to_assumptions,
+            synthesize_operating_estimates,
+        )
+
+        evidence_items: list[dict] = []
+        for c in state.claims or []:
+            if hasattr(c, "model_dump"):
+                evidence_items.append(c.model_dump())
+            elif isinstance(c, dict):
+                evidence_items.append(c)
+            else:
+                evidence_items.append(
+                    {
+                        "statement": getattr(c, "statement", ""),
+                        "source_url": getattr(c, "source_url", None),
+                        "source_key": getattr(c, "source_key", None),
+                        "document_id": getattr(c, "document_id", None),
+                    }
+                )
+        mr = getattr(state, "market_research_context", None) or {}
+        if isinstance(mr, dict):
+            for est in mr.get("operating_estimates") or []:
+                if isinstance(est, dict) and est.get("key"):
+                    # Prefer precomputed market estimates
+                    pass
+            for loc in mr.get("location_economics") or []:
+                if isinstance(loc, dict):
+                    evidence_items.append(
+                        {
+                            "statement": str(loc.get("notes") or loc.get("factor") or ""),
+                            "source_url": loc.get("source_url"),
+                            "source_key": loc.get("source_key"),
+                            "document_id": loc.get("document_id"),
+                            "geography": loc.get("geography"),
+                            "evidence_kind": "location_context",
+                        }
+                    )
+            for p in mr.get("pricing_signals") or []:
+                if isinstance(p, dict) and p.get("price") is not None:
+                    evidence_items.append(
+                        {
+                            "statement": (
+                                f"Price signal: {p.get('item')} = {p.get('price')} "
+                                f"{p.get('currency') or 'SAR'}"
+                            ),
+                            "source_url": p.get("source_url"),
+                            "source_key": p.get("source_key"),
+                            "document_id": p.get("document_id"),
+                        }
+                    )
+
+        geo = "Saudi Arabia"
+        if isinstance(state.structured_answers, dict):
+            city = str(state.structured_answers.get("city") or "").strip()
+            if city:
+                geo = f"{city}, Saudi Arabia"
+
+        precomputed = []
+        if isinstance(mr, dict):
+            for est in mr.get("operating_estimates") or []:
+                if not isinstance(est, dict):
+                    continue
+                from ai_engine.research.market.operating_estimates import OperatingEstimate
+
+                try:
+                    precomputed.append(
+                        OperatingEstimate(
+                            key=str(est["key"]),
+                            value=str(est["value"]),
+                            low=est.get("low"),
+                            base=est.get("base"),
+                            high=est.get("high"),
+                            currency=str(est.get("currency") or "SAR"),
+                            geography=str(est.get("geography") or geo),
+                            as_of=str(est.get("as_of") or ""),
+                            confidence=float(est.get("confidence") or 0.4),
+                            reasoning=str(est.get("reasoning") or ""),
+                            source_urls=list(est.get("source_urls") or []),
+                        )
+                    )
+                except Exception:  # noqa: BLE001
+                    continue
+        estimates = precomputed or synthesize_operating_estimates(
+            evidence_items=evidence_items, geography=geo
+        )
+        assumptions = apply_estimates_to_assumptions(assumptions, estimates)
+        if estimates:
+            state.research_context = dict(state.research_context or {})
+            state.research_context["operating_estimates_applied"] = [
+                e.to_public_dict() for e in estimates
+            ]
+    except Exception as exc:  # noqa: BLE001
+        logger = __import__("logging").getLogger(__name__)
+        logger.info("operating estimate synthesis skipped: %s", exc)
+
     leaked = assert_no_saas_leakage(archetype, [a.key for a in assumptions])
     if leaked:
         assumptions = [a for a in assumptions if a.key not in leaked]

@@ -70,6 +70,24 @@ SEED_SOURCES: List[Dict[str, Any]] = [
         "connector_config": {"live": True, "retrieval": "official_public_html"},
     },
     {
+        "key": "commercial_discovery",
+        "name": "Commercial Discovery — OSM + web + encyclopedia",
+        "description": (
+            "Multi-source commercial discovery for competitors, location economics, "
+            "and pricing/rent signals (Nominatim, DuckDuckGo HTML, Wikipedia, Overpass)."
+        ),
+        "source_type": "open_data",
+        "authority_type": "COMMERCIAL_SOURCE",
+        "base_url": "https://www.openstreetmap.org",
+        "trust_score": 0.7,
+        "connector_type": "live",
+        "enabled": True,
+        "refresh_policy": "on_demand",
+        "languages": ["ar", "en"],
+        "sectors": ["local_business", "fnb", "retail", "services"],
+        "connector_config": {"live": True, "retrieval": "multi_source_governed"},
+    },
+    {
         "key": "sama",
         "name": "SAMA — Saudi Central Bank",
         "description": "Monetary policy, banking regulation, financial sector data.",
@@ -284,6 +302,15 @@ def connector_for_source(row: models.KnowledgeSource):
         return GastatConnector(enabled=bool(row.enabled))
     if row.key == "misa" and row.connector_type in {"live", "misa"}:
         return MisaConnector(enabled=bool(row.enabled))
+    if row.key == "commercial_discovery" and row.connector_type in {
+        "live",
+        "commercial_discovery",
+    }:
+        from app.integrations.sources.commercial_discovery import (
+            CommercialDiscoveryConnector,
+        )
+
+        return CommercialDiscoveryConnector(enabled=bool(row.enabled))
     if row.connector_type == "fixture" and row.key == "saudi_open_data":
         return FixtureSaudiOpenDataConnector(enabled=bool(row.enabled))
     return None
@@ -325,7 +352,7 @@ def source_status(db: Session, source_id: str) -> Dict[str, Any]:
 def ensure_seed_sources(db: Session) -> List[models.KnowledgeSource]:
     """Idempotently insert Saudi source registry definitions; promote live connectors."""
     created: List[models.KnowledgeSource] = []
-    promote_keys = {"gastat", "misa"}
+    promote_keys = {"gastat", "misa", "commercial_discovery"}
     for seed in SEED_SOURCES:
         existing = get_source_by_key(db, seed["key"])
         if existing:

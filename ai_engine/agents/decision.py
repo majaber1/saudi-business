@@ -202,6 +202,51 @@ def run_decision(state: StudyState) -> StudyState:
                 }
             except Exception:
                 pass
+
+            # Investment-grade synthesis under incomplete evidence
+            try:
+                from ai_engine.hardening.incomplete_evidence_synthesis import (
+                    build_incomplete_evidence_synthesis,
+                )
+
+                synthesis = build_incomplete_evidence_synthesis(
+                    assumptions=state.assumptions,
+                    market_research=getattr(state, "market_research_context", None),
+                    financial_results=state.financial_results,
+                    claims=state.claims,
+                    language=lang or "en",
+                )
+                state.decision_safety = {
+                    **(state.decision_safety or {}),
+                    "incomplete_evidence_synthesis": synthesis,
+                }
+                # Prefer commercially actionable synthesis when gates left INSUFFICIENT
+                # but competitors + location exist — still respect hard financial FAIL.
+                syn_verdict = (synthesis.get("recommendation") or {}).get("verdict")
+                fin_fail = (fin_gate or {}).get("status") == "FAIL" and any(
+                    c in (fin_gate or {}).get("codes") or []
+                    for c in ("FINANCIAL_INCONSISTENCY", "PLACEHOLDER_REJECTED")
+                )
+                if (
+                    not fin_fail
+                    and state.verdict == "INSUFFICIENT_EVIDENCE"
+                    and syn_verdict in {"GO_WITH_CONDITIONS", "DEFER"}
+                    and (synthesis.get("market_coverage") or {}).get("competitors_sourced", 0)
+                    >= 1
+                ):
+                    state.verdict = syn_verdict
+                    state.decision_rationale = (
+                        (synthesis.get("recommendation") or {}).get("summary")
+                        or state.decision_rationale
+                    )
+                    extra_cond = list(
+                        (synthesis.get("recommendation") or {}).get("next_steps") or []
+                    )
+                    state.decision_conditions = list(
+                        dict.fromkeys([*(state.decision_conditions or []), *extra_cond])
+                    )
+            except Exception:
+                pass
         except Exception:
             state.verdict = provisional_verdict
             state.decision_rationale = provisional_rationale
@@ -230,6 +275,31 @@ def run_decision(state: StudyState) -> StudyState:
 
 
 def _fallback_decision(state: StudyState) -> dict:
+    try:
+        from ai_engine.hardening.incomplete_evidence_synthesis import (
+            build_incomplete_evidence_synthesis,
+        )
+
+        synthesis = build_incomplete_evidence_synthesis(
+            assumptions=state.assumptions,
+            market_research=getattr(state, "market_research_context", None),
+            financial_results=state.financial_results,
+            claims=state.claims,
+            language=getattr(state, "language", "en") or "en",
+        )
+        rec = synthesis.get("recommendation") or {}
+        return {
+            "verdict": rec.get("verdict") or "DEFER",
+            "rationale": rec.get("summary")
+            or "Provisional verdict under incomplete evidence.",
+            "conditions": list(rec.get("next_steps") or [])[:5],
+            "key_risks": list(synthesis.get("material_missing_evidence") or [])[:5]
+            or ["Evidence gaps", "Execution risk"],
+            "confidence_score": 0.45,
+            "next_steps": list(rec.get("next_steps") or []),
+        }
+    except Exception:
+        pass
     fr = state.financial_results or {}
     npv = fr.get("npv")
     irr = fr.get("irr")
