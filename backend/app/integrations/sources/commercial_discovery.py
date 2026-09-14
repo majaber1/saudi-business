@@ -109,37 +109,62 @@ def infer_city_district(query: str) -> tuple[str, str]:
     city = ""
     district = ""
     city_markers = (
-        "riyadh",
-        "jeddah",
-        "dammam",
-        "khobar",
-        "makkah",
-        "madinah",
-        "الرياض",
-        "جدة",
-        "الدمام",
+        ("riyadh", "Riyadh"),
+        ("jeddah", "Jeddah"),
+        ("dammam", "Dammam"),
+        ("khobar", "Khobar"),
+        ("makkah", "Makkah"),
+        ("madinah", "Madinah"),
+        ("الرياض", "الرياض"),
+        ("جدة", "جدة"),
+        ("الدمام", "الدمام"),
     )
     lower = text.lower()
-    for c in city_markers:
-        if c in lower:
-            city = c.title() if c.isascii() else c
+    for marker, label in city_markers:
+        if marker in lower:
+            city = label
             break
-    # Common district tokens after "in" / Arabic في
-    m = re.search(
-        r"(?:in|near|at|بحي|في)\s+([A-Za-z\u0600-\u06FF][A-Za-z0-9\u0600-\u06FF\-\s]{2,40})",
-        text,
-        re.I,
+
+    known_districts = (
+        ("olaya", "Olaya"),
+        ("ulaya", "Olaya"),
+        ("العليا", "العليا"),
+        ("malaz", "Malaz"),
+        ("sulaimaniyah", "Sulaimaniyah"),
+        ("rawdah", "Rawdah"),
+        ("nuzha", "Nuzha"),
+        ("yasmin", "Yasmin"),
+        ("hamra", "Hamra"),
     )
-    if m:
-        district = m.group(1).strip(" ,.")
-        # Avoid capturing "Saudi Arabia"
-        if "saudi" in district.lower() or "arabia" in district.lower():
-            district = ""
-    # Explicit Olaya / Al Olaya style tokens
-    for d in ("olaya", "ulaya", "العليا", "malaz", "sulaimaniyah", "rawdah"):
-        if d in lower and not district:
-            district = d
+    for marker, label in known_districts:
+        if marker in lower:
+            district = label
             break
+
+    if not district:
+        m = re.search(
+            r"(?:in|near|at|بحي|في)\s+([A-Za-z\u0600-\u06FF][A-Za-z0-9\u0600-\u06FF\-]{1,30})",
+            text,
+            re.I,
+        )
+        if m:
+            token = m.group(1).strip(" ,.")
+            # Stop-words that mean the capture overran into the business idea
+            if token.lower() not in {
+                "saudi",
+                "arabia",
+                "specialty",
+                "coffee",
+                "cafe",
+                "café",
+                "shop",
+                "restaurant",
+                "local",
+                "business",
+                "for",
+                "the",
+            }:
+                district = token
     return city, district
 
 
@@ -523,6 +548,18 @@ class CommercialDiscoveryConnector(SourceConnector):
                 )
                 if streetish:
                     continue
+                # Prefer POIs in the requested city when city is known
+                if city:
+                    city_l = city.lower()
+                    display_l = display.lower()
+                    city_ar = {"riyadh": "الرياض", "jeddah": "جدة", "dammam": "الدمام"}.get(city_l)
+                    if city_l not in display_l and not (city_ar and city_ar in display):
+                        # Soft filter: skip clearly other-city hits
+                        other_cities = ("الدمام", "dammam", "جدة", "jeddah", "الخبر", "khobar", "الظهران")
+                        if any(o in display_l for o in other_cities) and city_l == "riyadh":
+                            continue
+                        if any(o in display_l for o in ("الرياض", "riyadh")) and city_l != "riyadh":
+                            continue
                 seen.add(name.lower())
                 osm_url = _osm_url(str(hit.get("osm_type") or ""), hit.get("osm_id"))
                 relevance = (
