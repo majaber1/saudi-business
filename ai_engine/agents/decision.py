@@ -165,6 +165,7 @@ def run_decision(state: StudyState) -> StudyState:
             ev_gate = evaluate_evidence_verdict_gates(
                 archetype=arch,
                 claims=state.claims,
+                assumptions=state.assumptions,
                 research_quality=research_quality,
                 language=lang or "en",
             )
@@ -196,6 +197,7 @@ def run_decision(state: StudyState) -> StudyState:
                         "gate_codes": safe["gate_codes"],
                         "downgraded": safe["downgraded"],
                         "confidence": safe["confidence"],
+                        "numeric_contradictions": safe.get("numeric_contradictions") or [],
                     },
                 }
             except Exception:

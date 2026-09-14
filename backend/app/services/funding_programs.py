@@ -739,34 +739,54 @@ VERIFIED_PROGRAM_CATALOG: List[Dict[str, Any]] = [
 def ensure_seed_programs(db: Session) -> int:
     """Idempotently seed the official 12 verified funding programs and their rule provenance.
 
+    Concurrency-safe: check-then-insert races on unique ``slug`` are handled via
+    SAVEPOINT + IntegrityError recovery. The unique constraint is preserved.
+    Unrelated database errors are not swallowed.
+
     Returns the count of programs currently in the database.
     """
-    # Ensure tables exist in current bind
-    models.Base.metadata.create_all(bind=db.get_bind(), tables=[models.FundingProgram.__table__, models.FundingProgramRule.__table__])
+    from sqlalchemy.exc import IntegrityError
 
-    existing_slugs = {p.slug for p in db.query(models.FundingProgram.slug).all()}
+    # Ensure tables exist in current bind
+    models.Base.metadata.create_all(
+        bind=db.get_bind(),
+        tables=[models.FundingProgram.__table__, models.FundingProgramRule.__table__],
+    )
+
     count_inserted = 0
 
     for prog_data in VERIFIED_PROGRAM_CATALOG:
         slug = prog_data["slug"]
-        if slug in existing_slugs:
+        exists = (
+            db.query(models.FundingProgram.id)
+            .filter(models.FundingProgram.slug == slug)
+            .first()
+        )
+        if exists:
             continue
 
         rules_data = prog_data.get("rules", [])
         prog_fields = {k: v for k, v in prog_data.items() if k != "rules"}
 
-        program = models.FundingProgram(**prog_fields)
-        db.add(program)
-        db.flush()  # assign program.id
+        try:
+            # SAVEPOINT so a duplicate-slug race does not abort the outer transaction.
+            with db.begin_nested():
+                program = models.FundingProgram(**prog_fields)
+                db.add(program)
+                db.flush()  # assign program.id / surface unique violation early
 
-        for r_data in rules_data:
-            rule = models.FundingProgramRule(
-                program_id=program.id,
-                **r_data,
-            )
-            db.add(rule)
+                for r_data in rules_data:
+                    rule = models.FundingProgramRule(
+                        program_id=program.id,
+                        **r_data,
+                    )
+                    db.add(rule)
 
-        count_inserted += 1
+                count_inserted += 1
+        except IntegrityError:
+            # Expected TOCTOU: another worker inserted the same slug first.
+            # Unique constraint remains enforced; row already present.
+            continue
 
     if count_inserted > 0:
         db.commit()

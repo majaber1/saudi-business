@@ -92,6 +92,21 @@ type StudyInfo = {
   decision_rationale: string | null;
   decision_conditions?: string[];
   decision_risks?: string[];
+  decision_safety?: {
+    financial?: { codes?: string[]; messages?: string[] };
+    evidence?: {
+      codes?: string[];
+      messages?: string[];
+      numeric_contradictions?: Array<Record<string, unknown>>;
+    };
+    applied?: {
+      original_verdict?: string;
+      verdict?: string;
+      gate_codes?: string[];
+      downgraded?: boolean;
+      numeric_contradictions?: Array<Record<string, unknown>>;
+    };
+  } | null;
   messages?: Message[];
   next_action: string | null;
   error: string | null;
@@ -960,6 +975,50 @@ export default function StudyWorkspacePage() {
                   ))}
                 </ul>
               )}
+              {(() => {
+                const safety = study?.decision_safety;
+                const codes = safety?.applied?.gate_codes || safety?.evidence?.codes || [];
+                const contradictions =
+                  safety?.applied?.numeric_contradictions ||
+                  safety?.evidence?.numeric_contradictions ||
+                  [];
+                const evidenceMsgs = safety?.evidence?.messages || [];
+                if (!codes.length && !contradictions.length && !evidenceMsgs.length) return null;
+                return (
+                  <div
+                    className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-950"
+                    data-testid="decision-safety-panel"
+                  >
+                    <p className="font-semibold">
+                      {ar ? "سلامة القرار / الأدلة" : "Decision safety"}
+                    </p>
+                    {codes.length > 0 && (
+                      <p className="mt-1" data-testid="decision-safety-codes">
+                        {codes.join(", ")}
+                      </p>
+                    )}
+                    {evidenceMsgs.length > 0 && (
+                      <ul className="mt-1 list-disc ps-4" data-testid="decision-safety-messages">
+                        {evidenceMsgs.map((m) => (
+                          <li key={m}>{m}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {contradictions.length > 0 && (
+                      <ul className="mt-1 list-disc ps-4" data-testid="decision-safety-numeric-contradictions">
+                        {contradictions.map((c, idx) => (
+                          <li key={idx}>
+                            {String(
+                              (c as { contradiction_reason?: string }).contradiction_reason ||
+                                JSON.stringify(c),
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })()}
             </section>
           )}
         </div>
