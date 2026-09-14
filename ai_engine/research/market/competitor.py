@@ -77,6 +77,10 @@ def extract_competitors_from_evidence(
     _ = sector
     found: list[CompetitorEvidence] = []
     seen: set[str] = set()
+    sector_blob = f"{sector} {geography}".lower()
+    coffee_context = any(
+        k in sector_blob for k in ("coffee", "café", "cafe", "fnb", "restaurant", "riyadh", "قهوة", "مقهى")
+    )
 
     for item in evidence_items:
         if not isinstance(item, dict):
@@ -99,11 +103,24 @@ def extract_competitors_from_evidence(
             candidates.append(explicit)
         elif source_url or document_id:
             lower = text.lower()
-            if any(
-                k in lower
-                for k in ("competitor", "competes", "rival", "player", "company", "firm")
+            markers = (
+                "competitor",
+                "competes",
+                "rival",
+                "player",
+                "company",
+                "firm",
+                "café",
+                "cafe",
+                "coffee shop",
+                "specialty coffee",
+                "مقهى",
+                "قهوة",
+            )
+            if any(k in lower for k in markers) or (
+                coffee_context and ("coffee" in lower or "café" in lower or "cafe" in lower)
             ):
-                for m in _NAME_PATTERN.finditer(text[:800]):
+                for m in _NAME_PATTERN.finditer(text[:1200]):
                     name = m.group(1).strip(" .,;:")
                     if _is_plausible_competitor_name(name):
                         candidates.append(name)

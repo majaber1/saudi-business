@@ -181,30 +181,112 @@ def run_assumptions(state: StudyState) -> StudyState:
         assumption_data = None
 
     seeded: dict[str, Assumption] = {}
+
+    def _build_assumption(
+        *,
+        key: str,
+        value: str | None,
+        meta: dict,
+        origin: str,
+        source: str,
+        confidence: str = "low",
+        ai_estimated: bool = False,
+        estimate_basis: str | None = None,
+        estimate_rationale: str | None = None,
+    ) -> Assumption:
+        from ai_engine.hardening.assumption_semantics import (
+            map_origin_to_provenance,
+            semantic_type_for_key,
+            validate_assumption_value,
+        )
+
+        check = validate_assumption_value(
+            key=key,
+            value=value,
+            input_type=meta.get("input_type"),
+            unit=meta.get("unit"),
+        )
+        if not check["ok"] or check["value"] is None:
+            return Assumption(
+                key=key,
+                value="UNKNOWN",
+                source=check.get("message") or source or "Unknown — no responsible estimate",
+                confidence="low",
+                low=None,
+                base=None,
+                high=None,
+                origin="default",
+                input_type=meta.get("input_type"),
+                unit=meta.get("unit"),
+                label_en=meta.get("label_en"),
+                label_ar=meta.get("label_ar"),
+                ai_estimated=False,
+                provenance_class="UNKNOWN",
+                semantic_type=check.get("semantic_type") or semantic_type_for_key(key, meta.get("input_type")),
+                validation_code=check.get("code") or "UNKNOWN",
+                estimate_basis=estimate_basis,
+                estimate_rationale=estimate_rationale
+                or check.get("message")
+                or "Left UNKNOWN rather than fabricating a value",
+            )
+        prov = map_origin_to_provenance(origin)
+        if check["value"] == "UNKNOWN":
+            prov = "UNKNOWN"
+        return Assumption(
+            key=key,
+            value=str(check["value"]),
+            source=source,
+            confidence=confidence,  # type: ignore[arg-type]
+            low=str(check["value"]),
+            base=str(check["value"]),
+            high=str(check["value"]),
+            origin=origin,  # type: ignore[arg-type]
+            input_type=meta.get("input_type"),
+            unit=meta.get("unit"),
+            label_en=meta.get("label_en"),
+            label_ar=meta.get("label_ar"),
+            ai_estimated=ai_estimated,
+            provenance_class=prov,  # type: ignore[arg-type]
+            semantic_type=check.get("semantic_type"),
+            validation_code=None,
+            estimate_basis=estimate_basis,
+            estimate_rationale=estimate_rationale,
+        )
+
+    # Seed owner_budget from structured answers or context mentions of SAR budget
+    if "owner_budget" in allowed and "owner_budget" not in (state.structured_answers or {}):
+        budget_hint = None
+        for blob in (
+            str((state.structured_answers or {}).get("budget") or ""),
+            " ".join(str(m.content) if hasattr(m, "content") else str(m) for m in (state.messages or [])[-6:]),
+        ):
+            import re as _re
+
+            m = _re.search(r"(?:SAR|ريال)?\s*([0-9][0-9,]{2,})\s*(?:SAR|ريال)?", blob, _re.I)
+            if m and ("budget" in blob.lower() or "ميزانية" in blob or "450" in m.group(1)):
+                budget_hint = m.group(1).replace(",", "")
+                break
+        if budget_hint:
+            state.structured_answers = dict(state.structured_answers or {})
+            state.structured_answers.setdefault("owner_budget", budget_hint)
+
     for key, raw in (state.structured_answers or {}).items():
         if key not in allowed:
             continue
         meta = schema_by_key.get(key, {})
         val = _as_str(raw).strip()
-        # Discovery question ids can collide with assumption keys. Ignore
-        # non-numeric placeholders ("confirmed"/"ok") for numeric fields so
-        # Rule Fallback / AI can supply values financial analysis can parse.
         if not _usable_user_assumption_value(meta, val):
             continue
-        seeded[key] = Assumption(
+        seeded[key] = _build_assumption(
             key=key,
             value=val,
+            meta=meta,
+            origin="user",
             source="user",
             confidence="confirmed",
-            low=val,
-            base=val,
-            high=val,
-            origin="user",
-            input_type=meta.get("input_type"),
-            unit=meta.get("unit"),
-            label_en=meta.get("label_en"),
-            label_ar=meta.get("label_ar"),
             ai_estimated=False,
+            estimate_basis="owner_input",
+            estimate_rationale="Provided by owner via discovery / structured answers",
         )
 
     for a in (assumption_data or {}).get("assumptions") or []:
@@ -221,25 +303,21 @@ def run_assumptions(state: StudyState) -> StudyState:
         source = str(a.get("source") or ("AI Estimated Assumption" if ai_est else "model"))
         if ai_est and "AI Estimated" not in source:
             source = "AI Estimated Assumption"
-        default_val = _default_value_for_field(meta or {"key": key}, archetype)
-        value = _as_str(a.get("value")).strip() or default_val
-        low = _as_str(a.get("low")).strip() or value
-        base = _as_str(a.get("base")).strip() or value
-        high = _as_str(a.get("high")).strip() or value
-        seeded[key] = Assumption(
+        raw_value = _as_str(a.get("value")).strip()
+        if not raw_value:
+            raw_value = _default_value_for_field(meta or {"key": key}, archetype) or ""
+        seeded[key] = _build_assumption(
             key=key,
-            value=value,
-            source=source,
-            confidence=conf,  # type: ignore[arg-type]
-            low=low,
-            base=base,
-            high=high,
+            value=raw_value or None,
+            meta=meta,
             origin="ai_estimated" if ai_est else "user",
-            input_type=meta.get("input_type"),
-            unit=meta.get("unit"),
-            label_en=meta.get("label_en"),
-            label_ar=meta.get("label_ar"),
+            source=source,
+            confidence=conf,
             ai_estimated=ai_est,
+            estimate_basis="llm_estimate" if ai_est else "model",
+            estimate_rationale="Model-proposed estimate pending owner review"
+            if ai_est
+            else None,
         )
 
     for field in schema:
@@ -250,36 +328,28 @@ def run_assumptions(state: StudyState) -> StudyState:
             continue
         default_val = _default_value_for_field(field, archetype)
         if llm_unavailable:
-            seeded[key] = Assumption(
+            seeded[key] = _build_assumption(
                 key=key,
                 value=default_val,
-                source="Rule Fallback",
-                confidence="low",
-                low=default_val,
-                base=default_val,
-                high=default_val,
+                meta=field,
                 origin="rule_fallback",
-                input_type=field.get("input_type"),
-                unit=field.get("unit"),
-                label_en=field.get("label_en"),
-                label_ar=field.get("label_ar"),
+                source="Rule Fallback" if default_val else "Unknown — rule fallback refused placeholder",
+                confidence="low",
                 ai_estimated=False,
+                estimate_basis="rule_fallback" if default_val else None,
+                estimate_rationale="LLM unavailable; used key-aware fallback or UNKNOWN",
             )
         else:
-            seeded[key] = Assumption(
+            seeded[key] = _build_assumption(
                 key=key,
                 value=default_val,
-                source="AI Estimated Assumption",
+                meta=field,
+                origin="ai_estimated" if default_val else "default",
+                source="AI Estimated Assumption" if default_val else "Unknown — no responsible estimate",
                 confidence="low",
-                low=default_val,
-                base=default_val,
-                high=default_val,
-                origin="ai_estimated",
-                input_type=field.get("input_type"),
-                unit=field.get("unit"),
-                label_en=field.get("label_en"),
-                label_ar=field.get("label_ar"),
-                ai_estimated=True,
+                ai_estimated=bool(default_val),
+                estimate_basis="schema_gap_fill" if default_val else None,
+                estimate_rationale="Required field missing after LLM; key-aware fill or UNKNOWN",
             )
 
     assumptions = list(seeded.values())
@@ -345,10 +415,20 @@ def _usable_user_assumption_value(field: dict, val: str) -> bool:
     return True
 
 
-def _default_value_for_field(field: dict, archetype: str) -> str:
-    """Deterministic placeholders so financial extract can run when LLM is down."""
+def _default_value_for_field(field: dict, archetype: str) -> str | None:
+    """Return a responsible key-aware default, or None → UNKNOWN (never generic 10000).
+
+    Catch-all placeholder sentinels (10000 / 100000) are intentionally removed.
+    Prefer UNKNOWN over fake precision for F&B / unknown fields.
+    """
+    from ai_engine.hardening.assumption_semantics import (
+        is_placeholder_sentinel,
+        validate_assumption_value,
+    )
+
     key = field.get("key") or ""
     input_type = (field.get("input_type") or "").lower()
+    # Explicit keyed defaults for non-F&B archetypes only (legacy models).
     defaults = {
         "target_customers": "200",
         "pricing": "500",
@@ -386,14 +466,39 @@ def _default_value_for_field(field: dict, archetype: str) -> str:
         "capex_total": "80000000",
         "opex_annual": "12000000",
         "financing": "50",
+        # Safe non-placeholder F&B categorical / calendar defaults only
+        "operating_days_year": "330",
+        "delivery_dependency": "Partial (<30%)",
     }
+    # Never invent F&B operating economics when LLM/user did not provide them.
+    fnb_unknown_keys = {
+        "seats_capacity",
+        "operating_hours_day",
+        "avg_ticket",
+        "daily_covers",
+        "rent_monthly",
+        "labor_monthly",
+        "food_cost_pct",
+        "fitout_capex",
+        "equipment_capex",
+        "working_capital",
+        "store_area_m2",
+        "utilities_monthly",
+        "marketing_monthly",
+    }
+    if archetype == "fnb" and key in fnb_unknown_keys:
+        return None
     if key in defaults:
-        return defaults[key]
-    if input_type in {"currency", "number"}:
-        return "100000" if archetype in {"real_estate", "data_center"} else "10000"
-    if input_type == "percent":
-        return "10"
-    return "10000"
+        candidate = defaults[key]
+        if is_placeholder_sentinel(candidate, key=key, input_type=input_type):
+            return None
+        check = validate_assumption_value(key=key, value=candidate, input_type=input_type, unit=field.get("unit"))
+        return check["value"] if check["ok"] else None
+    # No catch-all numeric invent — categorical/text without options stays UNKNOWN
+    if input_type in {"single_select", "multi_select"}:
+        opts = field.get("options_en") or field.get("options") or []
+        return str(opts[0]) if opts else None
+    return None
 
 
 def _extract_json(text: str) -> dict | None:
@@ -453,14 +558,31 @@ def _apply_knowledge_refs(assumptions: list[Assumption], knowledge: dict) -> lis
         if refs:
             a.knowledge_refs = refs[:3]
             a.knowledge_confidence = float(conf) if conf is not None else None
-            # Promote AI/rule estimates to knowledge_reference; keep user values as user
-            # but still attach supporting refs for traceability.
-            if a.origin in {"ai_estimated", "rule_fallback", "default"}:
+            # Soft lexical knowledge matches must NOT promote provenance to
+            # evidence-backed when no suggested numeric value was retrieved.
+            suggested = None
+            if hint:
+                suggested = hint.get("suggested_value")
+            if suggested is not None and str(suggested).strip() and a.origin in {
+                "ai_estimated",
+                "rule_fallback",
+                "default",
+            }:
                 a.origin = "knowledge_reference"
-                n = len(refs)
-                a.source = f"AI estimate based on {n} similar knowledge source(s)"
+                a.source = f"Evidence-backed estimate from {len(refs)} knowledge source(s)"
                 a.ai_estimated = True
+                a.provenance_class = "EVIDENCE_BACKED"
+                a.estimate_basis = "knowledge_suggested_value"
+            elif a.origin in {"ai_estimated", "rule_fallback", "default"}:
+                # Keep SYSTEM_ESTIMATE / UNKNOWN labeling; attach refs for audit only
+                n = len(refs)
+                if a.value and str(a.value).upper() != "UNKNOWN":
+                    a.source = f"{a.source or 'estimate'} (context refs: {n})"
+                a.provenance_class = a.provenance_class or (
+                    "UNKNOWN" if str(a.value).upper() == "UNKNOWN" else "SYSTEM_ESTIMATE"
+                )
             elif a.origin == "user" and "Knowledge" not in (a.source or ""):
                 a.source = f"User input (supported by {len(refs)} knowledge source(s))"
+                a.provenance_class = a.provenance_class or "USER_PROVIDED"
         out.append(a)
     return out

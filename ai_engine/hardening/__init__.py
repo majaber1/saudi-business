@@ -13,6 +13,12 @@ from .archetype_intelligence import (
     required_assumptions_for,
     schema_archetype_for,
 )
+from .assumption_semantics import (
+    is_placeholder_sentinel,
+    map_origin_to_provenance,
+    semantic_type_for_key,
+    validate_assumption_value,
+)
 from .evidence_gates import (
     apply_decision_safety,
     evaluate_evidence_verdict_gates,
@@ -42,4 +48,8 @@ __all__ = [
     "get_sector_pack",
     "list_sector_packs",
     "sector_pack_for_archetype",
+    "validate_assumption_value",
+    "is_placeholder_sentinel",
+    "map_origin_to_provenance",
+    "semantic_type_for_key",
 ]

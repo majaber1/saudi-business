@@ -191,6 +191,59 @@ def evaluate_financial_trust_gates(
                 else "نسبة تكلفة البضاعة / الطعام تبدو متطرفة. يلزم التحقق."
             )
 
+    # Placeholder / physical guards (Quality Parity)
+    hours = _as_float(asmap.get("operating_hours_day")) or _as_float(asmap.get("hours_per_day"))
+    if hours is not None and (hours <= 0 or hours > 24):
+        codes.append("HOURS_OUT_OF_RANGE")
+        messages.append(
+            "Operating hours/day must be between 0 and 24."
+            if not ar
+            else "ساعات التشغيل اليومية يجب أن تكون بين 0 و 24."
+        )
+
+    placeholder_hits = []
+    for k, v in asmap.items():
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s in {"10000", "100000", "9999", "12345"}:
+            placeholder_hits.append(k)
+        if k in {"operating_hours_day", "seats_capacity", "daily_covers", "avg_ticket"} and _as_float(v) == 10000:
+            placeholder_hits.append(k)
+    if placeholder_hits:
+        codes.append("PLACEHOLDER_ASSUMPTION_DETECTED")
+        messages.append(
+            "Placeholder-class assumption values detected ("
+            + ", ".join(sorted(set(placeholder_hits))[:8])
+            + "). Estimates require replacement with evidence or UNKNOWN."
+            if not ar
+            else "تم رصد قيم افتراضات عامة/وهمية. يلزم استبدالها بأدلة أو UNKNOWN."
+        )
+
+    # Budget sufficiency when funding fields present on financial_results
+    budget_status = fr.get("budget_status")
+    budget_gap = _as_float(fr.get("budget_gap"))
+    if budget_status == "SHORTFALL" or (budget_gap is not None and budget_gap > 0):
+        codes.append("BUDGET_SHORTFALL")
+        messages.append(
+            "Total initial funding requirement exceeds owner budget."
+            if not ar
+            else "إجمالي التمويل الأولي المطلوب يتجاوز ميزانية المالك."
+        )
+
+    # F&B revenue unwired: covers+ticket present but year-1 revenue is zero
+    rev1 = None
+    rp = fr.get("revenue_projections") or {}
+    if isinstance(rp, dict):
+        rev1 = _as_float(rp.get("year_1")) or _as_float(rp.get("year1"))
+    if avg_ticket and daily and (rev1 is None or rev1 == 0):
+        codes.append("REVENUE_ASSUMPTION_UNWIRED")
+        messages.append(
+            "Ticket and daily covers exist but year-1 revenue is zero — wiring requires validation."
+            if not ar
+            else "قيمة الفاتورة والتغطيات اليومية موجودة لكن إيراد السنة الأولى صفر — يلزم التحقق من الربط."
+        )
+
     unique_codes = sorted(set(codes))
     confidence_penalty = min(0.55, 0.12 * len(unique_codes))
     return {
