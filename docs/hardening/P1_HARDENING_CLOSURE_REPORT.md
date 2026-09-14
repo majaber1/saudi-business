@@ -13,7 +13,7 @@
 |------|--------|
 | **Current Main SHA** | `3ac591229c47d6408c26311a2bbf8232803a8223` |
 | **PR #53 Head Before Fix** | `ad3562601f51d4d7e344154a12a53cef90db2fd8` |
-| **PR #53 Head After Fix** | *(see tip after this docs commit; implementation at `dd2b22debfc3e1153cf149273c113dc4b1bc5a85`)* |
+| **PR #53 Head After Fix** | *implementation `dd2b22debfc3e1153cf149273c113dc4b1bc5a85`; docs tip `dcb3107ebb8b37138ad74cc33d7513e3da1ae905`* |
 | **Frozen base** | `main` @ `3ac591229c47d6408c26311a2bbf8232803a8223` |
 
 ---
