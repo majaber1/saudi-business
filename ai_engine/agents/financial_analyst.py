@@ -162,6 +162,10 @@ def _assumption_lookup(state: StudyState) -> dict[str, float]:
     for a in state.assumptions or []:
         key = (a.key or "").lower()
         for candidate in (a.base, a.value, a.low, a.high):
+            if candidate is None:
+                continue
+            if str(candidate).strip().upper() in {"UNKNOWN", "N/A", "NA", "NONE"}:
+                continue
             num = _parse_number(candidate)
             if num is None:
                 continue
@@ -173,18 +177,42 @@ def _assumption_lookup(state: StudyState) -> dict[str, float]:
 def _deterministic_extract(state: StudyState) -> dict | None:
     """Build capex/revenues/costs from structured assumptions when LLM extraction fails."""
     vals = _assumption_lookup(state)
-    if not vals:
+    if not vals and not (state.assumptions or []):
         return None
+
+    archetype = str(
+        getattr(getattr(state, "profile", None), "archetype", None)
+        or getattr(state, "archetype", None)
+        or ""
+    ).lower().strip()
+
+    # F&B / café path — exact keys; never invent revenue from placeholders
+    if archetype in {"fnb", "food_beverage", "food_and_beverage"} or (
+        "daily_covers" in vals and "avg_ticket" in vals
+    ):
+        from ai_engine.agents.fnb_financial_extract import extract_fnb_financials
+
+        # Always prefer F&B extract for café studies — never fall through to
+        # services/mobility models when archetype is F&B.
+        return extract_fnb_financials(vals=vals, assumptions=state.assumptions or [])
 
     def first(*needles: str) -> float | None:
         for key, value in vals.items():
-            if any(n in key for n in needles):
+            # Prefer exact key equality; avoid short needles matching unrelated keys
+            # (e.g. bare "ticket" matching avg_ticket, bare "capex" matching fitout_capex).
+            if any(n == key or (len(n) >= 6 and n in key) for n in needles):
                 return value
         return None
 
+    def exact(*keys: str) -> float | None:
+        for k in keys:
+            if k in vals:
+                return vals[k]
+        return None
+
     capex = first(
-        "initial_investment", "initial investment", "capex", "seed", "استثمار", "رأس المال",
-        "land_cost", "construction_boq", "capex_machinery",
+        "initial_investment", "initial investment", "seed", "استثمار", "رأس المال",
+        "land_cost", "construction_boq", "capex_machinery", "capex_total",
     )
     # Prefer summing land + BOQ for real estate when both present.
     land = first("land_cost", "land cost")
@@ -192,10 +220,10 @@ def _deterministic_extract(state: StudyState) -> dict | None:
     if land is not None or boq is not None:
         capex = (land or 0.0) + (boq or 0.0)
 
-    atv = first("avg_trip_value", "average trip", "atv", "ticket", "قيمة الرحلة", "متوسط")
+    atv = exact("avg_trip_value", "average_trip_value", "atv")
     take_rate = first("take_rate", "take-rate", "take rate", "commission", "عمولة")
     rides = first("monthly_trips", "monthly rides", "rides/mo", "rides per month", "رحلات")
-    fixed_opex = first("monthly_fixed_opex", "fixed opex", "monthly fixed", "opex", "تشغيل", "opex_year1")
+    fixed_opex = first("monthly_fixed_opex", "fixed opex", "monthly fixed", "opex_year1")
     variable = first("variable cost", "per ride", "تكلفة متغيرة")
     discount = first("discount rate", "معدل الخصم") or 0.12
 
@@ -249,7 +277,7 @@ def _deterministic_extract(state: StudyState) -> dict | None:
     # SaaS
     arr = first("arr", "annual recurring")
     mrr = first("mrr")
-    pricing = first("pricing", "subscription")
+    pricing = exact("pricing", "subscription")
     customers = first("target_customers", "customers")
 
     if take_rate is not None and take_rate > 1:
@@ -264,49 +292,47 @@ def _deterministic_extract(state: StudyState) -> dict | None:
     annual_revenues = None
     annual_costs = None
 
-    # Services: prefer capacity revenue (billing_rate × utilization × resources),
-    # fall back to MRC — never silently ignore utilization/headcount.
-    services_y1, services_notes = services_capacity_revenue(
-        billing_rate=billing_rate,
-        utilization_rate=utilization_rate,
-        headcount=consultants_headcount,
-        active_contracts=active_contracts,
-        billable_hours_month=billable_hours_month,
-        billable_period=billable_period,
-        mrc=mrc,
-    )
-    extract_notes.extend(services_notes)
-    if services_y1 is not None:
-        annual_revenues = [services_y1, services_y1 * 1.25, services_y1 * 1.5]
-        if delivery_monthly is not None:
-            annual_costs = [
-                delivery_monthly * 12,
-                delivery_monthly * 12 * 1.15,
-                delivery_monthly * 12 * 1.3,
-            ]
-        elif gross_margin is not None:
-            annual_costs = [r * (1.0 - gross_margin) for r in annual_revenues]
-        else:
-            # Trust hardening: never default services OPEX to zero (inflates NPV).
-            # Conservative 55% delivery-cost ratio when margin/delivery missing.
-            default_cost_ratio = 0.55
-            annual_costs = [r * default_cost_ratio for r in annual_revenues]
-            extract_notes.append("services_opex_defaulted_from_55pct_cost_ratio")
-    elif atv is not None and take_rate is not None and rides is not None:
+    # Services capacity — skip for F&B to avoid bogus billable-hours notes
+    if archetype != "fnb":
+        services_y1, services_notes = services_capacity_revenue(
+            billing_rate=billing_rate,
+            utilization_rate=utilization_rate,
+            headcount=consultants_headcount,
+            active_contracts=active_contracts,
+            billable_hours_month=billable_hours_month,
+            billable_period=billable_period,
+            mrc=mrc,
+        )
+        extract_notes.extend(services_notes)
+        if services_y1 is not None:
+            annual_revenues = [services_y1, services_y1 * 1.25, services_y1 * 1.5]
+            if delivery_monthly is not None:
+                annual_costs = [
+                    delivery_monthly * 12,
+                    delivery_monthly * 12 * 1.15,
+                    delivery_monthly * 12 * 1.3,
+                ]
+            elif gross_margin is not None:
+                annual_costs = [r * (1.0 - gross_margin) for r in annual_revenues]
+            else:
+                default_cost_ratio = 0.55
+                annual_costs = [r * default_cost_ratio for r in annual_revenues]
+                extract_notes.append("services_opex_defaulted_from_55pct_cost_ratio")
+    if annual_revenues is None and atv is not None and take_rate is not None and rides is not None:
         monthly_revenue = atv * take_rate * rides
         annual_revenues = [
             monthly_revenue * 12,
             monthly_revenue * 12 * 1.4,
             monthly_revenue * 12 * 1.4 * 1.3,
         ]
-    elif units is not None and selling_price is not None:
+    if annual_revenues is None and units is not None and selling_price is not None:
         sold_y1 = min(units, absorption) if absorption is not None else units * 0.35
         annual_revenues = [
             sold_y1 * selling_price,
             min(units, sold_y1 * 1.2) * selling_price,
             min(units, sold_y1 * 1.35) * selling_price,
         ]
-    elif mw is not None and pricing_kw is not None:
+    if annual_revenues is None and mw is not None and pricing_kw is not None:
         occ = occupancy if occupancy is not None else 0.5
         monthly = mw * 1000.0 * pricing_kw * occ
         annual_revenues = [monthly * 12, monthly * 12 * 1.25, monthly * 12 * 1.4]
@@ -322,11 +348,11 @@ def _deterministic_extract(state: StudyState) -> dict | None:
             ]
         elif opex_annual is not None:
             annual_costs = [opex_annual, opex_annual * 1.05, opex_annual * 1.1]
-    elif arr is not None:
+    if annual_revenues is None and arr is not None:
         annual_revenues = [arr, arr * 1.4, arr * 1.4 * 1.3]
-    elif mrr is not None:
+    if annual_revenues is None and mrr is not None:
         annual_revenues = [mrr * 12, mrr * 12 * 1.4, mrr * 12 * 1.4 * 1.3]
-    elif pricing is not None and customers is not None:
+    if annual_revenues is None and pricing is not None and customers is not None:
         annual_revenues = [
             pricing * customers,
             pricing * customers * 1.5,
@@ -401,6 +427,26 @@ def _merge_extract(primary: dict | None, fallback: dict | None) -> dict | None:
             **(primary.get("assumption_values") or {}),
         },
     }
+    # Preserve F&B / café parity fields from deterministic extract (LLM extract
+    # historically only returned capex/revenues/costs and silently dropped WC/budget).
+    for key in (
+        "currency",
+        "capex_components",
+        "working_capital",
+        "total_initial_funding",
+        "owner_budget",
+        "budget_gap",
+        "budget_status",
+        "cogs_y1",
+        "gross_profit_y1",
+        "ebitda_y1",
+        "unknown_assumption_keys",
+        "incomplete",
+    ):
+        if primary.get(key) is not None:
+            merged[key] = primary[key]
+        elif fallback.get(key) is not None:
+            merged[key] = fallback[key]
     if merged["capex"] is None and not merged["annual_revenues"] and not merged["annual_costs"]:
         return None
     return merged
@@ -533,6 +579,17 @@ def run_financial_analysis(state: StudyState) -> StudyState:
         "payback_state": payback_metric_state(base["payback_months"], language=lang or "en"),
         "warnings": trust_warnings,
         "extract_notes": extract_notes,
+        "currency": extracted.get("currency") or "SAR",
+        "capex_components": extracted.get("capex_components") or {},
+        "working_capital": extracted.get("working_capital"),
+        "total_initial_funding": extracted.get("total_initial_funding"),
+        "owner_budget": extracted.get("owner_budget"),
+        "budget_gap": extracted.get("budget_gap"),
+        "budget_status": extracted.get("budget_status"),
+        "cogs_y1": extracted.get("cogs_y1"),
+        "gross_profit_y1": extracted.get("gross_profit_y1"),
+        "ebitda_y1": extracted.get("ebitda_y1"),
+        "unknown_assumption_keys": extracted.get("unknown_assumption_keys") or [],
         "scenarios": {
             "optimistic": {
                 "npv": optimistic["npv"],

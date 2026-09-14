@@ -66,6 +66,14 @@ class Assumption(BaseModel):
     knowledge_refs: List[Dict[str, Any]] = Field(default_factory=list)
     knowledge_confidence: Optional[float] = None
     knowledge_influence: Optional[Dict[str, Any]] = None
+    # Quality parity — JSON-only metadata (no migration)
+    provenance_class: Optional[
+        Literal["USER_PROVIDED", "EVIDENCE_BACKED", "SYSTEM_ESTIMATE", "UNKNOWN"]
+    ] = None
+    semantic_type: Optional[str] = None
+    validation_code: Optional[str] = None
+    estimate_basis: Optional[str] = None
+    estimate_rationale: Optional[str] = None
 
 
 class Claim(BaseModel):

@@ -82,6 +82,23 @@ def classify_research_types(*texts: str) -> list[ResearchType]:
     for rtype, keywords in _TYPE_KEYWORDS.items():
         if any(k in blob for k in keywords):
             matched.append(rtype)
+    # F&B / café studies always need competitor + pricing + sector + regulation lenses
+    fnb_markers = (
+        "coffee",
+        "café",
+        "cafe",
+        "fnb",
+        "f&b",
+        "restaurant",
+        "specialty coffee",
+        "قهوة",
+        "مقهى",
+        "مطعم",
+    )
+    if any(m in blob for m in fnb_markers):
+        for required in ("COMPETITOR", "PRICING", "SECTOR_SIGNAL", "REGULATION"):
+            if required not in matched:
+                matched.append(required)  # type: ignore[arg-type]
     if not matched:
         # Default controlled set for Saudi market studies
         matched = ["SECTOR_SIGNAL", "COMPETITOR", "MARKET_SIZE"]
