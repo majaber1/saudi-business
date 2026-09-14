@@ -332,8 +332,10 @@ def _adapt_wasalt_next_data(
         if is_retail:
             if monthly < 3_000:
                 continue
-            # Showrooms/shops for small F&B commonly 20–2,000 m² on Saudi portals.
-            if area is not None and not (20 <= area <= 2000):
+            # Saudi portals list huge auto/furniture showrooms alongside shop units.
+            # Keep only F&B-plausible retail footprints so rent/area bands are not
+            # dominated by 500–2,000 m² معرض listings.
+            if area is not None and not (20 <= area <= 250):
                 continue
         if not (3_000 <= monthly <= 400_000):
             continue
@@ -345,7 +347,7 @@ def _adapt_wasalt_next_data(
         if slug and url and "wasalt.sa" in (url or ""):
             listing_url = f"https://wasalt.sa/property/rent/{slug}" if not slug.startswith("http") else slug
 
-        if area and 15 <= area <= 2000:
+        if area and 15 <= area <= 250:
             annual = monthly * 12.0
             per_m2_year = annual / area
             if 50 <= per_m2_year <= 15_000:

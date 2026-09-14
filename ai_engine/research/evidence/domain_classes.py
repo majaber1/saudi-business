@@ -47,6 +47,8 @@ DOMAIN_CLASSES: dict[str, DomainClass] = {
             "openstreetmap.org",
             "www.openstreetmap.org",
             "overpass-api.de",
+            "lz4.overpass-api.de",
+            "overpass.osm.ch",
             "en.wikipedia.org",
             "ar.wikipedia.org",
             "wikipedia.org",

@@ -57,6 +57,8 @@ COMMERCIAL_ALLOWED_DOMAINS: tuple[str, ...] = (
     "openstreetmap.org",
     "www.openstreetmap.org",
     "overpass-api.de",
+    "lz4.overpass-api.de",
+    "overpass.osm.ch",
     "html.duckduckgo.com",
     "duckduckgo.com",
     "www.bing.com",
@@ -1036,21 +1038,42 @@ class CommercialDiscoveryConnector(SourceConnector):
         self, *, lat: float, lon: float, amenity: str, radius_m: int = 1500
     ) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
         # Use out body + count client-side; Overpass `out count` is flaky under load.
+        # Primary DE endpoints often return 406 from this environment; try mirrors.
         ql = (
             f'[out:json][timeout:20];'
             f'(node["amenity"="{amenity}"](around:{radius_m},{lat},{lon});'
             f'way["amenity"="{amenity}"](around:{radius_m},{lat},{lon}););'
             f"out tags center {self.max_pois};"
         )
+        endpoints = (
+            "https://overpass.osm.ch/api/interpreter",
+            "https://overpass-api.de/api/interpreter",
+            "https://lz4.overpass-api.de/api/interpreter",
+        )
+        last_err: Dict[str, Any] = {"ok": False, "reason": "no_endpoint"}
         try:
             with httpx.Client(timeout=22.0, headers={"User-Agent": USER_AGENT}) as client:
-                r = client.post(
-                    "https://overpass-api.de/api/interpreter",
-                    data={"data": ql},
-                )
-                if r.status_code >= 400:
-                    return None, {"ok": False, "status": r.status_code, "reason": "http_error"}
-                payload = r.json()
+                payload = None
+                used_url = endpoints[0]
+                for ep in endpoints:
+                    try:
+                        r = client.post(ep, data={"data": ql})
+                        if r.status_code >= 400:
+                            last_err = {
+                                "ok": False,
+                                "status": r.status_code,
+                                "reason": "http_error",
+                                "endpoint": ep,
+                            }
+                            continue
+                        payload = r.json()
+                        used_url = ep
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        last_err = {"ok": False, "error": str(exc), "endpoint": ep}
+                        continue
+                if payload is None:
+                    return None, last_err
             elements = payload.get("elements") or []
             names: list[str] = []
             websites: list[str] = []
@@ -1104,7 +1127,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                     "evidence_kind": "competition_density",
                     "title": f"Competition density ({amenity}) ~{count} within {radius_m}m",
                     "content": content,
-                    "url": "https://overpass-api.de/api/interpreter",
+                    "url": used_url,
                     "geography": f"{lat:.4f},{lon:.4f}",
                     "sector_hint": amenity,
                     "confidence": 0.65,
@@ -1122,6 +1145,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                     "websites": websites[:12],
                     "seat_tags": seats_obs[:12],
                     "opening_hours_tags": hours_obs[:12],
+                    "endpoint": used_url,
                 },
             )
         except Exception as exc:  # noqa: BLE001

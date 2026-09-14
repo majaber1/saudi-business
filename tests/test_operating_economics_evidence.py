@@ -291,6 +291,11 @@ def test_wasalt_next_data_rent_adapter_fixture():
         "expectedRent":96000,"expectedRentType":"/سنة","title":"معرض 2",
         "district":"العليا","slug":"showroom-olaya-2"
       }},
+      {"floorSize":"980","propertyInfo":{
+        "propertyMainType":"تجاري","propertySubType":"معرض","propertyFor":"rent",
+        "expectedRent":320000,"expectedRentType":"/سنة","title":"huge showroom",
+        "district":"العليا","slug":"showroom-huge"
+      }},
       {"floorSize":"9000","propertyInfo":{
         "propertyMainType":"تجاري","propertySubType":"مكتب","propertyFor":"rent",
         "expectedRent":1000,"expectedRentType":"/سنة","title":"cowork desk",
@@ -310,8 +315,11 @@ def test_wasalt_next_data_rent_adapter_fixture():
     assert obs
     monthly = [o.value for o in obs if o.metric == "rent_monthly_sar"]
     assert 10000.0 in monthly and 8000.0 in monthly
-    # Coworking desk noise excluded
+    # Coworking desk noise + oversized showrooms excluded
     assert all(v >= 3000 for v in monthly)
+    areas = [o.value for o in obs if o.metric == "store_area_m2"]
+    assert 80.0 in areas and 60.0 in areas
+    assert 980.0 not in areas
     bands = bands_from_observations(obs, geography="Riyadh")
     assert any(b.key == "rent_monthly" for b in bands)
 
