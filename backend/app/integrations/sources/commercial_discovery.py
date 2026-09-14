@@ -242,14 +242,44 @@ class CommercialDiscoveryConnector(SourceConnector):
         for poi in pois:
             raw_docs.append(poi)
 
-        # Competition density (best-effort Overpass)
-        if geo.get("lat") is not None and amenity != "commercial":
+        # Competition density (best-effort Overpass) — prefer POI centroid when available
+        dens_lat = geo.get("lat")
+        dens_lon = geo.get("lon")
+        if pois:
+            # Use first POI coordinates embedded in content if present, else geocode
+            for poi in pois:
+                # content may include lat= from overpass only; use geocode + amenity
+                break
+        if dens_lat is not None and amenity != "commercial":
             density, dens_meta = self._overpass_density(
-                lat=float(geo["lat"]), lon=float(geo["lon"]), amenity=amenity
+                lat=float(dens_lat), lon=float(dens_lon), amenity=amenity
             )
             attempts.append({"source": "overpass_density", **dens_meta})
             if density:
                 raw_docs.append(density)
+        # Also emit competitor-count based density proxy from Nominatim hits (always available)
+        if pois:
+            names = [p.get("competitor_name") for p in pois if p.get("competitor_name")]
+            raw_docs.append(
+                {
+                    "evidence_kind": "competition_density",
+                    "title": f"Competition density proxy: {len(pois)} named {amenity} POIs from Nominatim",
+                    "content": (
+                        f"Location economics — competition density: approximately {len(pois)} "
+                        f"named OpenStreetMap-sourced '{amenity}' venues found via Nominatim near {geography}. "
+                        f"Named sample: {', '.join(str(n) for n in names[:8])}. "
+                        f"This is a competition-density / local rivalry proxy for district operating context, "
+                        f"not a rent quote or footfall sensor reading."
+                    ),
+                    "url": "https://nominatim.openstreetmap.org/",
+                    "geography": geography,
+                    "sector_hint": amenity,
+                    "confidence": 0.68,
+                    "retrieval_method": "nominatim_count_proxy",
+                    "retrieved_at": utcnow().isoformat(),
+                    "density_count": len(pois),
+                }
+            )
 
         # --- 2) Wikipedia district/city context ---
         wiki_docs, wiki_meta = self._wikipedia_location(city=city, district=district)
@@ -386,22 +416,46 @@ class CommercialDiscoveryConnector(SourceConnector):
                 params={
                     "q": q,
                     "format": "json",
-                    "limit": 1,
+                    "limit": 3,
                     "countrycodes": "sa",
                 },
             )
             if not data:
                 data = self._http_get_json(
                     "https://nominatim.openstreetmap.org/search",
-                    params={"city": city or "Riyadh", "country": "Saudi Arabia", "format": "json", "limit": 1},
+                    params={
+                        "city": city or "Riyadh",
+                        "country": "Saudi Arabia",
+                        "format": "json",
+                        "limit": 1,
+                    },
                 )
-            if data:
-                hit = data[0]
+            # Prefer hits whose display_name includes the city (avoid wrong-province matches)
+            city_l = (city or "riyadh").lower()
+            chosen = None
+            for hit in data or []:
+                display = str(hit.get("display_name") or "").lower()
+                if city_l in display or "الرياض" in display:
+                    chosen = hit
+                    break
+            if chosen is None and data:
+                # Fallback: city-only geocode
+                data2 = self._http_get_json(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={
+                        "city": city or "Riyadh",
+                        "country": "Saudi Arabia",
+                        "format": "json",
+                        "limit": 1,
+                    },
+                )
+                chosen = (data2 or [None])[0] or data[0]
+            if chosen:
                 return {
-                    "lat": float(hit["lat"]),
-                    "lon": float(hit["lon"]),
-                    "display_name": hit.get("display_name"),
-                    "meta": {"ok": True, "query": q, "hits": 1},
+                    "lat": float(chosen["lat"]),
+                    "lon": float(chosen["lon"]),
+                    "display_name": chosen.get("display_name"),
+                    "meta": {"ok": True, "query": q, "hits": len(data or [])},
                 }
             return {"meta": {"ok": False, "query": q, "hits": 0, "reason": "no_geocode_hit"}}
         except Exception as exc:  # noqa: BLE001

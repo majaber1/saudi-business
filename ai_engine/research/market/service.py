@@ -63,36 +63,56 @@ def _fingerprint_evidence(items: list[dict[str, Any]]) -> str:
 
 def evidence_items_from_research_claims(claims: list[Any]) -> list[dict[str, Any]]:
     """Normalize ResearchClaim / Claim / dict into evidence item dicts."""
+    import re
+
     items: list[dict[str, Any]] = []
     for c in claims or []:
         if isinstance(c, ResearchClaim):
-            items.append(
-                {
-                    "statement": c.statement,
-                    "source_type": c.source_type,
-                    "source_url": c.source_url,
-                    "source_key": c.source_key,
-                    "document_id": c.document_id,
-                    "chunk_id": c.chunk_id,
-                    "origin": c.origin,
-                    "confidence": c.confidence,
-                }
-            )
+            item = {
+                "statement": c.statement,
+                "source_type": c.source_type,
+                "source_url": c.source_url,
+                "source_key": c.source_key,
+                "document_id": c.document_id,
+                "chunk_id": c.chunk_id,
+                "origin": c.origin,
+                "confidence": c.confidence,
+                "geography": c.geography,
+            }
         elif isinstance(c, dict):
-            items.append(dict(c))
+            item = dict(c)
         else:
-            items.append(
-                {
-                    "statement": str(getattr(c, "statement", "") or ""),
-                    "source_type": getattr(c, "source_type", None),
-                    "source_url": getattr(c, "source_url", None),
-                    "source_key": getattr(c, "source_key", None),
-                    "document_id": getattr(c, "document_id", None),
-                    "chunk_id": getattr(c, "chunk_id", None),
-                    "origin": getattr(c, "origin", None),
-                    "confidence": getattr(c, "confidence", 0.0),
-                }
+            item = {
+                "statement": str(getattr(c, "statement", "") or ""),
+                "source_type": getattr(c, "source_type", None),
+                "source_url": getattr(c, "source_url", None),
+                "source_key": getattr(c, "source_key", None),
+                "document_id": getattr(c, "document_id", None),
+                "chunk_id": getattr(c, "chunk_id", None),
+                "origin": getattr(c, "origin", None),
+                "confidence": getattr(c, "confidence", 0.0),
+                "geography": getattr(c, "geography", None),
+            }
+        stmt = str(item.get("statement") or "")
+        if not item.get("competitor_name"):
+            m = re.search(
+                r"(?:Competitor\s*/\s*local venue evidence|Competitor POI)\s*:\s*([^\.\n:]+)",
+                stmt,
+                re.I,
             )
+            if m:
+                item["competitor_name"] = m.group(1).strip()
+        if not item.get("evidence_kind"):
+            low = stmt.lower()
+            if "search exhaustion" in low:
+                item["evidence_kind"] = "search_exhaustion"
+            elif "competition density" in low:
+                item["evidence_kind"] = "competition_density"
+            elif "location economics / district" in low or low.startswith("location context:"):
+                item["evidence_kind"] = "location_context"
+            elif "competitor / local venue" in low or "competitor poi:" in low:
+                item["evidence_kind"] = "competitor_poi"
+        items.append(item)
     return items
 
 

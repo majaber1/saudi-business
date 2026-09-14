@@ -12,7 +12,8 @@ _NAME_PATTERN = re.compile(
 )
 # Explicit competitor line from commercial discovery connector
 _EXPLICIT_COMPETITOR_RE = re.compile(
-    r"(?:Competitor\s*/\s*local venue evidence|Competitor POI|Competitor mention)\s*:\s*([^\.\n]+)",
+    r"(?:Competitor\s*/\s*local venue evidence|Competitor POI|Competitor mention)\s*:\s*"
+    r"([^\.\n:]+)",
     re.I,
 )
 _ARABIC_NAME_RE = re.compile(r"([\u0600-\u06FF][\u0600-\u06FF\s]{1,40})")
@@ -63,18 +64,81 @@ _STOP_NAMES = {
     "Competition",
     "Commercial",
     "Discovery",
+    "Competitor",
+    "Competitors",
+    "POI",
+    "Relevance",
+    "Named",
+    "OSM",
+    "Evidence",
+    "Venue",
+    "Local",
+    "Amenity",
+    "Amenities",
+    "Search",
+    "Query",
+    "Title",
+    "Snippet",
+    "Web",
+    "Result",
+    "Results",
+    "Geography",
+    "Sector",
+    "Context",
+    "Operating",
+    "District",
+    "Density",
+    "Proxy",
+    "Footfall",
+    "Retrieved",
+    "Via",
+    "Near",
+    "Class",
+    "Type",
+    "Node",
+    "Way",
+    "Relation",
 }
 
 
 def _is_plausible_competitor_name(name: str) -> bool:
-    parts = name.split()
+    parts = [p for p in re.split(r"[\s/]+", name.replace(".", " ").strip()) if p]
     if len(name) < 2 or len(name) > 80:
         return False
     if name in _STOP_NAMES:
         return False
-    if all(p in _STOP_NAMES for p in parts):
+    # Reject meta / geography / query fragments
+    low = name.lower().strip()
+    banned_sub = (
+        "saudi arabia",
+        "olaya riyadh",
+        "pricing",
+        "queries",
+        "source attempt",
+        "search exhaustion",
+        "location economics",
+        "competition density",
+        "footfall",
+        "commercial rent",
+        "operating context",
+    )
+    if any(b in low for b in banned_sub):
         return False
-    # Allow Arabic-only names
+    if low in {"this", "that", "near", "cafe", "coffee", "restaurant", "shop", "olaya", "riyadh", "jeddah"}:
+        return False
+    # Mostly digits / address numbers
+    if re.fullmatch(r"[\d\s\-]+", name) or re.fullmatch(r"(رقم|no\.?|#)\s*\d+", name, re.I):
+        return False
+    # "Starbucks. Location" style — reject if a sentence fragment remains
+    if re.search(r"\.\s+\w+", name):
+        return False
+    if ":" in name:
+        return False
+    if any(p in _STOP_NAMES for p in parts):
+        if len(parts) < 2 or parts[0] in _STOP_NAMES:
+            return False
+    if re.search(r"\b(location|relevance|evidence|competitor|poi|queries|pricing)\b", name, re.I):
+        return False
     if re.fullmatch(r"[\u0600-\u06FF\s]+", name):
         return len(name.strip()) >= 3
     return any(p not in _STOP_NAMES and len(p) > 2 for p in parts)
@@ -138,6 +202,22 @@ def extract_competitors_from_evidence(
             or item.get("title")
             or ""
         ).strip()
+        kind = str(
+            item.get("evidence_kind")
+            or item.get("document_type")
+            or ""
+        ).lower()
+        # Never mine competitors from exhaustion logs / pure location wiki blurbs
+        if kind in {"search_exhaustion", "location_context", "competition_density"}:
+            continue
+        if "search exhaustion" in text.lower() or "queries executed:" in text.lower():
+            continue
+        if text.lower().startswith("location economics / district") or text.lower().startswith(
+            "location context:"
+        ):
+            # Unless the statement also carries an explicit competitor_name field
+            if not str(item.get("competitor_name") or "").strip():
+                continue
         source_url = item.get("source_url") or item.get("url") or item.get("canonical_url")
         document_id = item.get("document_id") or item.get("source_id")
         chunk_id = item.get("chunk_id")
@@ -152,20 +232,20 @@ def extract_competitors_from_evidence(
         candidates: list[str] = []
         if explicit:
             candidates.append(explicit)
-        # Commercial discovery structured lines
-        for m in _EXPLICIT_COMPETITOR_RE.finditer(text):
-            candidates.append(m.group(1).strip(" .,;:"))
-        if source_url or document_id or source_key == "commercial_discovery":
+        # Prefer structured competitor lines; skip free TitleCase mining when explicit exists
+        if not candidates:
+            for m in _EXPLICIT_COMPETITOR_RE.finditer(text):
+                candidates.append(m.group(1).strip(" .,;:"))
+        if (
+            not candidates
+            and (source_url or document_id or source_key == "commercial_discovery")
+        ):
             lower = text.lower()
             markers = (
                 "competitor",
                 "competes",
                 "rival",
-                "player",
                 "venue evidence",
-                "poi",
-                "company",
-                "firm",
                 "café",
                 "cafe",
                 "coffee shop",
@@ -183,20 +263,34 @@ def extract_competitors_from_evidence(
                     name = m.group(1).strip(" .,;:")
                     if _is_plausible_competitor_name(name):
                         candidates.append(name)
-                # Arabic venue names often appear after "Competitor ... evidence:"
                 if "competitor" in lower or "مقهى" in text or "قهوة" in text:
                     for m in _ARABIC_NAME_RE.finditer(text[:800]):
                         name = m.group(1).strip()
                         if _is_plausible_competitor_name(name):
                             candidates.append(name)
 
+        # Deduplicate candidates within item; keep first plausible
+        cleaned: list[str] = []
+        seen_local: set[str] = set()
         for name in candidates:
+            name = name.strip()
+            # Trim trailing "Location: ..." fragments from regex captures
+            name = re.split(r"\s+Location\b|\s+Relevance\b|\s+OSM\b", name, maxsplit=1)[
+                0
+            ].strip()
+            if not _is_plausible_competitor_name(name):
+                continue
+            lk = name.lower()
+            if lk in seen_local:
+                continue
+            seen_local.add(lk)
+            cleaned.append(name)
+
+        for name in cleaned:
             key = name.lower()
             if key in seen:
                 continue
             seen.add(key)
-            if not _is_plausible_competitor_name(name):
-                continue
             why = relevance or (
                 f"Sourced local venue/competitor mention near {geography} "
                 f"for sector context '{sector or 'local business'}'."

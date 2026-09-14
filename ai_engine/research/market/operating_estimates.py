@@ -18,14 +18,14 @@ _NUMBER = re.compile(
 # Maps assumption keys → evidence keyword families (generic, not coffee-only).
 _KEY_EVIDENCE_HINTS: dict[str, tuple[str, ...]] = {
     "rent_monthly": ("rent", "lease", "إيجار", "commercial rent", "per month"),
-    "avg_ticket": ("ticket", "average price", "menu", "price signal", "sar", "سعر"),
-    "labor_monthly": ("salary", "labor", "wage", "barista", "staff cost", "راتب"),
+    "avg_ticket": ("ticket", "average price", "menu price", "price signal", "avg price"),
+    "labor_monthly": ("salary", "labor", "wage", "staff cost", "راتب", "أجور"),
     "food_cost_pct": ("cogs", "food cost", "cost of goods", "cogs%"),
-    "fitout_capex": ("fit out", "fit-out", "fitout", "renovation", "fit out cost"),
-    "equipment_capex": ("equipment", "machinery", "espresso", "capex equipment"),
-    "utilities_monthly": ("utilities", "electricity", "utility cost"),
-    "marketing_monthly": ("marketing", "cac", "advertising"),
-    "store_area_m2": ("sqm", "m2", "m²", "square meter", "area"),
+    "fitout_capex": ("fit out", "fit-out", "fitout", "renovation cost"),
+    "equipment_capex": ("equipment cost", "equipment capex", "machinery cost"),
+    "utilities_monthly": ("utilities", "electricity cost", "utility cost"),
+    "marketing_monthly": ("marketing budget", "marketing cost", "advertising cost"),
+    "store_area_m2": ("sqm", "m2", "m²", "square meter", "store area", "shop area"),
 }
 
 
@@ -50,6 +50,7 @@ class OperatingEstimate:
 
 
 def _nums_near_keywords(text: str, keywords: tuple[str, ...]) -> list[float]:
+    """Return numbers that appear near an evidence keyword (windowed, not whole-doc)."""
     low = text.lower()
     if not any(k in low for k in keywords):
         return []
@@ -60,10 +61,13 @@ def _nums_near_keywords(text: str, keywords: tuple[str, ...]) -> list[float]:
             val = float(raw)
         except ValueError:
             continue
-        # Skip years
         if val in {2023, 2024, 2025, 2026, 2027, 2030}:
             continue
-        out.append(val)
+        start = max(0, m.start() - 48)
+        end = min(len(low), m.end() + 48)
+        window = low[start:end]
+        if any(k in window for k in keywords):
+            out.append(val)
     return out
 
 
@@ -87,7 +91,8 @@ def _plausible_for_key(key: str, values: list[float]) -> list[float]:
     if key in {"utilities_monthly", "marketing_monthly"}:
         return [v for v in values if 200 <= v <= 100_000]
     if key == "store_area_m2":
-        return [v for v in values if 20 <= v <= 2_000]
+        # Reject postal-code-like 5-digit Riyadh zips and tiny/huge outliers
+        return [v for v in values if 20 <= v <= 800 and not (10000 <= v <= 99999)]
     return []
 
 
@@ -101,6 +106,8 @@ def synthesize_operating_estimates(
     Build SYSTEM_ESTIMATE candidates from evidence numerics.
 
     Returns only keys with at least one plausible sourced number.
+    Requires >=2 independent samples OR a single sample with explicit URL
+    and high keyword adjacency — never promotes one weak coincidence.
     """
     keys = target_keys or list(_KEY_EVIDENCE_HINTS.keys())
     buckets: dict[str, list[tuple[float, str, str]]] = {k: [] for k in keys}
@@ -117,13 +124,15 @@ def synthesize_operating_estimates(
             or ""
         )
         url = str(item.get("source_url") or item.get("url") or item.get("canonical_url") or "")
-        # Require some provenance — URL or document id or commercial_discovery source
         has_prov = bool(
             url
             or item.get("document_id")
             or item.get("source_key") in {"commercial_discovery", "gastat", "misa"}
         )
         if not has_prov or not text:
+            continue
+        # Skip search-exhaustion / meta logs — they echo query text, not facts
+        if "search exhaustion" in text.lower() or "queries executed" in text.lower():
             continue
         geo = str(item.get("geography") or geography)
         for key in keys:
@@ -136,12 +145,14 @@ def synthesize_operating_estimates(
     for key, samples in buckets.items():
         if not samples:
             continue
-        vals = [s[0] for s in samples]
+        # Require either multiple samples or an explicit URL-backed sample
         urls = sorted({s[1] for s in samples if s[1]})
+        if len(samples) < 2 and not urls:
+            continue
+        vals = [s[0] for s in samples]
         geos = [s[2] for s in samples if s[2]]
         geo = geos[0] if geos else geography
         low_v, high_v = min(vals), max(vals)
-        # Prefer median-ish base
         sorted_v = sorted(vals)
         base_v = sorted_v[len(sorted_v) // 2]
         conf = min(0.75, 0.35 + 0.1 * min(len(vals), 4) + (0.1 if urls else 0.0))

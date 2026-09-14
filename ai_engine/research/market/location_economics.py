@@ -45,6 +45,8 @@ def extract_location_economics(
         source_key = item.get("source_key")
         document_id = item.get("document_id") or item.get("source_id")
         kind_hint = str(item.get("document_type") or item.get("evidence_kind") or "")
+        if kind_hint == "search_exhaustion" or "search exhaustion" in text.lower():
+            continue
 
         is_location = any(
             k in lower
@@ -67,12 +69,17 @@ def extract_location_economics(
         factor = "district_context"
         value: Any = None
         unit = None
-        if "competition density" in lower or "amenities within" in lower:
+        if "competition density" in lower or "amenities within" in lower or "venues found via nominatim" in lower:
             factor = "competition_density"
             m = _DENSITY_RE.search(text)
             if m:
                 value = int(m.group(1) or m.group(2))
                 unit = "osm_amenities"
+            else:
+                m2 = re.search(r"approximately\s+(\d+)\s+named", text, re.I)
+                if m2:
+                    value = int(m2.group(1))
+                    unit = "nominatim_pois"
         elif "rent" in lower or "إيجار" in lower:
             factor = "commercial_rent_signal"
             rents = []
