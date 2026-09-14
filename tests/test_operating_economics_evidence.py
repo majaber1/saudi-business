@@ -388,3 +388,27 @@ def test_salary_labor_strategy_includes_wageindicator_seed():
     s = resolve_strategy(sector="fnb", city="Riyadh", district="Olaya", amenity="cafe")
     assert any("wageindicator.org" in u for u in s.seed_urls)
     assert any(d.endswith("wageindicator.org") or d == "wageindicator.org" for d in s.allowlist_domains)
+
+
+def test_salary_observation_not_remapped_to_rent():
+    """SAR/month salary statements must not be classified as rent_monthly."""
+    from ai_engine.research.schemas import ResearchClaim
+    from ai_engine.research.market.service import evidence_items_from_research_claims
+    from ai_engine.research.market.operating_estimates import synthesize_operating_estimates
+
+    claims = [
+        ResearchClaim(
+            statement=(
+                "salary_labor observation: statutory_minimum_wage = 4000 SAR/month (SAR). "
+                "Adapter: salary."
+            ),
+            source_url="https://wageindicator.org/salary/minimum-wage/saudi-arabia",
+            confidence=0.65,
+            source_type="document",
+        )
+    ]
+    items = evidence_items_from_research_claims(claims)
+    assert items and items[0].get("metric") == "salary_monthly_sar"
+    estimates = synthesize_operating_estimates(evidence_items=items, geography="Riyadh")
+    assert any(e.key == "labor_monthly" for e in estimates)
+    assert all(e.key != "rent_monthly" or float(e.base) != 4000 for e in estimates)

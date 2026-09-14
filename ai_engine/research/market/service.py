@@ -129,18 +129,33 @@ def evidence_items_from_research_claims(claims: list[Any]) -> list[dict[str, Any
                     pass
                 unit = (m.group(3) or "").strip() or "SAR"
                 item["unit"] = unit
-                # Map label/unit heuristics to metric ids used by bands
+                # Map label/unit heuristics to metric ids used by bands.
+                # Order matters: salary/COGS/menu before generic SAR/month→rent.
                 low_label = label.lower()
+                low_stmt = stmt.lower()
                 if "rent_sar_per_m2" in low_label or "sar/m2/year" in unit.lower():
                     item["metric"] = "rent_sar_per_m2_year"
-                elif "rent_monthly" in low_label or unit.lower() in {"sar/month", "sar/mo"}:
+                elif any(
+                    k in low_label or k in low_stmt
+                    for k in (
+                        "salary",
+                        "wage",
+                        "labor",
+                        "minimum_wage",
+                        "statutory_minimum",
+                        "راتب",
+                    )
+                ):
+                    item["metric"] = "salary_monthly_sar"
+                elif "rent_monthly" in low_label or (
+                    "rent" in low_label
+                    and unit.lower() in {"sar/month", "sar/mo", "sar"}
+                ):
                     item["metric"] = "rent_monthly_sar"
                 elif "store_area" in low_label or unit.lower() in {"m2", "m²"}:
                     item["metric"] = "store_area_m2"
                 elif "menu" in low_label or low_label == "menu_item":
                     item["metric"] = "menu_item_sar"
-                elif "salary" in low_label:
-                    item["metric"] = "salary_monthly_sar"
                 elif "equipment" in low_label:
                     item["metric"] = "equipment_item_sar"
                 elif "opening" in low_label or "furniture" in low_label or "pos" in low_label:
@@ -151,6 +166,8 @@ def evidence_items_from_research_claims(claims: list[Any]) -> list[dict[str, Any
                     item["metric"] = "fitout_total_sar"
                 elif "food_cost" in low_label or unit.lower() in {"percent", "%"}:
                     item["metric"] = "food_cost_pct"
+                elif unit.lower() in {"sar/month", "sar/mo"} and "rent" in low_stmt:
+                    item["metric"] = "rent_monthly_sar"
                 else:
                     # Use role_or_item / label as metric fallback for equipment package
                     item["metric"] = re.sub(r"\s+", "_", low_label)[:64]

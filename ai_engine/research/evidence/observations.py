@@ -32,12 +32,15 @@ class NumericObservation:
 
     def to_evidence_item(self) -> dict[str, Any]:
         """Shape compatible with operating_estimates / claims pipelines."""
-        label = self.role_or_item or self.metric
+        label = self.metric or self.role_or_item or "observation"
+        # Keep metric id in the statement so downstream recovery cannot mis-route
+        # salary SAR/month into rent (unit-only heuristics).
         statement = (
             f"{self.evidence_class} observation: {label} = {self.value:g} {self.unit} "
             f"({self.currency}). Geography: {self.geography}"
             + (f" / {self.district}" if self.district else "")
             + (f". Period: {self.period}" if self.period else "")
+            + (f". Role/item: {self.role_or_item}" if self.role_or_item else "")
             + f". Adapter: {self.adapter_id}."
         )
         if self.raw_excerpt:
