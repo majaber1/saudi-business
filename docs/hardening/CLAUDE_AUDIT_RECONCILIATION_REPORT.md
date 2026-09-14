@@ -2,10 +2,14 @@
 
 **Mode:** READ-ONLY reproduction + audit reconciliation + production trust gate  
 **Date:** 2026-09-13  
-**Authoritative tip under test:** `7b3fc3e36ce85d7fd3fd1d3e2db37f47b8b60790` (PR #53)  
+**Authoritative tip under test:** `7b3fc3e36ce85d7fd3fd1d3e2db37f47b8b60790` (PR #53 hardening tip; CI run 34789781467 SUCCESS)  
+**PR #53 head after this report:** docs-only commit on top of tip (no product/code fix)  
 **Frozen main:** `3ac591229c47d6408c26311a2bbf8232803a8223`  
 **Phase 9A:** DELAY (not started)  
-**Code changes for findings:** NONE (P1 confirmed → stop for owner approval)
+**Code changes for findings:** NONE (P1 confirmed → stop for owner approval)  
+**Current P0 Count:** 0  
+**Current P1 Count:** 2  
+**Current P2 Count:** 2+
 
 ---
 
