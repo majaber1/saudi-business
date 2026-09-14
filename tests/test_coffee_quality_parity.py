@@ -381,3 +381,28 @@ def test_run_financial_analysis_fnb_wired():
     assert fr.get("currency") == "SAR"
     assert fr.get("working_capital") is not None
     assert fr.get("capex_components")
+
+
+def test_owner_budget_cannot_become_capex_when_fnb_incomplete():
+    state = _fnb_state(
+        _a("owner_budget", "450000"),
+        _a("avg_ticket", "UNKNOWN"),
+        _a("daily_covers", "UNKNOWN"),
+        _a("fitout_capex", "UNKNOWN"),
+    )
+    mock_llm = type(
+        "L",
+        (),
+        {
+            "invoke": staticmethod(
+                lambda *a, **k: type("R", (), {"content": '{"capex": 450000, "revenue_projections": {"year_1": 0}}'})()
+            )
+        },
+    )()
+    with patch("ai_engine.agents.financial_analyst.get_llm", return_value=mock_llm):
+        run_financial_analysis(state)
+    fr = state.financial_results or {}
+    assert float(fr.get("capex") or 0) == 0.0
+    assert fr.get("budget_status") == "SURPLUS"
+    assert fr.get("currency") == "SAR"
+    assert any(str(n).startswith("fnb_") for n in (fr.get("extract_notes") or []))

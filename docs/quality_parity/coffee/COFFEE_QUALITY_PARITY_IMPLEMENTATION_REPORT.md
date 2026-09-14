@@ -41,4 +41,15 @@ Make Saudi Business independently capable of producing a specialty-coffee feasib
 
 ## REAL_USER_FLOW
 
-See `COFFEE_REAL_USER_FLOW_REPORT.md` (populated after live run).
+See `COFFEE_REAL_USER_FLOW_REPORT.md`.
+
+### REAL_USER_FLOW outcome (summary)
+
+- Study `study_d4ff0d3d5c7b` / project `1202`
+- Placeholder `10000` values: **eliminated** (UNKNOWN instead)
+- Financial: revenue blocked on UNKNOWN; CAPEX no longer equals owner budget after explain-overwrite fix
+- Competitors: NOT_FOUND (safe, no fabrication)
+- Verdict: `INSUFFICIENT_EVIDENCE` (unsupported GO blocked)
+- Persistence: PASS
+- Claude-level investment-grade operating detail: **PARTIAL** — safety/wiring fixed; deeper evidence-backed SYSTEM_ESTIMATE still needed for full parity usefulness
+

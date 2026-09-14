@@ -454,6 +454,14 @@ def _merge_extract(primary: dict | None, fallback: dict | None) -> dict | None:
 
 def _extract_financials_from_assumptions(state: StudyState) -> dict | None:
     lang = state.language
+    deterministic = _deterministic_extract(state)
+    # F&B / café governed path: never let LLM invent CAPEX from owner_budget or
+    # overwrite incomplete UNKNOWN-aware extract with fabricated investment.
+    if deterministic and any(
+        str(n).startswith("fnb_") for n in (deterministic.get("extract_notes") or [])
+    ):
+        return deterministic
+
     llm = get_llm("extraction")
 
     context_parts = []
@@ -473,7 +481,7 @@ def _extract_financials_from_assumptions(state: StudyState) -> dict | None:
         except Exception:
             llm_extracted = None
 
-    return _merge_extract(llm_extracted, _deterministic_extract(state))
+    return _merge_extract(llm_extracted, deterministic)
 
 
 def _compute_scenario(capex: float, revenues: list, costs: list, discount_rate: float, multiplier: float) -> dict:
@@ -674,7 +682,24 @@ def run_financial_analysis(state: StudyState) -> StudyState:
         financial_data["projection_years"] = computed.get("projection_years")
         financial_data["revenue_projections"] = computed["revenue_projections"]
         financial_data["cost_projections"] = computed["cost_projections"]
-        financial_data.setdefault("capex", computed["capex"])
+        # Deterministic financials always win — LLM must not invent CAPEX from owner_budget.
+        financial_data["capex"] = computed["capex"]
+        for k in (
+            "currency",
+            "capex_components",
+            "working_capital",
+            "total_initial_funding",
+            "owner_budget",
+            "budget_gap",
+            "budget_status",
+            "cogs_y1",
+            "gross_profit_y1",
+            "ebitda_y1",
+            "unknown_assumption_keys",
+            "trust_gates",
+        ):
+            if computed.get(k) is not None:
+                financial_data[k] = computed[k]
         existing_warnings = financial_data.get("warnings") or []
         if isinstance(existing_warnings, str):
             existing_warnings = [existing_warnings]
