@@ -150,3 +150,13 @@ Reason: end-to-end study still cannot produce investment-grade revenue, break-ev
 | **RUF13** | **`study_3503f2d24a1f` / 1218** | **rent; labor floor 4000; hours 13.5; CAPEX** | **ticket; seats/covers; COGS%; fit-out; full payroll** |
 
 Artifacts: `/opt/cursor/artifacts/coffee-operating-economics-ruf13/`
+
+## 9. Post-RUF13 wiring follow-up (from gap audit)
+
+Applied evidence-backed plumbing fixes only (no invented economics values):
+
+1. **Overpass empty fallthrough** — HTTP 200 with `elements: []` no longer stops mirror rotation.
+2. **Hours → capacity path** — `operating_hours_day` SYSTEM_ESTIMATE is now passed into `derive_capacity_and_demand` (covers still require seats).
+3. **Gap-aware seed/query budget** — when `labor_monthly` / `food_cost_pct` / `fitout_capex` are missing, those evidence classes are prioritized and seed/query caps rise (16/14) so rent/equipment catalogs cannot starve them.
+
+These close retrieval *plumbing* gaps identified by the [Explore labor/COGS/seats gaps](bc-4025c127-4957-5736-aa9e-5cda04fae16c) audit. They do **not** by themselves close seats/COGS%/fit-out without upstream observations. **DO NOT MERGE** unchanged.

@@ -1047,11 +1047,12 @@ class CommercialDiscoveryConnector(SourceConnector):
             f"out tags center {self.max_pois};"
         )
         endpoints = (
-            # mail.ru mirror currently answers from this environment; CH/DE often empty/406.
+            # Prefer mirrors that return non-empty elements from this environment.
+            # Empty 200 responses are skipped (see loop below) so order is best-effort.
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-            "https://overpass.osm.ch/api/interpreter",
             "https://overpass-api.de/api/interpreter",
             "https://lz4.overpass-api.de/api/interpreter",
+            "https://overpass.osm.ch/api/interpreter",
         )
         last_err: Dict[str, Any] = {"ok": False, "reason": "no_endpoint"}
         try:
@@ -1069,7 +1070,18 @@ class CommercialDiscoveryConnector(SourceConnector):
                                 "endpoint": ep,
                             }
                             continue
-                        payload = r.json()
+                        candidate = r.json()
+                        # Empty 200s (common on some mirrors) must not short-circuit
+                        # fallthrough — otherwise seats/hours starve while DE has data.
+                        elems = candidate.get("elements") if isinstance(candidate, dict) else None
+                        if not isinstance(elems, list) or len(elems) == 0:
+                            last_err = {
+                                "ok": False,
+                                "reason": "empty_elements",
+                                "endpoint": ep,
+                            }
+                            continue
+                        payload = candidate
                         used_url = ep
                         break
                     except Exception as exc:  # noqa: BLE001

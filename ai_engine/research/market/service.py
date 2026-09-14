@@ -616,9 +616,15 @@ def execute_market_research(
         seats = None
         hours = None
         for e in operating_estimates:
-            if e.get("key") == "seats_capacity":
+            key = e.get("key")
+            if key == "seats_capacity":
                 try:
                     seats = float(e.get("base") or e.get("value"))
+                except (TypeError, ValueError):
+                    pass
+            elif key == "operating_hours_day":
+                try:
+                    hours = float(e.get("base") or e.get("value"))
                 except (TypeError, ValueError):
                     pass
         throughput = derive_capacity_and_demand(

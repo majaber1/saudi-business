@@ -412,3 +412,31 @@ def test_salary_observation_not_remapped_to_rent():
     estimates = synthesize_operating_estimates(evidence_items=items, geography="Riyadh")
     assert any(e.key == "labor_monthly" for e in estimates)
     assert all(e.key != "rent_monthly" or float(e.base) != 4000 for e in estimates)
+
+
+def test_gap_recovery_prioritizes_labor_and_cogs_seeds():
+    """Missing labor/COGS must not be starved by rent/equipment seed budget."""
+    from ai_engine.research.evidence.strategy import resolve_strategy
+
+    s = resolve_strategy(
+        sector="fnb",
+        city="Riyadh",
+        district="Olaya",
+        amenity="cafe",
+        missing_keys=["labor_monthly", "food_cost_pct", "fitout_capex"],
+    )
+    joined = " ".join(s.seed_urls)
+    assert "wageindicator.org" in joined
+    # COGS ingredient seeds should survive the budget when prioritized
+    assert "amazon.sa" in joined
+    assert any("milk" in u or "bean" in u or "coffee" in u for u in s.seed_urls)
+
+
+def test_capacity_demand_uses_operating_hours_estimate():
+    """Hours band must be read alongside seats for capacity derivation."""
+    from ai_engine.research.evidence.demand import derive_capacity_and_demand
+
+    blocked = derive_capacity_and_demand(seats=20.0, operating_hours=None)
+    assert blocked.get("capacity") is None
+    ok = derive_capacity_and_demand(seats=20.0, operating_hours=13.5)
+    assert ok.get("capacity") is not None

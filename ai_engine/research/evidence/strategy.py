@@ -98,24 +98,49 @@ def seed_urls_for_classes(
     query: str = "",
     amenity: str = "",
     max_urls: int = 12,
+    prioritize_class_ids: list[str] | None = None,
 ) -> list[str]:
     ctx = build_render_context(
         city=city, district=district, sector=sector, query=query, amenity=amenity
     )
+    # When recovering gaps, ensure each prioritized class contributes at least one
+    # seed before rent/equipment catalogs consume the entire budget.
+    ordered = list(evidence_class_ids)
+    if prioritize_class_ids:
+        head = [c for c in prioritize_class_ids if c in ordered]
+        tail = [c for c in ordered if c not in head]
+        ordered = head + tail
+
     out: list[str] = []
-    for eid in evidence_class_ids:
+
+    def _append_from(eid: str, *, limit: int | None = None) -> int:
         spec = EVIDENCE_CLASSES.get(eid)
         if not spec:
-            continue
+            return 0
+        added = 0
         for tmpl in spec.seed_url_templates:
             url = render_template(tmpl, ctx=ctx).strip()
-            # Skip unresolved placeholders
             if "{" in url or "}" in url:
                 continue
             if url and url not in out:
                 out.append(url)
+                added += 1
             if len(out) >= max_urls:
-                return out
+                return added
+            if limit is not None and added >= limit:
+                return added
+        return added
+
+    if prioritize_class_ids:
+        for eid in prioritize_class_ids:
+            if eid in ordered:
+                _append_from(eid, limit=2)
+                if len(out) >= max_urls:
+                    return out
+    for eid in ordered:
+        _append_from(eid)
+        if len(out) >= max_urls:
+            return out
     return out
 
 
@@ -202,6 +227,22 @@ def resolve_strategy(
                 domain_ids.append(dc)
 
     allow = domains_for_classes(domain_ids)
+    prioritize: list[str] = []
+    miss_set = set(missing_keys or [])
+    if miss_set:
+        for eid, spec in EVIDENCE_CLASSES.items():
+            if miss_set.intersection(spec.assumption_keys) and eid not in prioritize:
+                prioritize.append(eid)
+        # Prefer gap classes ahead of already-satisfied catalog-heavy classes.
+        if prioritize:
+            head = [c for c in prioritize if c in classes]
+            tail = [c for c in classes if c not in head]
+            classes = head + tail
+            # Rebuild adapters/domain order is already done; class order mainly
+            # affects seed/query budget allocation below.
+
+    seed_budget = 16 if prioritize else 12
+    query_budget = 14 if prioritize else 10
     queries = query_templates_for_classes(
         classes,
         city=city,
@@ -209,6 +250,7 @@ def resolve_strategy(
         sector=sector or amenity or "",
         query=query,
         amenity=amenity,
+        max_queries=query_budget,
     )
     seeds = seed_urls_for_classes(
         classes,
@@ -217,6 +259,8 @@ def resolve_strategy(
         sector=sector or amenity or "",
         query=query,
         amenity=amenity,
+        max_urls=seed_budget,
+        prioritize_class_ids=prioritize or None,
     )
     # Preserve which evidence class owns each seed (for adapter scoping)
     seed_owners: dict[str, list[str]] = {}
