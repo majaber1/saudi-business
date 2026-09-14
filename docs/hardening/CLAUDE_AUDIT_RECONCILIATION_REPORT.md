@@ -1,15 +1,15 @@
 # Saudi Business V4 — Claude Audit Reconciliation Report
 
 **Mode:** READ-ONLY reproduction + audit reconciliation + production trust gate  
-**Date:** 2026-09-13  
-**Authoritative tip under test:** `7b3fc3e36ce85d7fd3fd1d3e2db37f47b8b60790` (PR #53 hardening tip; CI run 34789781467 SUCCESS)  
-**PR #53 head after this report:** docs-only commit on top of tip (no product/code fix)  
+**Date:** 2026-09-13 (updated 2026-09-14 after owner-approved P1 closure)  
+**Authoritative tip under test (audit):** `7b3fc3e36ce85d7fd3fd1d3e2db37f47b8b60790`  
+**P1 closure implementation:** `dd2b22debfc3e1153cf149273c113dc4b1bc5a85` (see `P1_HARDENING_CLOSURE_REPORT.md`)  
 **Frozen main:** `3ac591229c47d6408c26311a2bbf8232803a8223`  
 **Phase 9A:** DELAY (not started)  
-**Code changes for findings:** NONE (P1 confirmed → stop for owner approval)  
+**Post-closure P1 status:** both confirmed P1s FIXED under owner approval  
 **Current P0 Count:** 0  
-**Current P1 Count:** 2  
-**Current P2 Count:** 2+
+**Current P1 Count:** 0 (closed)  
+**Current P2 Count:** 2+ (unchanged; not in scope)
 
 ---
 
@@ -134,29 +134,20 @@ Evidence: `/opt/cursor/artifacts/prod_ai_e2e_final.json`. Tip-local Coffee/F&B R
 
 ### 5. Evidence ↔ Assumption consistency
 
-**Classification:** `CONFIRMED_CURRENT`  
-**Severity:** **P1**
+**Classification:** `FIXED_CURRENT` (closed 2026-09-14 under owner approval)  
+**Severity:** was **P1** → FIXED
 
-Hardening evidence gates check **theme presence** (pricing/competitors/location/demand keywords), not numeric agreement between evidence claims and assumption values.
+Hardening now includes allowlisted numeric consistency in `evidence_gates.py`.
+Material contradictions emit `EVIDENCE_ASSUMPTION_NUMERIC_CONTRADICTION` and prevent unsupported strong GO via existing decision-safety.
 
-Reproduction:
+See `docs/hardening/P1_HARDENING_CLOSURE_REPORT.md`.
 
-- Evidence themes satisfied → `max_allowed_verdict = GO`, `apply_decision_safety` left **GO** even when rationale referenced contradictory scale (e.g. evidence 5,000 tx/day vs assumption 1,000/month class).
-- Missing themes → correctly downgrades (e.g. to `INSUFFICIENT_EVIDENCE`).
-
-**FAIL condition met:** critical numeric contradiction can exist while strong verdict is not blocked.
-
-#### STOP — P1 root cause (no fix without owner approval)
+#### Historical STOP note (pre-fix)
 
 | Item | Detail |
 |------|--------|
-| **ROOT CAUSE** | `evaluate_evidence_verdict_gates` only keyword-matches themes; no numeric extract/compare vs assumptions |
-| **BLAST RADIUS** | Any archetype; decision_safety / GO / GO_WITH_CONDITIONS can proceed with contradictory magnitudes |
-| **SMALLEST SAFE FIX** | Add deterministic numeric consistency checks for a small allowlisted set of comparable keys (tx/day vs tx/month, price, units); on conflict emit gate code + downgrade max verdict; **do not** change Research Quality authority/freshness/conflict semantics |
-| **FILES EXPECTED** | `ai_engine/hardening/evidence_gates.py` (+ tests); optional Study API projection of warnings |
-| **TESTS REQUIRED** | Unit: contradiction detected + GO blocked/downgraded; regression: theme-only cases unchanged; 8C.2/8C.3 RQ tests unchanged |
-| **MIGRATION REQUIRED?** | NO |
-| **ARCHITECTURE IMPACT?** | NO (gate layer only) |
+| **ROOT CAUSE** | Theme keyword gates only; no numeric extract/compare vs assumptions |
+| **Fix applied** | Allowlisted deterministic compare + decision-safety downgrade; no RQ semantic change |
 
 ---
 
@@ -250,22 +241,20 @@ Production does **not** run PR #53 tip until merge. Flow/LLM/persistence/tenant 
 
 ### 12. Funding seed UniqueViolation (`sdb-excellence-track`)
 
-**Classification:** `CONFIRMED_CURRENT`  
-**Severity:** **P1** (runtime race under concurrent cold seed)
+**Classification:** `FIXED_CURRENT` (closed 2026-09-14 under owner approval)  
+**Severity:** was **P1** → FIXED
 
-`ensure_seed_programs`: check `existing_slugs` then INSERT — **no** `IntegrityError` / `ON CONFLICT` handler → TOCTOU under concurrent requests.
+`ensure_seed_programs` now uses SAVEPOINT + `IntegrityError` recovery for duplicate-slug races.
+Unique constraint preserved; unrelated DB errors still propagate.
 
-#### STOP — P1 root cause (no fix without owner approval)
+See `docs/hardening/P1_HARDENING_CLOSURE_REPORT.md`.
+
+#### Historical STOP note (pre-fix)
 
 | Item | Detail |
 |------|--------|
 | **ROOT CAUSE** | Non-transactional check-then-insert on unique `slug` |
-| **BLAST RADIUS** | Funding match/list endpoints that call seed on cold/empty DB; request failures / noisy logs; not silent financial corruption |
-| **SMALLEST SAFE FIX** | Catch `IntegrityError` and continue; or `INSERT … ON CONFLICT DO NOTHING`; keep catalog content unchanged |
-| **FILES EXPECTED** | `backend/app/services/funding_programs.py` (+ concurrency test) |
-| **TESTS REQUIRED** | Parallel seed twice → no unhandled UniqueViolation; row count stable |
-| **MIGRATION REQUIRED?** | NO |
-| **ARCHITECTURE IMPACT?** | NO |
+| **Fix applied** | `begin_nested()` + catch IntegrityError only |
 
 ---
 
@@ -286,7 +275,7 @@ Retry/recoverability: present as user messaging / Retry-After on health; not a f
 | Severity | Current confirmed on tip / live trust |
 |----------|----------------------------------------|
 | **P0** | **0** |
-| **P1** | **2** (evidence↔assumption numeric; funding seed race) |
+| **P1** | **0** (both owner-approved findings FIXED 2026-09-14) |
 | **P2** | **2+** (plausibility soft-only; intermittent health; CAPEX field mapping note) |
 
 ---
@@ -295,9 +284,9 @@ Retry/recoverability: present as user messaging / Retry-After on health; not a f
 
 | Gate | Result |
 |------|--------|
-| **PRODUCTION TRUST** | **BLOCKED** / not fully proven for tip-equivalent financial coherence on live prod |
+| **PRODUCTION TRUST** | **BLOCKED** (tip not production-deployed; commercial not claimed from CI) |
 | **COMMERCIAL TRUST** | **NOT_YET_PROVEN** |
-| **HARDENING MERGE RECOMMENDATION** | **HOLD** |
+| **HARDENING MERGE RECOMMENDATION** | **READY_FOR_OWNER_REVIEW** (P1s closed; owner merge decision pending) |
 | **PHASE 9A RECOMMENDATION** | **DELAY** |
 
 ---

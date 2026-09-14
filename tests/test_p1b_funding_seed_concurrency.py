@@ -32,7 +32,9 @@ def funding_db(monkeypatch):
     handle.close()
     url = "sqlite:///" + handle.name
     monkeypatch.setenv("DATABASE_URL", url)
-    # Rebind engine/session for this isolated sqlite file.
+    # Isolate engine/session; restore globals after the test to avoid cross-file pollution.
+    prior_engine = app_db.engine
+    prior_bind = app_db.SessionLocal.kw.get("bind") if hasattr(app_db.SessionLocal, "kw") else None
     app_db.engine = app_db.create_engine(url, connect_args={"check_same_thread": False})
     app_db.SessionLocal.configure(bind=app_db.engine)
     models.Base.metadata.create_all(
@@ -44,6 +46,8 @@ def funding_db(monkeypatch):
         yield session
     finally:
         session.close()
+        app_db.SessionLocal.configure(bind=prior_engine)
+        app_db.engine = prior_engine
 
 
 def test_p1b_first_seed_inserts_catalog(funding_db):
