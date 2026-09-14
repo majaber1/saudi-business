@@ -266,3 +266,73 @@ def test_sector_blurb_uses_amenity_search_token():
     joined = " | ".join(s.queries)
     assert "cafe menu" in joined.lower()
     assert "third-wave" not in joined.lower()
+
+
+def test_wasalt_seeds_in_commercial_rent_strategy():
+    s = resolve_strategy(sector="fnb", city="Riyadh", district="Olaya", amenity="cafe")
+    seeds = " ".join(s.seed_urls)
+    assert "wasalt.sa" in seeds
+    assert "عقارات-تجارية-للايجار-في-الرياض" in seeds
+    assert "صالات-عرض-للايجار-في-الرياض" in seeds
+    assert any(d.endswith("wasalt.sa") or d == "wasalt.sa" for d in s.allowlist_domains)
+
+
+def test_wasalt_next_data_rent_adapter_fixture():
+    html = """
+    <script id="__NEXT_DATA__" type="application/json">
+    {"props":{"pageProps":{"searchResult":{"properties":[
+      {"floorSize":"80","propertyInfo":{
+        "propertyMainType":"تجاري","propertySubType":"معرض","propertyFor":"rent",
+        "expectedRent":120000,"expectedRentType":"/سنة","title":"معرض للإيجار",
+        "district":"العليا","slug":"showroom-olaya-1"
+      }},
+      {"floorSize":"60","propertyInfo":{
+        "propertyMainType":"تجاري","propertySubType":"معرض","propertyFor":"rent",
+        "expectedRent":96000,"expectedRentType":"/سنة","title":"معرض 2",
+        "district":"العليا","slug":"showroom-olaya-2"
+      }},
+      {"floorSize":"9000","propertyInfo":{
+        "propertyMainType":"تجاري","propertySubType":"مكتب","propertyFor":"rent",
+        "expectedRent":1000,"expectedRentType":"/سنة","title":"cowork desk",
+        "district":"السويدي","slug":"desk-1"
+      }}
+    ]}}}}
+    </script>
+    """
+    obs = adapt_rent_listing(
+        text="commercial rent Riyadh",
+        html=html,
+        url="https://wasalt.sa/عقارات-تجارية-للايجار-في-الرياض",
+        title="Wasalt commercial",
+        geography="Riyadh",
+        district="Olaya",
+    )
+    assert obs
+    monthly = [o.value for o in obs if o.metric == "rent_monthly_sar"]
+    assert 10000.0 in monthly and 8000.0 in monthly
+    # Coworking desk noise excluded
+    assert all(v >= 3000 for v in monthly)
+    bands = bands_from_observations(obs, geography="Riyadh")
+    assert any(b.key == "rent_monthly" for b in bands)
+
+
+def test_osm_capacity_signals_to_bands():
+    from ai_engine.research.evidence.adapters import adapt_osm_capacity_signals
+
+    obs = adapt_osm_capacity_signals(
+        seat_tags=[
+            {"name": "Cafe A", "metric": "seats", "value": 28},
+            {"name": "Cafe B", "metric": "capacity", "value": 36},
+        ],
+        opening_hours_tags=[
+            {"name": "Cafe A", "value": "Mo-Su 08:00-22:00"},
+            {"name": "Cafe B", "value": "Mo-Fr 09:00-23:00"},
+        ],
+        geography="Riyadh",
+        district="Olaya",
+    )
+    assert {o.metric for o in obs} >= {"seats_capacity", "operating_hours_day"}
+    bands = bands_from_observations(obs, geography="Riyadh")
+    keys = {b.key for b in bands}
+    assert "seats_capacity" in keys
+    assert "operating_hours_day" in keys

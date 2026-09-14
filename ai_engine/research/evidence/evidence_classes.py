@@ -41,6 +41,9 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
             "https://www.bayut.sa/en/for-rent/commercial/{city_slug}/",
             "https://haraj.com.sa/",
             "https://haraj.com.sa/tags/{city_ar}_إيجار%20محل",
+            # Wasalt commercial category SSR pages expose __NEXT_DATA__ listing rents.
+            "https://wasalt.sa/عقارات-تجارية-للايجار-في-{city_ar}",
+            "https://wasalt.sa/صالات-عرض-للايجار-في-{city_ar}",
         ),
         notes="Normalize to SAR/m²/year when area+period present; else SAR/month.",
     ),

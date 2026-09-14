@@ -373,6 +373,40 @@ class CommercialDiscoveryConnector(SourceConnector):
             attempts.append({"source": "overpass_density", **dens_meta})
             if density:
                 raw_docs.append(density)
+                # Promote OSM seat/opening_hours tags into numeric observations when present.
+                try:
+                    from ai_engine.research.evidence.adapters import (
+                        adapt_osm_capacity_signals,
+                    )
+
+                    capacity_obs = adapt_osm_capacity_signals(
+                        seat_tags=list(dens_meta.get("seat_tags") or []),
+                        opening_hours_tags=list(
+                            dens_meta.get("opening_hours_tags") or []
+                        ),
+                        geography=geography,
+                        district=district or None,
+                    )
+                    if capacity_obs:
+                        cap_docs = self._record_observations(
+                            capacity_obs, geography=geography
+                        )
+                        raw_docs.extend(cap_docs)
+                        attempts.append(
+                            {
+                                "source": "osm_capacity_signals",
+                                "ok": True,
+                                "observation_count": len(capacity_obs),
+                            }
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    attempts.append(
+                        {
+                            "source": "osm_capacity_signals",
+                            "ok": False,
+                            "error": str(exc),
+                        }
+                    )
             # Follow OSM-tagged brand websites for menu/ticket evidence (session-merged).
             brand_urls = list(dens_meta.get("websites") or [])
             if brand_urls and strategy is not None:
@@ -998,6 +1032,7 @@ class CommercialDiscoveryConnector(SourceConnector):
             names: list[str] = []
             websites: list[str] = []
             seats_obs: list[dict[str, Any]] = []
+            hours_obs: list[dict[str, Any]] = []
             for el in elements:
                 tags = el.get("tags") or {}
                 n = tags.get("name") or tags.get("name:en")
@@ -1022,6 +1057,14 @@ class CommercialDiscoveryConnector(SourceConnector):
                             )
                         except (TypeError, ValueError):
                             pass
+                if tags.get("opening_hours"):
+                    hours_obs.append(
+                        {
+                            "name": n,
+                            "metric": "opening_hours",
+                            "value": str(tags.get("opening_hours")),
+                        }
+                    )
             count = len(elements)
             content = (
                 f"Location economics — competition density: approximately {count} "
@@ -1029,6 +1072,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                 f"lat={lat:.4f}, lon={lon:.4f}. "
                 f"Named sample: {', '.join(names[:8]) or 'unnamed'}. "
                 f"Brand websites tagged: {', '.join(websites[:6]) or 'none'}. "
+                f"Seat/capacity tags: {len(seats_obs)}; opening_hours tags: {len(hours_obs)}. "
                 f"This is a footfall/competition-density proxy for district operating context, "
                 f"not a rent quote."
             )
@@ -1046,6 +1090,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                     "density_count": count,
                     "brand_websites": websites[:12],
                     "seat_tags": seats_obs[:12],
+                    "opening_hours_tags": hours_obs[:12],
                 },
                 {
                     "ok": True,
@@ -1053,6 +1098,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                     "named": len(names),
                     "websites": websites[:12],
                     "seat_tags": seats_obs[:12],
+                    "opening_hours_tags": hours_obs[:12],
                 },
             )
         except Exception as exc:  # noqa: BLE001
@@ -1396,11 +1442,18 @@ class CommercialDiscoveryConnector(SourceConnector):
         }
 
     def _bing_search(self, query: str) -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
-        url = f"https://www.bing.com/search?q={quote_plus(query)}"
+        # Prefer Saudi market results — bare Bing queries from this IP often geo-bias to US.
+        url = (
+            f"https://www.bing.com/search?q={quote_plus(query)}"
+            f"&setmkt=en-SA&setlang=en&cc=SA"
+        )
         try:
             with httpx.Client(
                 timeout=self.timeout_seconds,
-                headers={"User-Agent": SEARCH_USER_AGENT, "Accept-Language": "en-US,en;q=0.9,ar;q=0.8"},
+                headers={
+                    "User-Agent": SEARCH_USER_AGENT,
+                    "Accept-Language": "en-SA,ar-SA;q=0.9,en;q=0.8,ar;q=0.7",
+                },
                 follow_redirects=True,
             ) as client:
                 r = client.get(url)

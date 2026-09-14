@@ -23,6 +23,8 @@ METRIC_TO_ASSUMPTION: dict[str, str] = {
     "fitout_sar_per_m2": "fitout_capex",
     "fitout_total_sar": "fitout_capex",
     "food_cost_pct": "food_cost_pct",
+    "seats_capacity": "seats_capacity",
+    "operating_hours_day": "operating_hours_day",
 }
 
 
@@ -357,6 +359,32 @@ def bands_from_observations(
             geography=geography,
             unit="percent",
             derivation_prefix="Sourced COGS / food-cost percent mentions. ",
+        )
+        if band:
+            bands.append(band)
+
+    seats = by_metric.get("seats_capacity") or []
+    if seats:
+        band = derive_estimate_band(
+            key="seats_capacity",
+            values=[o.value for o in seats],
+            observations=seats,
+            geography=geography,
+            unit="seats",
+            derivation_prefix="OSM/local venue seat or capacity tags. ",
+        )
+        if band:
+            bands.append(band)
+
+    hours = by_metric.get("operating_hours_day") or []
+    if hours:
+        band = derive_estimate_band(
+            key="operating_hours_day",
+            values=[o.value for o in hours],
+            observations=hours,
+            geography=geography,
+            unit="hours",
+            derivation_prefix="Parsed OSM opening_hours into average daily open hours. ",
         )
         if band:
             bands.append(band)

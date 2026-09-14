@@ -1,6 +1,7 @@
 """Source-specific numeric evidence adapters (generic, not coffee-hardcoded)."""
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -121,15 +122,317 @@ def extract_sar_amounts(text: str) -> list[float]:
     return out
 
 
+_WASALT_RETAIL_SUBTYPES = {
+    "معرض",
+    "محل",
+    "showroom",
+    "shop",
+    "retail",
+    "store",
+}
+_WASALT_EXCLUDE_SUBTYPES = {
+    "مستودع",
+    "warehouse",
+    "أرض",
+    "land",
+    "شقة",
+    "apartment",
+    "فيلا",
+    "villa",
+}
+
+
+def _parse_opening_hours_daily(value: str) -> float | None:
+    """Best-effort OSM opening_hours → average open hours/day (methodology parse, not invention)."""
+    raw = (value or "").strip()
+    if not raw or raw.lower() in {"24/7", "open"}:
+        return 24.0 if raw.lower() in {"24/7"} else None
+    # Match HH:MM-HH:MM ranges (take first range as representative day length).
+    ranges = re.findall(
+        r"(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})",
+        raw,
+    )
+    if not ranges:
+        return None
+    hours: list[float] = []
+    for h1, m1, h2, m2 in ranges:
+        start = int(h1) + int(m1) / 60.0
+        end = int(h2) + int(m2) / 60.0
+        if end <= start:
+            end += 24.0
+        dur = end - start
+        if 1.0 <= dur <= 24.0:
+            hours.append(dur)
+    if not hours:
+        return None
+    return round(sum(hours) / len(hours), 2)
+
+
+def adapt_osm_capacity_signals(
+    *,
+    seat_tags: list[dict[str, Any]] | None = None,
+    opening_hours_tags: list[dict[str, Any]] | None = None,
+    geography: str = "Saudi Arabia",
+    district: str | None = None,
+    source_url: str | None = "https://overpass-api.de/api/interpreter",
+) -> list[NumericObservation]:
+    """Promote OSM seat/capacity + opening_hours tags into numeric observations."""
+    now = datetime.now(timezone.utc).isoformat()
+    obs: list[NumericObservation] = []
+    for row in seat_tags or []:
+        try:
+            val = float(row.get("value"))
+        except (TypeError, ValueError):
+            continue
+        if not (4 <= val <= 400):
+            continue
+        obs.append(
+            NumericObservation(
+                evidence_class="capacity_signals",
+                metric="seats_capacity",
+                value=val,
+                unit="seats",
+                geography=geography,
+                district=district,
+                role_or_item=str(row.get("name") or "osm_amenity"),
+                source_url=source_url,
+                source_title=f"OSM {row.get('metric') or 'seats'} tag",
+                retrieved_at=now,
+                adapter_id="osm_capacity",
+                raw_excerpt=str(row)[:200],
+                confidence=0.55,
+                metadata={"osm_metric": row.get("metric"), "source": "overpass"},
+            )
+        )
+    for row in opening_hours_tags or []:
+        daily = _parse_opening_hours_daily(str(row.get("value") or ""))
+        if daily is None or not (4 <= daily <= 24):
+            continue
+        obs.append(
+            NumericObservation(
+                evidence_class="capacity_signals",
+                metric="operating_hours_day",
+                value=float(daily),
+                unit="hours",
+                geography=geography,
+                district=district,
+                role_or_item=str(row.get("name") or "osm_amenity"),
+                source_url=source_url,
+                source_title="OSM opening_hours tag",
+                retrieved_at=now,
+                adapter_id="osm_opening_hours",
+                raw_excerpt=str(row.get("value") or "")[:200],
+                confidence=0.6,
+                metadata={"source": "overpass", "raw_opening_hours": row.get("value")},
+            )
+        )
+    return obs
+
+
+def _adapt_wasalt_next_data(
+    *,
+    html: str,
+    url: str | None,
+    title: str | None,
+    geography: str,
+    district: str | None,
+) -> list[NumericObservation]:
+    """Parse Wasalt category SSR __NEXT_DATA__ commercial rent listings."""
+    host = _host(url)
+    if host and "wasalt.sa" not in host and "wasalt.com" not in host:
+        # Still allow when html clearly contains Wasalt searchResult payload.
+        if '"searchResult"' not in (html or "") or "wasalt" not in (html or "").lower():
+            return []
+    m = re.search(
+        r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>',
+        html or "",
+        re.I | re.S,
+    )
+    if not m:
+        return []
+    try:
+        payload = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return []
+    props = (
+        ((payload.get("props") or {}).get("pageProps") or {}).get("searchResult") or {}
+    )
+    listings = props.get("properties") or []
+    if not isinstance(listings, list) or not listings:
+        return []
+
+    now = datetime.now(timezone.utc).isoformat()
+    obs: list[NumericObservation] = []
+    for listing in listings[:40]:
+        if not isinstance(listing, dict):
+            continue
+        info = listing.get("propertyInfo") or {}
+        if not isinstance(info, dict):
+            continue
+        main_type = str(info.get("propertyMainType") or "")
+        sub_type = str(info.get("propertySubType") or "")
+        prop_for = str(info.get("propertyFor") or info.get("transactionType") or "rent")
+        if prop_for and prop_for.lower() not in {"rent", "إيجار", "lease", ""}:
+            # sale listings on mixed pages
+            if "sale" in prop_for.lower() or prop_for in {"بيع"}:
+                continue
+        if any(x in sub_type for x in _WASALT_EXCLUDE_SUBTYPES):
+            continue
+        # Prefer retail/showroom; allow office only with café-plausible size + rent.
+        is_retail = any(x in sub_type for x in _WASALT_RETAIL_SUBTYPES) or sub_type.lower() in {
+            "showroom",
+            "shop",
+        }
+        is_office = "مكتب" in sub_type or "office" in sub_type.lower()
+        if not (is_retail or is_office or "تجاري" in main_type or "commercial" in main_type.lower()):
+            continue
+
+        rent_raw = info.get("expectedRent")
+        try:
+            rent_amt = float(rent_raw)
+        except (TypeError, ValueError):
+            continue
+        freq = str(
+            info.get("expectedRentType")
+            or ((info.get("rentFreq") or {}).get("yearly") or {}).get("freq")
+            or ""
+        )
+        period = "year"
+        if any(k in freq for k in ("شهر", "month", "/الشهر", "/mo")):
+            period = "month"
+        elif any(k in freq for k in ("سنة", "year", "/سنة", "yearly")):
+            period = "year"
+        elif rent_amt >= 50_000:
+            period = "year"
+        else:
+            period = "month"
+
+        monthly = rent_amt if period == "month" else rent_amt / 12.0
+        area_raw = listing.get("floorSize")
+        if area_raw in (None, ""):
+            for attr in listing.get("attributes") or []:
+                if isinstance(attr, dict) and attr.get("key") in {
+                    "builtUpArea",
+                    "area",
+                    "landArea",
+                }:
+                    area_raw = attr.get("value")
+                    break
+        try:
+            area = float(str(area_raw).replace(",", "")) if area_raw not in (None, "") else None
+        except (TypeError, ValueError):
+            area = None
+
+        # Filter coworking-desk noise (tiny monthly on huge advertised floors).
+        if is_office and not is_retail:
+            if monthly < 8_000:
+                continue
+            if area is not None and not (40 <= area <= 400):
+                continue
+        if is_retail:
+            if monthly < 3_000:
+                continue
+            # Showrooms/shops for small F&B commonly 20–2,000 m² on Saudi portals.
+            if area is not None and not (20 <= area <= 2000):
+                continue
+        if not (3_000 <= monthly <= 400_000):
+            continue
+
+        listing_district = district or str(info.get("district") or "") or None
+        listing_title = str(info.get("title") or title or sub_type or "Wasalt listing")
+        slug = str(info.get("slug") or listing.get("slug") or "")
+        listing_url = url
+        if slug and url and "wasalt.sa" in (url or ""):
+            listing_url = f"https://wasalt.sa/property/rent/{slug}" if not slug.startswith("http") else slug
+
+        if area and 15 <= area <= 2000:
+            annual = monthly * 12.0
+            per_m2_year = annual / area
+            if 50 <= per_m2_year <= 15_000:
+                obs.append(
+                    NumericObservation(
+                        evidence_class="commercial_rent",
+                        metric="rent_sar_per_m2_year",
+                        value=round(per_m2_year, 2),
+                        unit="SAR/m2/year",
+                        geography=geography,
+                        district=listing_district,
+                        period="year",
+                        source_url=listing_url,
+                        source_title=listing_title,
+                        retrieved_at=now,
+                        adapter_id="wasalt_next_data",
+                        raw_excerpt=f"{listing_title}; {sub_type}; {rent_amt:g}{freq}; {area:g} m2",
+                        confidence=0.72,
+                        metadata={
+                            "listing_amount": rent_amt,
+                            "area_m2": area,
+                            "period": period,
+                            "subtype": sub_type,
+                            "source": "wasalt_next_data",
+                        },
+                    )
+                )
+            obs.append(
+                NumericObservation(
+                    evidence_class="commercial_rent",
+                    metric="store_area_m2",
+                    value=float(area),
+                    unit="m2",
+                    geography=geography,
+                    district=listing_district,
+                    source_url=listing_url,
+                    source_title=listing_title,
+                    retrieved_at=now,
+                    adapter_id="wasalt_next_data",
+                    raw_excerpt=f"{listing_title}; area {area:g} m2",
+                    confidence=0.7,
+                    metadata={"subtype": sub_type, "source": "wasalt_next_data"},
+                )
+            )
+
+        obs.append(
+            NumericObservation(
+                evidence_class="commercial_rent",
+                metric="rent_monthly_sar",
+                value=round(monthly, 2),
+                unit="SAR/month",
+                geography=geography,
+                district=listing_district,
+                period="month",
+                source_url=listing_url,
+                source_title=listing_title,
+                retrieved_at=now,
+                adapter_id="wasalt_next_data",
+                raw_excerpt=f"{listing_title}; {sub_type}; monthly≈{monthly:g} from {rent_amt:g}{freq}",
+                confidence=0.7,
+                metadata={
+                    "area_m2": area,
+                    "period": period,
+                    "subtype": sub_type,
+                    "source": "wasalt_next_data",
+                },
+            )
+        )
+    return obs
+
+
 def adapt_rent_listing(
     *,
     text: str,
+    html: str = "",
     url: str | None = None,
     title: str | None = None,
     geography: str = "Saudi Arabia",
     district: str | None = None,
 ) -> list[NumericObservation]:
     """listing price + area + period → SAR/m²/year when possible."""
+    if html:
+        structured = _adapt_wasalt_next_data(
+            html=html, url=url, title=title, geography=geography, district=district
+        )
+        if structured:
+            return structured
     blob = f"{title or ''}\n{text or ''}"
     amounts = extract_sar_amounts(blob)
     areas = [float(m.group(1)) for m in _AREA_M2.finditer(blob)]
@@ -637,6 +940,15 @@ def run_adapter(
             url=url,
             title=title,
             geography=geography,
+        )
+    if adapter_id == "rent_listing":
+        return adapt_rent_listing(
+            text=text,
+            html=html,
+            url=url,
+            title=title,
+            geography=geography,
+            district=district,
         )
     fn = ADAPTERS.get(adapter_id)
     if not fn:
