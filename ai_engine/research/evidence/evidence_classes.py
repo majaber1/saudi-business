@@ -57,7 +57,8 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
         adapter_id="menu_pricing",
         query_templates=(
             "{sector} menu prices {city} SAR",
-            "{sector} average price SAR {city} {district}",
+            "{sector} specialty coffee menu price SAR {city}",
+            "{sector} average drink price SAR {city} {district}",
             "أسعار قائمة {sector} {city}",
             "{city} {sector} menu SAR site:.sa",
         ),
@@ -208,10 +209,19 @@ def build_render_context(
     query: str = "",
     amenity: str = "",
 ) -> dict[str, str]:
-    sector_token = (sector or amenity or "local business").strip() or "local business"
+    raw_sector = (sector or "").strip()
+    amenity_token = (amenity or "").strip()
+    # Opaque sector codes (fnb/saas) are bad web-search tokens (Bing → First National Bank).
+    opaque = {"fnb", "f&b", "saas", "qsr"}
+    if raw_sector.lower() in opaque and amenity_token:
+        sector_token = amenity_token
+    elif raw_sector.lower() in opaque:
+        sector_token = "cafe" if raw_sector.lower() in {"fnb", "f&b", "qsr"} else "local business"
+    else:
+        sector_token = (raw_sector or amenity_token or "local business").strip() or "local business"
     # Equipment seed keywords stay generic to sector/amenity — not coffee hardcodes.
     equip_q = f"commercial {sector_token} equipment"
-    if amenity in {"cafe", "restaurant", "bakery"} or "coffee" in sector_token.lower():
+    if amenity_token in {"cafe", "restaurant", "bakery"} or "coffee" in sector_token.lower():
         equip_q = "commercial espresso machine"
     pos_q = "POS system cash register"
     furniture_q = f"{sector_token} furniture table"

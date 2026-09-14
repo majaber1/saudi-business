@@ -40,6 +40,10 @@ from .validation import compute_content_hash
 
 CONNECTOR_ID = "live.commercial_discovery"
 REGISTRY_KEY = "commercial_discovery"
+SEARCH_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 USER_AGENT = (
     "SaudiBusinessBot/parity (+https://saudi-business.local; governed commercial research; "
     "contact=ops@saudi-business.local)"
@@ -174,6 +178,45 @@ def infer_city_district(query: str) -> tuple[str, str]:
 
 def _strip_html(raw: str) -> str:
     return re.sub(r"\s+", " ", _TAG_RE.sub(" ", raw or "")).strip()
+
+
+
+def _unwrap_bing_url(url: str) -> str:
+    """Decode Bing /ck/a redirect wrappers to the destination URL when present."""
+    if not url:
+        return url
+    try:
+        from html import unescape
+        from urllib.parse import parse_qs, unquote, urlparse
+        import base64
+        import re as _re
+
+        cleaned = unescape(url).replace("&amp;", "&")
+        host = (urlparse(cleaned).hostname or "").lower()
+        if "bing.com" not in host:
+            return cleaned
+        qs = parse_qs(urlparse(cleaned).query)
+        for key in ("u", "r", "url"):
+            vals = qs.get(key) or []
+            if not vals:
+                continue
+            cand = unquote(vals[0])
+            if cand.startswith("a1"):
+                raw = cand[2:]
+                raw += "=" * ((4 - len(raw) % 4) % 4)
+                try:
+                    decoded = base64.urlsafe_b64decode(raw.encode()).decode("utf-8", "ignore")
+                    m = _re.search(r"https?://\S+", decoded)
+                    if m:
+                        return m.group(0).rstrip("'\"<>")
+                except Exception:
+                    pass
+            if cand.startswith("http"):
+                return cand
+        return cleaned
+    except Exception:
+        return url
+
 
 
 def _osm_url(osm_type: str, osm_id: Any) -> Optional[str]:
@@ -404,8 +447,21 @@ class CommercialDiscoveryConnector(SourceConnector):
         raw_docs.extend(ddg_docs)
 
         if not ddg_meta.get("ok") or int(ddg_meta.get("results") or 0) == 0:
+            # Prefer economics queries (menu/rent/salary) when DDG is challenged —
+            # otherwise Bing's first-N cut was competitor-only and never followed menus.
+            def _econ_rank(query: str) -> int:
+                low = (query or "").lower()
+                if any(k in low for k in ("menu", "price", "أسعار", "قائمة", "ticket")):
+                    return 0
+                if any(k in low for k in ("rent", "إيجار", "sqm", "lease")):
+                    return 1
+                if any(k in low for k in ("salary", "راتب", "wage", "staff")):
+                    return 2
+                return 3
+
+            bing_queries = sorted(list(ddg_queries), key=_econ_rank)[:8]
             bing_docs, bing_meta = self._bing_multi(
-                ddg_queries[:4],
+                bing_queries,
                 strategy=strategy,
                 geography=geography,
                 district=district or None,
@@ -1244,13 +1300,42 @@ class CommercialDiscoveryConnector(SourceConnector):
         """Bing HTML fallback when DuckDuckGo is challenged — same connector, not a new subsystem."""
         out: List[Dict[str, Any]] = []
         per_query: List[Dict[str, Any]] = []
-        follow_budget = min(3, self.max_ddg_follow)
+        follow_budget = max(4, min(6, self.max_ddg_follow + 2))
         adapters_by_class = dict(getattr(strategy, "adapters", {}) or {})
         evidence_ids = list(getattr(strategy, "evidence_class_ids", []) or [])
+        pages_followed = 0
         for q in queries:
             results, meta = self._bing_search(q)
             per_query.append({"query": q, **meta})
-            for res in results:
+            # Session-merge discovered hosts before follow (enables brand menus).
+            if strategy is not None and getattr(strategy, "allow_discovered_hosts", False):
+                try:
+                    from ai_engine.research.evidence.strategy import merge_session_hosts
+
+                    urls = [r["url"] for r in results if r.get("url")]
+                    merged = merge_session_hosts(
+                        self._allowlist,
+                        urls,
+                        evidence_class_ids=evidence_ids,
+                    )
+                    if len(merged) > len(self._allowlist):
+                        self._apply_strategy_allowlist(merged)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # Prefer following menu/pricing URLs within the budget.
+            def _follow_rank(res: Dict[str, str]) -> int:
+                low = f"{res.get('title','')} {res.get('snippet','')} {res.get('url','')}".lower()
+                if any(k in low for k in ("menu", "price", "قائمة", "أسعار", "/menu")):
+                    return 0
+                if any(k in low for k in ("rent", "إيجار", "lease")):
+                    return 1
+                if any(k in low for k in ("salary", "راتب", "job")):
+                    return 2
+                return 3
+
+            ordered = sorted(list(results), key=_follow_rank)
+            for res in ordered:
                 title = res["title"]
                 snippet = res["snippet"]
                 href = res["url"]
@@ -1273,10 +1358,12 @@ class CommercialDiscoveryConnector(SourceConnector):
                     try:
                         page = self._reader.read(href)
                         follow_budget -= 1
-                        page_text = (page.text or "")[:4000]
-                        page_html = (page.html or "")[:120000]
+                        pages_followed += 1
+                        page_text = (page.text or "")[:6000]
+                        page_html = (page.html or "")[:200000]
                         doc["content"] += f" Page excerpt: {page_text[:1200]}"
                         doc["url"] = page.final_url
+                        doc["confidence"] = 0.5
                         if evidence_ids and adapters_by_class:
                             from ai_engine.research.evidence.adapters import (
                                 adapt_page_for_classes,
@@ -1305,6 +1392,7 @@ class CommercialDiscoveryConnector(SourceConnector):
             "queries_run": len(queries),
             "results": len(out),
             "per_query": per_query,
+            "pages_followed": pages_followed,
         }
 
     def _bing_search(self, query: str) -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
@@ -1312,7 +1400,7 @@ class CommercialDiscoveryConnector(SourceConnector):
         try:
             with httpx.Client(
                 timeout=self.timeout_seconds,
-                headers={"User-Agent": USER_AGENT},
+                headers={"User-Agent": SEARCH_USER_AGENT, "Accept-Language": "en-US,en;q=0.9,ar;q=0.8"},
                 follow_redirects=True,
             ) as client:
                 r = client.get(url)
@@ -1336,7 +1424,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                 pass
             if not title:
                 continue
-            results.append({"title": title, "url": href, "snippet": snippet})
+            results.append({"title": title, "url": _unwrap_bing_url(href), "snippet": snippet})
             if len(results) >= 5:
                 break
         return results, {"ok": True, "hits": len(results)}
@@ -1346,7 +1434,7 @@ class CommercialDiscoveryConnector(SourceConnector):
         try:
             with httpx.Client(
                 timeout=self.timeout_seconds,
-                headers={"User-Agent": USER_AGENT},
+                headers={"User-Agent": SEARCH_USER_AGENT, "Accept-Language": "en-US,en;q=0.9,ar;q=0.8"},
                 follow_redirects=True,
             ) as client:
                 r = client.get(url)
