@@ -31,7 +31,7 @@ This report is the end-to-end proof from a **brand-new REAL_USER_FLOW** after th
 
 ## 2. Branch / SHA / changed files
 
-**Tip SHA:** `1e866b7`
+**Tip SHA:** `8267c01`
 
 **This follow-up (post-RUF11):**
 - `ai_engine/research/evidence/domain_classes.py` — WageIndicator host
@@ -145,8 +145,8 @@ Reason: end-to-end study still cannot produce investment-grade revenue, break-ev
 
 | Run | Study | Wins | Gaps |
 |---|---|---|---|
-| RUF11 | `study_3503f2d24a1f` | café-plausible rent/area; ticket; CAPEX | labor not promoted; hours flaky |
-| RUF12 | `study_3503f2d24a1f` | rent; CAPEX; WageIndicator fetched but remapped to rent | labor UNKNOWN (bug) |
-| **RUF13** | **`study_3503f2d24a1f`** | **rent; labor floor 4000; hours 13.5; CAPEX** | **ticket; seats/covers; COGS%; fit-out; full payroll** |
+| RUF11 | `study_64691360abd8` / 1216 | café-plausible rent/area; ticket; CAPEX | labor not promoted; hours flaky |
+| RUF12 | `study_70025a81ed9e` / 1217 | rent; CAPEX; WageIndicator fetched but remapped to rent | labor UNKNOWN (bug) |
+| **RUF13** | **`study_3503f2d24a1f` / 1218** | **rent; labor floor 4000; hours 13.5; CAPEX** | **ticket; seats/covers; COGS%; fit-out; full payroll** |
 
 Artifacts: `/opt/cursor/artifacts/coffee-operating-economics-ruf13/`
