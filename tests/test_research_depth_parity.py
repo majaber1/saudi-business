@@ -285,3 +285,18 @@ def test_commercial_connector_infers_amenity_generically():
     assert infer_amenity_tag("specialty coffee Olaya") == "cafe"
     assert infer_amenity_tag("dental clinic Riyadh") == "clinic"
     assert infer_amenity_tag("fitness gym Jeddah") == "fitness_centre"
+
+
+def test_location_city_flows_into_research_geography():
+    from ai_engine.research.market.planner import extract_market_context_from_state
+    from ai_engine.research.planner import extract_gaps_from_state
+    state = {
+        "study_id": "t",
+        "profile": {"sector": "F&B", "archetype": "fnb", "decision_goal": "feasibility"},
+        "structured_answers": {"location_city": "Olaya, Riyadh, Saudi Arabia"},
+        "claims": [],
+    }
+    ctx = extract_market_context_from_state(state)
+    assert "Olaya" in ctx["geography"]
+    gaps = extract_gaps_from_state(state)
+    assert any("Olaya" in g for g in gaps)

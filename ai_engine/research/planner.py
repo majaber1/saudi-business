@@ -245,7 +245,12 @@ def extract_gaps_from_state(state: Any) -> list[str]:
     city = ""
     district = ""
     if isinstance(answers, dict):
-        city = str(answers.get("city") or answers.get("location") or "").strip()
+        city = str(
+            answers.get("city")
+            or answers.get("location")
+            or answers.get("location_city")
+            or ""
+        ).strip()
         district = str(
             answers.get("district")
             or answers.get("neighborhood")
@@ -254,11 +259,15 @@ def extract_gaps_from_state(state: Any) -> list[str]:
         ).strip()
         if not idea:
             idea = str(answers.get("business_idea") or answers.get("idea") or "")
+    # If location_city embeds district, keep as city string for gap text
+    if city and not district and "," in city:
+        # e.g. "Olaya, Riyadh, Saudi Arabia"
+        district = city.split(",")[0].strip()
     if city:
         gaps.append(f"Regional economic indicators relevant to {city}")
         gaps.append(
             f"Location economics, commercial rent, and footfall proxies for "
-            f"{district + ', ' if district else ''}{city}"
+            f"{district + ', ' if district and district.lower() not in city.lower() else ''}{city}"
         )
         gaps.append(
             f"Local competitors and pricing near {district or city} for "

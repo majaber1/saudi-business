@@ -287,9 +287,15 @@ def extract_market_context_from_state(state: Any) -> dict[str, Any]:
 
     geography = "Saudi Arabia"
     if isinstance(answers, dict):
-        city = str(answers.get("city") or answers.get("location") or "").strip()
+        city = str(
+            answers.get("city")
+            or answers.get("location")
+            or answers.get("location_city")
+            or answers.get("district")
+            or ""
+        ).strip()
         if city:
-            geography = f"{city}, Saudi Arabia"
+            geography = f"{city}, Saudi Arabia" if "saudi" not in city.lower() else city
 
     return {
         "study_id": study_id,
