@@ -21,6 +21,8 @@ _TYPE_KEYWORDS: dict[ResearchType, tuple[str, ...]] = {
         "who competes",
         "competitive",
         "market players",
+        "poi",
+        "nearby venues",
     ),
     "MARKET_SIZE": (
         "market size",
@@ -39,6 +41,8 @@ _TYPE_KEYWORDS: dict[ResearchType, tuple[str, ...]] = {
         "arpu",
         "subscription fee",
         "cost to customer",
+        "ticket",
+        "menu",
     ),
     "REGULATION": (
         "regulation",
@@ -64,14 +68,28 @@ _TYPE_KEYWORDS: dict[ResearchType, tuple[str, ...]] = {
         "investment climate",
         "economic",
     ),
+    "LOCATION": (
+        "location",
+        "district",
+        "rent",
+        "footfall",
+        "neighborhood",
+        "neighbourhood",
+        "site",
+        "area economics",
+        "إيجار",
+        "موقع",
+        "حي",
+    ),
 }
 
 _SOURCE_FOR_TYPE: dict[ResearchType, tuple[str, ...]] = {
-    "COMPETITOR": (),  # no live competitor connector — evidence-only / NOT_FOUND
+    "COMPETITOR": ("commercial_discovery",),
     "MARKET_SIZE": ("gastat", "misa"),
-    "PRICING": (),  # official pages / user evidence only — no guessed prices
+    "PRICING": ("commercial_discovery",),
     "REGULATION": ("sama", "zatca", "nca"),  # placeholders only in 8B
     "SECTOR_SIGNAL": ("gastat", "misa"),
+    "LOCATION": ("commercial_discovery",),
 }
 
 
@@ -82,26 +100,43 @@ def classify_research_types(*texts: str) -> list[ResearchType]:
     for rtype, keywords in _TYPE_KEYWORDS.items():
         if any(k in blob for k in keywords):
             matched.append(rtype)
-    # F&B / café studies always need competitor + pricing + sector + regulation lenses
-    fnb_markers = (
+    # Local/commercial venue studies need competitor + pricing + location + sector lenses.
+    # Markers are generic venue/sector terms (not a single vertical hardcode).
+    local_venue_markers = (
         "coffee",
         "café",
         "cafe",
         "fnb",
         "f&b",
         "restaurant",
+        "bakery",
+        "retail",
+        "shop",
+        "store",
+        "clinic",
+        "gym",
+        "hotel",
+        "salon",
         "specialty coffee",
         "قهوة",
         "مقهى",
         "مطعم",
+        "متجر",
+        "عيادة",
     )
-    if any(m in blob for m in fnb_markers):
-        for required in ("COMPETITOR", "PRICING", "SECTOR_SIGNAL", "REGULATION"):
+    if any(m in blob for m in local_venue_markers):
+        for required in (
+            "COMPETITOR",
+            "PRICING",
+            "LOCATION",
+            "SECTOR_SIGNAL",
+            "REGULATION",
+        ):
             if required not in matched:
                 matched.append(required)  # type: ignore[arg-type]
     if not matched:
         # Default controlled set for Saudi market studies
-        matched = ["SECTOR_SIGNAL", "COMPETITOR", "MARKET_SIZE"]
+        matched = ["SECTOR_SIGNAL", "COMPETITOR", "MARKET_SIZE", "LOCATION"]
     # Preserve order, unique
     seen: set[str] = set()
     out: list[ResearchType] = []
@@ -174,10 +209,27 @@ def build_market_plan(
         )
     if "COMPETITOR" in types:
         reasons.append(
-            "Competitor intelligence requires sourced evidence; never invents names"
+            "Competitor intelligence uses multi-source commercial discovery; "
+            "never invents names; NOT_FOUND only after documented exhaustion"
         )
     if "PRICING" in types:
-        reasons.append("Pricing requires official/user evidence; no LLM price guesses")
+        reasons.append(
+            "Pricing requires sourced numeric evidence; no LLM price guesses"
+        )
+    if "LOCATION" in types:
+        reasons.append(
+            "Location economics from geocoded density + district context + rent signals"
+        )
+    # Deepen query set for commercial depth (multi-angle, not a single search)
+    deep = [
+        f"competitors near {geography} for {sector or business_idea or 'local business'}",
+        f"commercial rent and district economics {geography}",
+        f"local pricing ticket or menu signals {geography} {sector or business_idea}",
+        f"labor and operating cost context {sector or 'business'} Saudi Arabia",
+    ]
+    for q in deep:
+        if q not in queries:
+            queries.append(q)
 
     return MarketResearchPlan(
         study_id=study_id,
@@ -235,9 +287,15 @@ def extract_market_context_from_state(state: Any) -> dict[str, Any]:
 
     geography = "Saudi Arabia"
     if isinstance(answers, dict):
-        city = str(answers.get("city") or answers.get("location") or "").strip()
+        city = str(
+            answers.get("city")
+            or answers.get("location")
+            or answers.get("location_city")
+            or answers.get("district")
+            or ""
+        ).strip()
         if city:
-            geography = f"{city}, Saudi Arabia"
+            geography = f"{city}, Saudi Arabia" if "saudi" not in city.lower() else city
 
     return {
         "study_id": study_id,

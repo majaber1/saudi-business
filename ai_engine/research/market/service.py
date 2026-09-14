@@ -8,7 +8,9 @@ import time
 from typing import Any
 
 from ai_engine.research.market.competitor import research_competitors
+from ai_engine.research.market.location_economics import extract_location_economics
 from ai_engine.research.market.market_signal import research_market_signals
+from ai_engine.research.market.operating_estimates import synthesize_operating_estimates
 from ai_engine.research.market.planner import (
     build_market_plan,
     extract_market_context_from_state,
@@ -61,36 +63,56 @@ def _fingerprint_evidence(items: list[dict[str, Any]]) -> str:
 
 def evidence_items_from_research_claims(claims: list[Any]) -> list[dict[str, Any]]:
     """Normalize ResearchClaim / Claim / dict into evidence item dicts."""
+    import re
+
     items: list[dict[str, Any]] = []
     for c in claims or []:
         if isinstance(c, ResearchClaim):
-            items.append(
-                {
-                    "statement": c.statement,
-                    "source_type": c.source_type,
-                    "source_url": c.source_url,
-                    "source_key": c.source_key,
-                    "document_id": c.document_id,
-                    "chunk_id": c.chunk_id,
-                    "origin": c.origin,
-                    "confidence": c.confidence,
-                }
-            )
+            item = {
+                "statement": c.statement,
+                "source_type": c.source_type,
+                "source_url": c.source_url,
+                "source_key": c.source_key,
+                "document_id": c.document_id,
+                "chunk_id": c.chunk_id,
+                "origin": c.origin,
+                "confidence": c.confidence,
+                "geography": c.geography,
+            }
         elif isinstance(c, dict):
-            items.append(dict(c))
+            item = dict(c)
         else:
-            items.append(
-                {
-                    "statement": str(getattr(c, "statement", "") or ""),
-                    "source_type": getattr(c, "source_type", None),
-                    "source_url": getattr(c, "source_url", None),
-                    "source_key": getattr(c, "source_key", None),
-                    "document_id": getattr(c, "document_id", None),
-                    "chunk_id": getattr(c, "chunk_id", None),
-                    "origin": getattr(c, "origin", None),
-                    "confidence": getattr(c, "confidence", 0.0),
-                }
+            item = {
+                "statement": str(getattr(c, "statement", "") or ""),
+                "source_type": getattr(c, "source_type", None),
+                "source_url": getattr(c, "source_url", None),
+                "source_key": getattr(c, "source_key", None),
+                "document_id": getattr(c, "document_id", None),
+                "chunk_id": getattr(c, "chunk_id", None),
+                "origin": getattr(c, "origin", None),
+                "confidence": getattr(c, "confidence", 0.0),
+                "geography": getattr(c, "geography", None),
+            }
+        stmt = str(item.get("statement") or "")
+        if not item.get("competitor_name"):
+            m = re.search(
+                r"(?:Competitor\s*/\s*local venue evidence|Competitor POI)\s*:\s*([^\.\n:]+)",
+                stmt,
+                re.I,
             )
+            if m:
+                item["competitor_name"] = m.group(1).strip()
+        if not item.get("evidence_kind"):
+            low = stmt.lower()
+            if "search exhaustion" in low:
+                item["evidence_kind"] = "search_exhaustion"
+            elif "competition density" in low:
+                item["evidence_kind"] = "competition_density"
+            elif "location economics / district" in low or low.startswith("location context:"):
+                item["evidence_kind"] = "location_context"
+            elif "competitor / local venue" in low or "competitor poi:" in low:
+                item["evidence_kind"] = "competitor_poi"
+        items.append(item)
     return items
 
 
@@ -100,12 +122,19 @@ def market_result_to_research_claims(
     """Map verified market insights into ResearchClaim for Evidence Pack merge."""
     claims: list[ResearchClaim] = []
     for insight in result.insights:
-        # Only merge evidence-backed insights into study claims.
-        # Placeholders / NOT_FOUND stay in market_research payload for transparency.
-        if insight.status not in {"VERIFIED", "CONFLICT"}:
+        # Merge evidence-backed insights into study claims.
+        # NOT_FOUND stays in market_research payload for transparency.
+        if insight.status not in {"VERIFIED", "CONFLICT", "PARTIAL"}:
             continue
-        source_type = "official" if insight.status == "VERIFIED" else "document"
-        if insight.source_key not in {"gastat", "misa"} and insight.status == "VERIFIED":
+        if insight.status == "PARTIAL" and insight.research_type not in {
+            "LOCATION",
+            "PRICING",
+            "COMPETITOR",
+            "SECTOR_SIGNAL",
+        }:
+            continue
+        source_type = "official" if insight.source_key in {"gastat", "misa"} else "document"
+        if insight.status == "CONFLICT":
             source_type = "document"
         claims.append(
             ResearchClaim(
@@ -144,7 +173,10 @@ def _build_insights(result: MarketResearchResult) -> list[MarketInsight]:
             continue
         insights.append(
             MarketInsight(
-                insight=f"Competitor mention: {c.name} ({c.status})",
+                insight=(
+                    f"Competitor mention: {c.name} ({c.status})"
+                    + (f" — {c.relevance_reason}" if c.relevance_reason else "")
+                ),
                 research_type="COMPETITOR",
                 source=c.source_key or "evidence",
                 official_url=c.source_url,
@@ -213,6 +245,61 @@ def _build_insights(result: MarketResearchResult) -> list[MarketInsight]:
                 confidence=r.confidence,
                 status=r.status,
                 source_key=r.source_key,
+            )
+        )
+
+    for loc in result.location_economics:
+        if loc.status == "NOT_FOUND" or loc.factor == "none":
+            insights.append(
+                MarketInsight(
+                    insight="Location economics evidence not found (NOT_FOUND).",
+                    research_type="LOCATION",
+                    source="none",
+                    official_url=None,
+                    evidence_reference=loc.evidence_reference,
+                    confidence=0.0,
+                    status="NOT_FOUND",
+                )
+            )
+            continue
+        insights.append(
+            MarketInsight(
+                insight=(
+                    f"Location economics ({loc.factor}) @ {loc.geography}: "
+                    f"{loc.value if loc.value is not None else (loc.notes or '')}"
+                ),
+                research_type="LOCATION",
+                source=loc.source_key or "evidence",
+                official_url=loc.source_url,
+                evidence_reference=loc.evidence_reference,
+                confidence=loc.confidence,
+                status=loc.status,
+                source_key=loc.source_key,
+                document_id=loc.document_id,
+                chunk_id=loc.chunk_id,
+            )
+        )
+
+    for est in result.operating_estimates:
+        if not isinstance(est, dict):
+            continue
+        insights.append(
+            MarketInsight(
+                insight=(
+                    f"SYSTEM_ESTIMATE {est.get('key')}={est.get('value')} "
+                    f"({est.get('geography')}, {est.get('as_of')})"
+                ),
+                research_type="PRICING"
+                if str(est.get("key") or "") in {"avg_ticket", "food_cost_pct"}
+                else "LOCATION"
+                if "rent" in str(est.get("key") or "")
+                else "SECTOR_SIGNAL",
+                source="commercial_discovery",
+                official_url=(est.get("source_urls") or [None])[0],
+                evidence_reference=str(est.get("reasoning") or "")[:240],
+                confidence=float(est.get("confidence") or 0.4),
+                status="PARTIAL",
+                source_key="commercial_discovery",
             )
         )
 
@@ -305,6 +392,8 @@ def execute_market_research(
     market_signals = []
     pricing_signals = []
     regulation_signals = []
+    location_economics = []
+    operating_estimates: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
 
     if "COMPETITOR" in plan.research_types:
@@ -347,6 +436,33 @@ def execute_market_research(
             }
         )
 
+    if "LOCATION" in plan.research_types:
+        location_economics, loc_status = extract_location_economics(
+            evidence_items=items, geography=geography
+        )
+        attempts.append(
+            {
+                "step": "location_economics",
+                "status": loc_status,
+                "count": len(location_economics),
+            }
+        )
+
+    # Evidence-backed SYSTEM_ESTIMATE candidates (never invent without numerics)
+    estimates = synthesize_operating_estimates(
+        evidence_items=items, geography=geography
+    )
+    operating_estimates = [e.to_public_dict() for e in estimates]
+    if operating_estimates:
+        attempts.append(
+            {
+                "step": "operating_estimates",
+                "status": "PARTIAL",
+                "count": len(operating_estimates),
+                "keys": [e.get("key") for e in operating_estimates],
+            }
+        )
+
     result = MarketResearchResult(
         plan=plan,
         status="PARTIAL",
@@ -354,6 +470,8 @@ def execute_market_research(
         market_signals=market_signals,
         pricing_signals=pricing_signals,
         regulation_signals=regulation_signals,
+        location_economics=location_economics,
+        operating_estimates=operating_estimates,
         conflicts=conflicts,
         attempts=attempts,
         knowledge_hits=sum(
@@ -362,7 +480,8 @@ def execute_market_research(
         live_fetches=sum(
             1
             for i in items
-            if i.get("source_key") in {"gastat", "misa"} and i.get("source_url")
+            if i.get("source_key") in {"gastat", "misa", "commercial_discovery"}
+            and i.get("source_url")
         ),
         duration_ms=0.0,
     )

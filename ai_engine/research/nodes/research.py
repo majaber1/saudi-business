@@ -8,7 +8,10 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from ai_engine.models.study_state import Claim, StudyState
-from ai_engine.research.planner import extract_gaps_from_state
+from ai_engine.research.planner import (
+    extract_gaps_from_state,
+    extract_research_context_from_state,
+)
 from ai_engine.research.schemas import ResearchClaim, ResearchResult
 from ai_engine.research.service import research_gaps
 
@@ -130,6 +133,7 @@ def run_research(state: StudyState) -> StudyState:
     """
     study_id = str(state.study_id or "unknown")
     gaps = extract_gaps_from_state(state)
+    ctx = extract_research_context_from_state(state)
     owner_raw = state.user_id
     try:
         owner_id = int(owner_raw) if owner_raw is not None else None
@@ -146,6 +150,9 @@ def run_research(state: StudyState) -> StudyState:
             knowledge_context=state.knowledge_context,
             project_id=getattr(state, "project_id", None),
             user_id=str(owner_raw) if owner_raw is not None else None,
+            sector=ctx.get("sector") or "",
+            geography=ctx.get("geography") or "Saudi Arabia",
+            business_idea=ctx.get("business_idea") or "",
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("research node failed: %s", exc)

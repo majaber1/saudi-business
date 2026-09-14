@@ -24,9 +24,30 @@ CRITICAL_EVIDENCE_THEMES: dict[str, tuple[str, ...]] = {
 }
 
 THEME_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "pricing": ("price", "pricing", "ticket", "fee", "subscription", "سعر", "تسعير", "رسوم"),
-    "competitors": ("competitor", "competition", "rival", "منافس", "منافسة"),
-    "location_economics": ("rent", "location", "district", "footfall", "إيجار", "موقع", "حي"),
+    "pricing": ("price", "pricing", "ticket", "fee", "subscription", "سعر", "تسعير", "رسوم", "menu"),
+    "competitors": (
+        "competitor",
+        "competition",
+        "rival",
+        "venue",
+        "poi",
+        "منافس",
+        "منافسة",
+        "مقهى",
+    ),
+    "location_economics": (
+        "rent",
+        "location",
+        "district",
+        "footfall",
+        "density",
+        "neighbourhood",
+        "neighborhood",
+        "إيجار",
+        "موقع",
+        "حي",
+        "operating context",
+    ),
     "demand": ("demand", "market size", "customers", "covers", "طلب", "حجم السوق", "عملاء"),
     "capex": ("capex", "machinery", "equipment", "plant", "نفقات رأسمالية", "آلات", "معدات"),
     "supply_chain": ("supply", "feedstock", "raw material", "supplier", "سلسلة التوريد", "مواد خام"),

@@ -12,6 +12,7 @@ ResearchType = Literal[
     "PRICING",
     "REGULATION",
     "SECTOR_SIGNAL",
+    "LOCATION",
 ]
 
 EvidenceStatus = Literal[
@@ -23,9 +24,28 @@ EvidenceStatus = Literal[
 ]
 
 # Governed sources for Phase 8B (live + future placeholders only).
-LIVE_MARKET_SOURCES: tuple[str, ...] = ("gastat", "misa")
+LIVE_MARKET_SOURCES: tuple[str, ...] = ("gastat", "misa", "commercial_discovery")
 PLACEHOLDER_MARKET_SOURCES: tuple[str, ...] = ("sama", "zatca", "nca")
 ALL_MARKET_SOURCES: tuple[str, ...] = LIVE_MARKET_SOURCES + PLACEHOLDER_MARKET_SOURCES
+
+
+@dataclass
+class LocationEconomicsSignal:
+    geography: str
+    factor: str
+    value: Any
+    unit: str | None
+    source_url: str | None
+    evidence_reference: str
+    status: EvidenceStatus = "NOT_FOUND"
+    source_key: str | None = None
+    document_id: str | None = None
+    chunk_id: str | None = None
+    confidence: float = 0.0
+    notes: str | None = None
+
+    def to_public_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass
@@ -40,6 +60,8 @@ class CompetitorEvidence:
     source_key: str | None = None
     document_id: str | None = None
     chunk_id: str | None = None
+    relevance_reason: str | None = None
+    search_exhaustion: dict[str, Any] | None = None
 
     def to_public_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -145,6 +167,8 @@ class MarketResearchResult:
     market_signals: list[MarketSignal] = field(default_factory=list)
     pricing_signals: list[PricingSignal] = field(default_factory=list)
     regulation_signals: list[RegulationSignal] = field(default_factory=list)
+    location_economics: list[LocationEconomicsSignal] = field(default_factory=list)
+    operating_estimates: list[dict[str, Any]] = field(default_factory=list)
     insights: list[MarketInsight] = field(default_factory=list)
     conflicts: list[dict[str, Any]] = field(default_factory=list)
     attempts: list[dict[str, Any]] = field(default_factory=list)
@@ -164,6 +188,8 @@ class MarketResearchResult:
             "market_signals": [m.to_public_dict() for m in self.market_signals],
             "pricing_signals": [p.to_public_dict() for p in self.pricing_signals],
             "regulation_signals": [r.to_public_dict() for r in self.regulation_signals],
+            "location_economics": [loc.to_public_dict() for loc in self.location_economics],
+            "operating_estimates": list(self.operating_estimates),
             "insights": [i.to_public_dict() for i in self.insights],
             "conflicts": list(self.conflicts),
             "attempts": list(self.attempts),
