@@ -128,29 +128,32 @@ def run_assumptions(state: StudyState) -> StudyState:
         )
     if state.claims:
         claims_text = "\n".join(
-            f"- {c.statement} ({c.source_type}, conf={c.confidence})" for c in state.claims[:12]
+            f"- {c.statement} ({c.source_type}, conf={c.confidence})" for c in state.claims[:8]
         )
-        context_parts.append(f"Evidence:\n{claims_text}")
+        context_parts.append(f"Evidence (sample):\n{claims_text[:2500]}")
 
-    # Inject precomputed operating estimates / numeric observations for LLM reasoning
+    # Inject compact precomputed operating estimates only (avoid TPM overflow)
     mr = getattr(state, "market_research_context", None) or {}
-    if isinstance(mr, dict):
-        if mr.get("operating_estimates"):
-            context_parts.append(
-                "Evidence-backed SYSTEM_ESTIMATE bands (use these; do not invent others):\n"
-                + json.dumps(mr.get("operating_estimates")[:12], ensure_ascii=False)[:4000]
+    if isinstance(mr, dict) and mr.get("operating_estimates"):
+        compact = []
+        for est in (mr.get("operating_estimates") or [])[:10]:
+            if not isinstance(est, dict):
+                continue
+            compact.append(
+                {
+                    "key": est.get("key"),
+                    "low": est.get("low"),
+                    "base": est.get("base"),
+                    "high": est.get("high"),
+                    "geography": est.get("geography"),
+                    "observation_count": est.get("observation_count"),
+                    "source_urls": (est.get("source_urls") or [])[:2],
+                    "reasoning": str(est.get("reasoning") or "")[:280],
+                }
             )
-        if mr.get("pricing_signals"):
-            context_parts.append(
-                "Pricing signals:\n"
-                + json.dumps(mr.get("pricing_signals")[:8], ensure_ascii=False)[:1500]
-            )
-
-    rc = getattr(state, "research_context", None) or {}
-    if isinstance(rc, dict) and rc.get("operating_estimates_applied"):
         context_parts.append(
-            "Applied operating estimates:\n"
-            + json.dumps(rc.get("operating_estimates_applied")[:12], ensure_ascii=False)[:3000]
+            "Evidence-backed SYSTEM_ESTIMATE bands (use these; do not invent others):\n"
+            + json.dumps(compact, ensure_ascii=False)
         )
 
     # Phase 6 — Knowledge Evidence Pack (citations only; never invent sources)
@@ -234,6 +237,13 @@ def run_assumptions(state: StudyState) -> StudyState:
         state.research_context["assumption_llm_status"] = {
             "available": not llm_unavailable,
             "error": llm_error_detail,
+        }
+    else:
+        state.research_context = dict(state.research_context or {})
+        state.research_context["assumption_llm_status"] = {
+            "available": True,
+            "error": None,
+            "path": "invoke_llm",
         }
 
     seeded: dict[str, Assumption] = {}
@@ -500,6 +510,30 @@ def run_assumptions(state: StudyState) -> StudyState:
             evidence_items=evidence_items, geography=geo
         )
         assumptions = apply_estimates_to_assumptions(assumptions, estimates)
+        # Also attach estimates for schema keys that were optional / omitted from gap-fill
+        present_keys = {a.key for a in assumptions}
+        for est in estimates:
+            if est.key in present_keys or est.key not in allowed:
+                continue
+            meta = schema_by_key.get(est.key) or {"key": est.key, "input_type": "currency", "unit": "SAR"}
+            assumptions.append(
+                _build_assumption(
+                    key=est.key,
+                    value=est.value,
+                    meta=meta,
+                    origin="ai_estimated",
+                    source=f"SYSTEM_ESTIMATE from evidence ({est.geography}, {est.as_of})",
+                    confidence="medium" if est.confidence >= 0.55 else "low",
+                    ai_estimated=True,
+                    estimate_basis=est.estimate_basis,
+                    estimate_rationale=est.reasoning,
+                )
+            )
+            # Ensure bands survive validation rebuild
+            assumptions[-1].low = est.low
+            assumptions[-1].base = est.base
+            assumptions[-1].high = est.high
+            assumptions[-1].provenance_class = "SYSTEM_ESTIMATE"
         if estimates:
             state.research_context = dict(state.research_context or {})
             state.research_context["operating_estimates_applied"] = [
