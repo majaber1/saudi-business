@@ -208,3 +208,48 @@ def test_validate_numeric_coverage_partial():
     cov = validate_numeric_coverage(estimate_keys=["equipment_capex", "other_capex"])
     assert cov["status"] == "PARTIAL"
     assert cov["commercially_useful"] is False
+
+
+def test_local_brand_host_gate_allows_discovered_menu_sites():
+    assert host_allowed_for_evidence_class("https://barista.sa/en/menu/", "menu_pricing")
+    assert host_allowed_for_evidence_class("https://noircafe.sa/pages/menu", "menu_pricing")
+    # Equipment catalogs must remain blocked for menu
+    assert not host_allowed_for_evidence_class(
+        "https://www.amazon.sa/s?k=espresso", "menu_pricing"
+    )
+
+
+def test_menu_adapter_parses_json_and_bdi_sar_prices():
+    html = """
+    <script>Object.assign(window.x,{"currency":"SAR","products":{"1":{"price":15},"2":{"price":18},"3":{"price":22}}});</script>
+    <span class="woocommerce-Price-currencySymbol">&#x631;.&#x633;</span>17.00</bdi>
+    """
+    obs = adapt_menu_pricing(
+        text="Cafe menu specialty drinks",
+        html=html,
+        url="https://barista.sa/en/menu/",
+        title="Menu",
+    )
+    vals = sorted({o.value for o in obs})
+    assert 15 in vals and 18 in vals and 22 in vals
+    assert all(o.metric == "menu_item_sar" for o in obs)
+    bands = bands_from_observations(obs, geography="Riyadh")
+    by = {b.key: b for b in bands}
+    assert "avg_ticket" in by
+    assert by["avg_ticket"].low <= by["avg_ticket"].base <= by["avg_ticket"].high
+
+
+def test_cogs_input_cost_not_promoted_to_food_cost_pct():
+    from ai_engine.research.evidence.adapters import adapt_cogs
+
+    html = '<span class="a-price-whole">24</span><span class="a-price-whole">32</span>'
+    obs = adapt_cogs(
+        text="fresh milk 1L grocery ingredient",
+        html=html,
+        url="https://www.amazon.sa/s?k=fresh+milk+1L",
+        title="Fresh milk 1L",
+    )
+    assert obs
+    assert all(o.metric == "input_cost_sar" for o in obs)
+    bands = bands_from_observations(obs, geography="Riyadh")
+    assert not any(b.key == "food_cost_pct" for b in bands)

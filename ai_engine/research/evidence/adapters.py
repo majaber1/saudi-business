@@ -31,6 +31,16 @@ _SALARY_ROLE = re.compile(
     r"(barista|waiter|chef|manager|cashier|server|cook|موظف|باريستا|مدير|نادل)",
     re.I,
 )
+_JSON_PRICE = re.compile(r'"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?', re.I)
+_BDI_PRICE = re.compile(
+    r"(?:currencySymbol[^<]*</[^>]+>|ر\.?\s*س\.?)\s*([0-9]+(?:\.[0-9]+)?)\s*</bdi>",
+    re.I,
+)
+_BDI_PRICE_ALT = re.compile(r"</span>([0-9]+(?:\.[0-9]+)?)</bdi>", re.I)
+_SAR_CURRENCY_HINT = re.compile(
+    r'(?:["\']currency["\']\s*:\s*["\']SAR["\']|\bSAR\b|ر(?:\.\s*)?س|ريال)',
+    re.I,
+)
 
 
 def _f(raw: str) -> Optional[float]:
@@ -86,6 +96,17 @@ def host_allowed_for_evidence_class(url: str | None, evidence_class_id: str) -> 
         if _host_matches_domain_class(host, "official_saudi") or _host_matches_domain_class(
             host, "market_report"
         ):
+            return True
+    # Discovered brand/venue hosts (OSM website tags, search follow): allow when the
+    # evidence class opts into local_brand_website, but never cross-fire vendor catalogs.
+    if "local_brand_website" in spec.domain_classes:
+        blocked = (
+            "equipment_vendor",
+            "fitout_vendor",
+            "job_salary",
+            "real_estate_listing",
+        )
+        if not any(_host_matches_domain_class(host, b) for b in blocked):
             return True
     return False
 
@@ -219,20 +240,24 @@ def adapt_rent_listing(
 def adapt_menu_pricing(
     *,
     text: str,
+    html: str = "",
     url: str | None = None,
     title: str | None = None,
     geography: str = "Saudi Arabia",
     district: str | None = None,
 ) -> list[NumericObservation]:
     blob = f"{title or ''}\n{text or ''}"
-    low = blob.lower()
-    if not any(
+    html_blob = html or ""
+    combined = f"{blob}\n{html_blob[:200000]}"
+    low = combined.lower()
+    has_menu_kw = any(
         k in low
         for k in (
             "menu",
             "latte",
             "cappuccino",
             "espresso drink",
+            "espresso",
             "meal",
             "وجبة",
             "قائمة",
@@ -240,33 +265,63 @@ def adapt_menu_pricing(
             "delivery",
             "hungerstation",
             "jahez",
+            "product",
+            "woocommerce",
+            "add-to-cart",
+            "add to cart",
         )
-    ):
+    )
+    has_sar_currency = bool(_SAR_CURRENCY_HINT.search(combined))
+    json_prices = [float(x) for x in _JSON_PRICE.findall(html_blob or blob) if _f(x) is not None]
+    bdi_prices: list[float] = []
+    for rx in (_BDI_PRICE, _BDI_PRICE_ALT):
+        for raw in rx.findall(html_blob or ""):
+            val = _f(raw)
+            if val is not None:
+                bdi_prices.append(val)
+    # Require menu context OR (SAR currency + structured product prices).
+    if not has_menu_kw and not (has_sar_currency and (json_prices or bdi_prices)):
         return []
     amounts = extract_sar_amounts(blob)
+    amounts.extend(json_prices)
+    amounts.extend(bdi_prices)
+    # Prefer drink/menu-like band; drop tip-jar / fee micro-prices and banquet outliers.
     obs: list[NumericObservation] = []
     now = datetime.now(timezone.utc).isoformat()
+    seen: set[float] = set()
     for amt in amounts:
-        if 5 <= amt <= 120:
-            obs.append(
-                NumericObservation(
-                    evidence_class="menu_pricing",
-                    metric="menu_item_sar",
-                    value=float(amt),
-                    unit="SAR",
-                    geography=geography,
-                    district=district,
-                    role_or_item="menu_item",
-                    period="one_time",
-                    source_url=url,
-                    source_title=title,
-                    retrieved_at=now,
-                    adapter_id="menu_pricing",
-                    raw_excerpt=blob[:240],
-                    confidence=0.5,
-                )
+        if not (5 <= amt <= 120):
+            continue
+        key = round(float(amt), 2)
+        if key in seen:
+            continue
+        seen.add(key)
+        conf = 0.55 if (json_prices or bdi_prices) and has_sar_currency else 0.5
+        obs.append(
+            NumericObservation(
+                evidence_class="menu_pricing",
+                metric="menu_item_sar",
+                value=float(key),
+                unit="SAR",
+                geography=geography,
+                district=district,
+                role_or_item="menu_item",
+                period="one_time",
+                source_url=url,
+                source_title=title,
+                retrieved_at=now,
+                adapter_id="menu_pricing",
+                raw_excerpt=blob[:240],
+                confidence=conf,
+                metadata={
+                    "structured_price": bool(json_prices or bdi_prices),
+                    "sar_currency_hint": has_sar_currency,
+                },
             )
-    return obs[:40]
+        )
+        if len(obs) >= 40:
+            break
+    return obs
 
 
 def adapt_salary(
@@ -444,6 +499,7 @@ def adapt_fitout(
 def adapt_cogs(
     *,
     text: str,
+    html: str = "",
     url: str | None = None,
     title: str | None = None,
     geography: str = "Saudi Arabia",
@@ -472,6 +528,64 @@ def adapt_cogs(
                 confidence=0.5,
             )
         )
+    # Ingredient catalog prices (Amazon etc.) — labeled input_cost_sar only.
+    # Never promote these to food_cost_pct (would invent a margin).
+    host = _host(url)
+    if host and any(v in host for v in ("amazon.", "noon.", "extra.", "jarir.")):
+        prices: list[float] = []
+        for m in _AMAZON_WHOLE.finditer(html or text or ""):
+            val = _f(m.group(1))
+            if val is not None:
+                prices.append(val)
+        if not prices:
+            prices = extract_sar_amounts(blob)
+        low = blob.lower()
+        ingredientish = any(
+            k in low
+            for k in (
+                "milk",
+                "bean",
+                "beans",
+                "flour",
+                "sugar",
+                "ingredient",
+                "حليب",
+                "بن",
+                "قهوة",
+            )
+        )
+        if ingredientish:
+            seen: set[float] = set()
+            for pval in prices:
+                if not (5 <= pval <= 500):
+                    continue
+                key = round(float(pval), 2)
+                if key in seen:
+                    continue
+                seen.add(key)
+                obs.append(
+                    NumericObservation(
+                        evidence_class="cogs_inputs",
+                        metric="input_cost_sar",
+                        value=float(key),
+                        unit="SAR",
+                        geography=geography,
+                        role_or_item=title or "ingredient",
+                        period="one_time",
+                        source_url=url,
+                        source_title=title,
+                        retrieved_at=now,
+                        adapter_id="cogs",
+                        raw_excerpt=(title or "")[:120],
+                        confidence=0.45,
+                        metadata={
+                            "note": "Ingredient catalog price — not a food-cost percent",
+                            "vendor_host": host,
+                        },
+                    )
+                )
+                if len(seen) >= 20:
+                    break
     return obs
 
 
@@ -506,6 +620,23 @@ def run_adapter(
             geography=geography,
             evidence_class=evidence_class or "equipment_capex",
             item_hint=item_hint,
+        )
+    if adapter_id == "menu_pricing":
+        return adapt_menu_pricing(
+            text=text,
+            html=html,
+            url=url,
+            title=title,
+            geography=geography,
+            district=district,
+        )
+    if adapter_id == "cogs":
+        return adapt_cogs(
+            text=text,
+            html=html,
+            url=url,
+            title=title,
+            geography=geography,
         )
     fn = ADAPTERS.get(adapter_id)
     if not fn:

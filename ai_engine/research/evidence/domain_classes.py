@@ -149,6 +149,16 @@ DOMAIN_CLASSES: dict[str, DomainClass] = {
         ),
         allow_discovered_hosts=True,
     ),
+    "local_brand_website": DomainClass(
+        id="local_brand_website",
+        label="Local brand / venue websites (discovered)",
+        domains=(),
+        notes=(
+            "No static allowlist — hosts come from OSM website tags and "
+            "governed search discovery, session-merged when evidence classes opt in."
+        ),
+        allow_discovered_hosts=True,
+    ),
     "market_report": DomainClass(
         id="market_report",
         label="Credible local market reports",

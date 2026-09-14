@@ -330,6 +330,17 @@ class CommercialDiscoveryConnector(SourceConnector):
             attempts.append({"source": "overpass_density", **dens_meta})
             if density:
                 raw_docs.append(density)
+            # Follow OSM-tagged brand websites for menu/ticket evidence (session-merged).
+            brand_urls = list(dens_meta.get("websites") or [])
+            if brand_urls and strategy is not None:
+                brand_docs, brand_meta = self._fetch_brand_websites(
+                    urls=brand_urls,
+                    strategy=strategy,
+                    geography=geography,
+                    district=district or None,
+                )
+                attempts.append({"source": "osm_brand_websites", **brand_meta})
+                raw_docs.extend(brand_docs)
         if pois:
             names = [p.get("competitor_name") for p in pois if p.get("competitor_name")]
             raw_docs.append(
@@ -498,6 +509,86 @@ class CommercialDiscoveryConnector(SourceConnector):
             docs.append(item)
             self._observations.append(item)
         return docs
+
+    def _fetch_brand_websites(
+        self,
+        *,
+        urls: List[str],
+        strategy: Any,
+        geography: str,
+        district: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Fetch OSM-discovered brand/venue websites for menu adapters."""
+        from ai_engine.research.evidence.adapters import adapt_page_for_classes
+        from ai_engine.research.evidence.strategy import merge_session_hosts
+
+        out: List[Dict[str, Any]] = []
+        errors: List[str] = []
+        fetched = 0
+        # Session-merge discovered brand hosts into follow allowlist.
+        try:
+            merged = merge_session_hosts(
+                self._allowlist,
+                list(urls or []),
+                evidence_class_ids=list(getattr(strategy, "evidence_class_ids", []) or []),
+            )
+            if len(merged) > len(self._allowlist):
+                self._apply_strategy_allowlist(merged)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"allowlist_merge:{exc}")
+
+        adapters_by_class = dict(getattr(strategy, "adapters", {}) or {})
+        evidence_ids = list(getattr(strategy, "evidence_class_ids", []) or [])
+        # Prefer menu-oriented classes when present.
+        preferred = [e for e in evidence_ids if e in {"menu_pricing", "cogs_inputs", "commercial_rent"}]
+        class_ids = preferred or evidence_ids
+
+        for url in list(urls or [])[:6]:
+            try:
+                if not self._url_allowlisted(url):
+                    errors.append(f"not_allowlisted:{url[:80]}")
+                    continue
+                page = self._reader.read(url)
+                fetched += 1
+                page_text = (page.text or "")[:6000]
+                page_html = (page.html or "")[:200000]
+                observations = adapt_page_for_classes(
+                    evidence_class_ids=class_ids,
+                    adapters_by_class=adapters_by_class,
+                    text=page_text,
+                    html=page_html,
+                    url=page.final_url or url,
+                    title=(page.title if hasattr(page, "title") else None) or url,
+                    geography=geography,
+                    district=district,
+                )
+                out.extend(
+                    self._record_observations(observations, geography=geography)
+                )
+                out.append(
+                    {
+                        "evidence_kind": "brand_website_page",
+                        "title": f"OSM brand website: {url}",
+                        "content": (
+                            f"Fetched OSM-tagged brand/venue website for commercial evidence. "
+                            f"Excerpt: {page_text[:1200]}"
+                        ),
+                        "url": page.final_url or url,
+                        "geography": geography,
+                        "confidence": 0.55,
+                        "retrieval_method": "osm_brand_website",
+                        "retrieved_at": utcnow().isoformat(),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{url[:60]}:{exc}")
+        return out, {
+            "ok": fetched > 0,
+            "urls_attempted": len(list(urls or [])[:6]),
+            "fetched": fetched,
+            "observation_docs": len(out),
+            "errors": errors[:8],
+        }
 
     def _fetch_seed_catalogs(
         self,
@@ -848,18 +939,40 @@ class CommercialDiscoveryConnector(SourceConnector):
                     return None, {"ok": False, "status": r.status_code, "reason": "http_error"}
                 payload = r.json()
             elements = payload.get("elements") or []
-            names = []
+            names: list[str] = []
+            websites: list[str] = []
+            seats_obs: list[dict[str, Any]] = []
             for el in elements:
                 tags = el.get("tags") or {}
                 n = tags.get("name") or tags.get("name:en")
                 if n:
                     names.append(str(n))
+                web = tags.get("website") or tags.get("contact:website") or tags.get("url")
+                if web:
+                    w = str(web).strip()
+                    if w and not w.startswith("http"):
+                        w = "https://" + w
+                    if w.startswith("http") and w not in websites:
+                        websites.append(w)
+                for seat_key in ("seats", "capacity"):
+                    if seat_key in tags:
+                        try:
+                            seats_obs.append(
+                                {
+                                    "name": n,
+                                    "metric": seat_key,
+                                    "value": float(str(tags[seat_key]).split()[0]),
+                                }
+                            )
+                        except (TypeError, ValueError):
+                            pass
             count = len(elements)
             content = (
                 f"Location economics — competition density: approximately {count} "
                 f"OpenStreetMap '{amenity}' amenities within {radius_m}m of "
                 f"lat={lat:.4f}, lon={lon:.4f}. "
                 f"Named sample: {', '.join(names[:8]) or 'unnamed'}. "
+                f"Brand websites tagged: {', '.join(websites[:6]) or 'none'}. "
                 f"This is a footfall/competition-density proxy for district operating context, "
                 f"not a rent quote."
             )
@@ -875,8 +988,16 @@ class CommercialDiscoveryConnector(SourceConnector):
                     "retrieval_method": "overpass_around",
                     "retrieved_at": utcnow().isoformat(),
                     "density_count": count,
+                    "brand_websites": websites[:12],
+                    "seat_tags": seats_obs[:12],
                 },
-                {"ok": True, "count": count, "named": len(names)},
+                {
+                    "ok": True,
+                    "count": count,
+                    "named": len(names),
+                    "websites": websites[:12],
+                    "seat_tags": seats_obs[:12],
+                },
             )
         except Exception as exc:  # noqa: BLE001
             return None, {"ok": False, "error": str(exc)}

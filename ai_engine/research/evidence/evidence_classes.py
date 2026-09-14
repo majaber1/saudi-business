@@ -40,6 +40,7 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
         seed_url_templates=(
             "https://www.bayut.sa/en/for-rent/commercial/{city_slug}/",
             "https://haraj.com.sa/",
+            "https://haraj.com.sa/tags/{city_ar}_إيجار%20محل",
         ),
         notes="Normalize to SAR/m²/year when area+period present; else SAR/month.",
     ),
@@ -49,6 +50,7 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
         assumption_keys=("avg_ticket",),
         domain_classes=(
             "delivery_marketplace",
+            "local_brand_website",
             "market_report",
             "search_index",
         ),
@@ -57,6 +59,7 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
             "{sector} menu prices {city} SAR",
             "{sector} average price SAR {city} {district}",
             "أسعار قائمة {sector} {city}",
+            "{city} {sector} menu SAR site:.sa",
         ),
         seed_url_templates=("https://hungerstation.com/sa-en",),
         notes="Product observations → comparable basket → low/base/high ticket.",
@@ -134,8 +137,14 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
             "{sector} COGS percent restaurant Saudi",
             "تكلفة البضاعة المباعة مطاعم السعودية",
         ),
-        seed_url_templates=(),
-        notes="Only promote when sourced percent/range present — never invent 32%.",
+        seed_url_templates=(
+            "https://www.amazon.sa/s?k={cogs_milk_query_enc}",
+            "https://www.amazon.sa/s?k={cogs_beans_query_enc}",
+        ),
+        notes=(
+            "Percent COGS only when sourced. Amazon ingredient catalog prices are "
+            "input_cost_sar observations only — never promoted to food_cost_pct."
+        ),
     ),
 }
 
@@ -206,15 +215,33 @@ def build_render_context(
         equip_q = "commercial espresso machine"
     pos_q = "POS system cash register"
     furniture_q = f"{sector_token} furniture table"
+    city_ar_map = {
+        "riyadh": "الرياض",
+        "الرياض": "الرياض",
+        "jeddah": "جدة",
+        "جدة": "جدة",
+        "dammam": "الدمام",
+        "الدمام": "الدمام",
+    }
+    city_key = (city or "Riyadh").strip().lower()
+    city_ar = city_ar_map.get(city_key, city or "الرياض")
+    # Generic F&B input seeds (sector-tokenized) — not hard-coded product economics.
+    milk_q = "fresh milk 1L"
+    beans_q = f"{sector_token} beans wholesale" if sector_token else "food ingredients"
+    if amenity in {"cafe", "restaurant", "bakery"} or "coffee" in sector_token.lower():
+        beans_q = "green coffee beans 1kg"
     return {
         "city": city or "Riyadh",
         "city_slug": _city_slug(city or "Riyadh"),
+        "city_ar": city_ar,
         "district": district or "",
         "sector": sector_token,
         "query": query or sector_token,
         "query_enc": quote_plus(equip_q),
         "pos_query_enc": quote_plus(pos_q),
         "furniture_query_enc": quote_plus(furniture_q),
+        "cogs_milk_query_enc": quote_plus(milk_q),
+        "cogs_beans_query_enc": quote_plus(beans_q),
         "amenity": amenity or "",
     }
 
