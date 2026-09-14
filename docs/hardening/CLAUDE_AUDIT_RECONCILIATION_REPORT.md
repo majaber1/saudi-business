@@ -295,7 +295,7 @@ Retry/recoverability: present as user messaging / Retry-After on health; not a f
 
 | PR | Classification | Recommendation |
 |----|----------------|----------------|
-| **#53** | **ACTIVE** | Keep draft; HOLD merge pending P1 owner decisions |
+| **#53** | **ACTIVE** | Keep draft; **READY_FOR_OWNER_REVIEW** after P1 closure (do not auto-merge) |
 | **#52** | ACTIVE (validation docs) | Keep; supersede narrative after this report |
 | **#45** | HISTORICAL_EVIDENCE_ONLY | Close after owner ack (Phase 8A acceptance already frozen on main) |
 | **#42** | STALE / BLOCKED_EXTERNAL | Keep as evidence of Monsha'at block or close as superseded |
