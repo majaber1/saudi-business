@@ -24,6 +24,7 @@ ProjectArchetype = Literal[
     "data_center",
     "retail",
     "industrial",
+    "fnb",
     "services",
     "other",
     "franchise",
@@ -112,6 +113,10 @@ class StudyState(BaseModel):
     decision_conditions: List[str] = []
     decision_risks: List[str] = []
     decision_version: int = 0
+    # Product Hardening Sprint — gate audit (JSON only; no migration)
+    decision_safety: Optional[Dict[str, Any]] = None
+    # Progressive questioning metadata (why required assumptions matter)
+    assumption_requirements: Optional[Dict[str, Any]] = None
 
     next_action: Optional[str] = None
     blocking_reason: Optional[str] = None

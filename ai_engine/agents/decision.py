@@ -136,9 +136,77 @@ def run_decision(state: StudyState) -> StudyState:
         )
 
     if decision_data:
-        state.verdict = decision_data.get("verdict", "INSUFFICIENT_EVIDENCE")
-        state.decision_rationale = decision_data.get("rationale", "")
-        state.decision_conditions = decision_data.get("conditions", [])
+        provisional_verdict = decision_data.get("verdict", "INSUFFICIENT_EVIDENCE")
+        provisional_rationale = decision_data.get("rationale", "")
+        provisional_conditions = list(decision_data.get("conditions", []) or [])
+        provisional_confidence = decision_data.get("confidence_score")
+
+        # Hardening Sprint: deterministic financial + evidence safety gates (no silent fixes).
+        try:
+            from ai_engine.hardening import (
+                apply_decision_safety,
+                evaluate_evidence_verdict_gates,
+                evaluate_financial_trust_gates,
+            )
+
+            arch = None
+            if state.profile:
+                arch = getattr(state.profile, "archetype", None)
+            fin_gate = evaluate_financial_trust_gates(
+                financial_results=state.financial_results or {},
+                assumptions=state.assumptions,
+                archetype=arch,
+                language=lang or "en",
+            )
+            research_ctx = getattr(state, "research_context", None)
+            research_quality = getattr(state, "research_quality", None)
+            if research_quality is None and isinstance(research_ctx, dict):
+                research_quality = research_ctx.get("research_quality")
+            ev_gate = evaluate_evidence_verdict_gates(
+                archetype=arch,
+                claims=state.claims,
+                assumptions=state.assumptions,
+                research_quality=research_quality,
+                language=lang or "en",
+            )
+            safe = apply_decision_safety(
+                verdict=provisional_verdict,
+                rationale=provisional_rationale,
+                conditions=provisional_conditions,
+                confidence=provisional_confidence if isinstance(provisional_confidence, (int, float)) else None,
+                financial_gate=fin_gate,
+                evidence_gate=ev_gate,
+                language=lang or "en",
+            )
+            state.verdict = safe["verdict"]
+            state.decision_rationale = safe["rationale"]
+            state.decision_conditions = safe["conditions"]
+            # Persist gate audit on financial results / state when possible (no migration).
+            if isinstance(state.financial_results, dict):
+                state.financial_results = {
+                    **state.financial_results,
+                    "trust_gates": fin_gate,
+                }
+            try:
+                state.decision_safety = {
+                    "financial": fin_gate,
+                    "evidence": ev_gate,
+                    "applied": {
+                        "original_verdict": safe["original_verdict"],
+                        "verdict": safe["verdict"],
+                        "gate_codes": safe["gate_codes"],
+                        "downgraded": safe["downgraded"],
+                        "confidence": safe["confidence"],
+                        "numeric_contradictions": safe.get("numeric_contradictions") or [],
+                    },
+                }
+            except Exception:
+                pass
+        except Exception:
+            state.verdict = provisional_verdict
+            state.decision_rationale = provisional_rationale
+            state.decision_conditions = provisional_conditions
+
         state.decision_risks = decision_data.get("key_risks", state.decision_risks)
         state.decision_version += 1
         state.phase = "REPORT_READY"

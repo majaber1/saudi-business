@@ -238,6 +238,84 @@ _FIELD_META: dict[str, dict[str, str]] = {
         "explanation_en": "Fixed opex must be covered by take-rate contribution.",
         "explanation_ar": "التكاليف الثابتة يجب أن تُغطى من مساهمة نسبة العمولة.",
     },
+    # F&B
+    "business_model": {
+        "category": "capacity",
+        "explanation_en": "F&B format (café, QSR, cloud kitchen) changes cost and capacity drivers.",
+        "explanation_ar": "نموذج المطعم/المقهى يغيّر محركات التكلفة والسعة.",
+    },
+    "location_city": {
+        "category": "rent",
+        "explanation_en": "City / district drives rent, footfall, and demand realism.",
+        "explanation_ar": "المدينة / الحي يقودان الإيجار والحركة وواقعية الطلب.",
+    },
+    "seats_capacity": {
+        "category": "capacity",
+        "explanation_en": "Seats set the physical upper bound for covers.",
+        "explanation_ar": "المقاعد تحدد الحد الأعلى للزبائن.",
+    },
+    "operating_hours_day": {
+        "category": "capacity",
+        "explanation_en": "Operating hours convert seats into achievable daily covers.",
+        "explanation_ar": "ساعات التشغيل تحوّل المقاعد إلى زبائن يوميين قابلين للتحقيق.",
+    },
+    "avg_ticket": {
+        "category": "ticket",
+        "explanation_en": "Average ticket drives revenue capacity for F&B.",
+        "explanation_ar": "متوسط قيمة الفاتورة يحدد طاقة الإيراد للمطاعم والمقاهي.",
+    },
+    "daily_covers": {
+        "category": "covers",
+        "explanation_en": "Daily covers link seating capacity to achievable revenue.",
+        "explanation_ar": "الزبائن اليوميون يربطون سعة المقاعد بالإيراد القابل للتحقيق.",
+    },
+    "rent_monthly": {
+        "category": "rent",
+        "explanation_en": "Rent is usually the largest fixed cost for F&B locations.",
+        "explanation_ar": "الإيجار عادة أكبر تكلفة ثابتة لمواقع المطاعم والمقاهي.",
+    },
+    "labor_monthly": {
+        "category": "labor",
+        "explanation_en": "Labor is a core F&B operating cost assumption.",
+        "explanation_ar": "العمالة افتراض تكلفة تشغيل أساسي للمطاعم والمقاهي.",
+    },
+    "food_cost_pct": {
+        "category": "food_cost",
+        "explanation_en": "Food cost % is the primary margin lever for F&B.",
+        "explanation_ar": "نسبة تكلفة الطعام هي رافعة الهامش الأساسية للمطاعم والمقاهي.",
+    },
+    "delivery_dependency": {
+        "category": "covers",
+        "explanation_en": "Delivery mix changes margins and demand volatility.",
+        "explanation_ar": "الاعتماد على التوصيل يغيّر الهوامش وتقلب الطلب.",
+    },
+    "fitout_capex": {
+        "category": "capacity",
+        "explanation_en": "Fit-out CAPEX frames opening investment and payback.",
+        "explanation_ar": "نفقات التجهيز الرأسمالية تحدد استثمار الافتتاح والاسترداد.",
+    },
+    # Industrial
+    "production_capacity": {
+        "category": "capacity",
+        "explanation_en": "Capacity sets the upper bound of manufacturing revenue.",
+        "explanation_ar": "الطاقة الإنتاجية تحدد الحد الأعلى لإيراد التصنيع.",
+    },
+    "utilization": {
+        "category": "utilization",
+        "explanation_en": "Utilization converts nameplate capacity into realistic output.",
+        "explanation_ar": "نسبة التشغيل تحول الطاقة الاسمية إلى إنتاج واقعي.",
+    },
+    "capex_machinery": {
+        "category": "capex",
+        "explanation_en": "Machinery CAPEX dominates industrial investment feasibility.",
+        "explanation_ar": "النفقات الرأسمالية للآلات تهيمن على جدوى الاستثمار الصناعي.",
+    },
+    "raw_material_cost": {
+        "category": "supply_chain",
+        "explanation_en": "Raw material cost is the core supply-chain assumption.",
+        "explanation_ar": "تكلفة المواد الخام هي افتراض سلسلة التوريد الأساسي.",
+    },
+
 }
 
 _DEFAULT_CATEGORY = "general"
@@ -247,7 +325,6 @@ _DEFAULT_EXPLANATION = {
     "ar": "هذا المدخل يُحسّن نموذج الجدوى لنوع مشروعك.",
 }
 
-# Archetype → expected discovery categories (for validation / evidence)
 ARCHETYPE_CATEGORY_PACKS: dict[str, list[str]] = {
     "saas_digital": ["customers", "pricing", "arr_model", "cac", "retention", "compliance"],
     "services_professional": [
@@ -260,6 +337,9 @@ ARCHETYPE_CATEGORY_PACKS: dict[str, list[str]] = {
     "services_mobility": ["drivers", "trips", "take_rate"],
     "real_estate": ["land", "boq", "units", "selling_rental_price", "absorption", "financing"],
     "data_center": ["mw", "racks", "pue", "power", "occupancy", "capex_opex"],
+    "fnb": ["covers", "ticket", "rent", "food_cost", "labor", "capacity"],
+    "industrial": ["capacity", "utilization", "capex", "unit_economics", "supply_chain"],
+    "retail": ["ticket", "transactions", "rent", "margin"],
 }
 
 

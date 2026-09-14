@@ -15,6 +15,10 @@ from ..archetypes import (
     ARCHETYPE_LABELS,
     detect_services_variant,
 )
+from ..hardening import (
+    assumption_requirement_explanations,
+    classify_business_archetype,
+)
 from ..utils.safe_messages import (
     ai_unavailable_classify_message,
     sanitize_chat_content,
@@ -31,15 +35,16 @@ SYSTEM_PROMPT_AR = """
 مهمتك: فهم المشروع وتصنيفه ثم طلب معلومات مناسبة لنوعه فقط.
 
 قواعد صارمة:
-- صنّف المشروع أولاً إلى أحد: saas_digital | real_estate | data_center | industrial | retail | services | other
+- صنّف المشروع أولاً إلى أحد: saas_digital | real_estate | data_center | industrial | fnb | retail | services | other
 - اسأل فقط أسئلة مناسبة لهذا التصنيف
-- ممنوع سؤال CAC أو Churn أو ARR أو MRR أو تسعير SaaS لمشاريع العقار أو مراكز البيانات أو الصناعة أو التجزئة
+- المقاهي/المطاعم/الأغذية والمشروبات = fnb (ليست retail أو services)
+- ممنوع سؤال CAC أو Churn أو ARR أو MRR أو تسعير SaaS لمشاريع العقار أو مراكز البيانات أو الصناعة أو التجزئة أو المطاعم
 - مشاريع التنقل/التوصيل/الأسواق والاستشارات/الأمن السيبراني/الخدمات المهنية تُصنَّف services وليست saas_digital أو industrial
 - لا تخترع أرقاماً مالية دقيقة في هذه المرحلة
 
 أخرج JSON داخل ```json ... ```:
 {
-  "archetype": "saas_digital|real_estate|data_center|industrial|retail|services|other",
+  "archetype": "saas_digital|real_estate|data_center|industrial|fnb|retail|services|other",
   "sector": "وصف القطاع",
   "stage": "idea|mvp|operational|expansion",
   "decision_goal": "investment|funding|feasibility|expansion",
@@ -53,15 +58,16 @@ You are an expert business advisor for the Saudi market.
 Task: understand and classify the project, then ask ONLY archetype-appropriate questions.
 
 Strict rules:
-- Classify first into: saas_digital | real_estate | data_center | industrial | retail | services | other
+- Classify first into: saas_digital | real_estate | data_center | industrial | fnb | retail | services | other
 - Ask only questions appropriate for that archetype
-- NEVER ask CAC, Churn, ARR, MRR, or SaaS pricing for real estate, data centers, industrial, or retail
+- Cafés / restaurants / food & beverage = fnb (NOT retail or services)
+- NEVER ask CAC, Churn, ARR, MRR, or SaaS pricing for real estate, data centers, industrial, retail, or F&B
 - Mobility / ride-hailing / marketplaces AND consulting / cybersecurity / professional services classify as services (NOT saas_digital or industrial)
 - Do not invent precise financial numbers in this step
 
 Output JSON inside ```json ... ```:
 {
-  "archetype": "saas_digital|real_estate|data_center|industrial|retail|services|other",
+  "archetype": "saas_digital|real_estate|data_center|industrial|fnb|retail|services|other",
   "sector": "sector description",
   "stage": "idea|mvp|operational|expansion",
   "decision_goal": "investment|funding|feasibility|expansion",
@@ -98,7 +104,14 @@ def run_discovery(state: StudyState) -> StudyState:
     system_prompt = SYSTEM_PROMPT_AR if lang == "ar" else SYSTEM_PROMPT_EN
 
     last_user = _last_user_text(state)
-    heuristic = classify_archetype(last_user) if last_user else "other"
+    # Hardening: F&B / manufacturing / SaaS-aware heuristic (coffee ≠ consulting).
+    heuristic = (
+        classify_business_archetype(last_user)
+        if last_user
+        else "other"
+    )
+    if heuristic == "other" and last_user:
+        heuristic = classify_archetype(last_user)
 
     messages = [SystemMessage(content=system_prompt)] + list(state.messages[-8:] if state.messages else [])
 
@@ -196,10 +209,42 @@ def _apply_profile(
         context_text=context_text,
         services_variant=services_variant,
     )
+    # Progressive questioning: surface why required assumptions matter for this type.
+    try:
+        req = assumption_requirement_explanations(
+            archetype, language=lang, context_text=context_text
+        )
+        banner = req.get("banner") or ""
+        why_by_key = {
+            f["key"]: (f.get("why_required_ar") if lang == "ar" else f.get("why_required_en"))
+            for f in (req.get("fields") or [])
+        }
+        enriched = []
+        for q in state.discovery_questions or []:
+            item = dict(q)
+            key = item.get("field_key") or item.get("id")
+            if banner and not item.get("requirement_banner"):
+                item["requirement_banner"] = banner
+            if key and why_by_key.get(key) and not item.get("why_required"):
+                item["why_required"] = why_by_key[key]
+            enriched.append(item)
+        state.discovery_questions = enriched
+        state.assumption_requirements = {
+            "archetype": req.get("archetype"),
+            "banner": banner,
+            "critical_keys": req.get("critical_keys") or [],
+            "required_keys": req.get("required_keys") or [],
+        }
+    except Exception:
+        pass
 
-    label = ARCHETYPE_LABELS.get(archetype, ARCHETYPE_LABELS["other"])[
-        lang if lang in ("ar", "en") else "en"
-    ]
+    label = ARCHETYPE_LABELS.get(archetype, ARCHETYPE_LABELS["other"])
+    if isinstance(label, dict):
+        label = label.get(lang if lang in ("ar", "en") else "en", archetype)
+    else:
+        label = ARCHETYPE_LABELS.get(archetype, ARCHETYPE_LABELS["other"])[
+            lang if lang in ("ar", "en") else "en"
+        ]
     if not confirmed:
         state.phase = "ARCHETYPE_CLASSIFICATION"
         state.next_action = "confirm_archetype"
@@ -291,6 +336,22 @@ def _resolve_archetype(
                 llm_arch,
             )
             return "services", True, reason
+
+    # Hardening: coffee / restaurant heuristic must win over retail/services LLM drift.
+    if heuristic == "fnb" and llm_arch in {"retail", "services", "other", "unknown"}:
+        return "fnb", llm_arch not in {"other", "unknown", "fnb"}, "fnb_keep_heuristic"
+    if heuristic == "industrial" and llm_arch in {"services", "other", "unknown", "retail"}:
+        return (
+            "industrial",
+            llm_arch not in {"industrial", "other", "unknown"},
+            "industrial_keep_heuristic",
+        )
+    if heuristic == "saas_digital" and llm_arch in {"services", "other", "unknown"}:
+        return (
+            "saas_digital",
+            llm_arch not in {"saas_digital", "other", "unknown"},
+            "saas_keep_heuristic",
+        )
 
     if mobility and not strong_dc:
         if heuristic == "services":

@@ -139,6 +139,45 @@ INDUSTRIAL_SCHEMA = [
     _f("selling_price", label_en="Selling price / unit", label_ar="سعر البيع للوحدة", input_type="currency", unit="SAR"),
     _f("utilization", label_en="Plant utilization", label_ar="نسبة التشغيل", input_type="percent", unit="%"),
     _f("capex_machinery", label_en="Machinery / plant CAPEX", label_ar="النفقات الرأسمالية للآلات", input_type="currency", unit="SAR"),
+    _f("workforce", label_en="Plant workforce (FTEs)", label_ar="قوة العمل في المصنع", input_type="number", unit="people"),
+    _f("energy_cost_monthly", label_en="Monthly energy / utilities cost", label_ar="تكلفة الطاقة / المرافق شهرياً", input_type="currency", unit="SAR"),
+    _f("facility_capex", label_en="Facility / civil works CAPEX", label_ar="نفقات المنشأة / الأعمال المدنية", input_type="currency", unit="SAR", required=False),
+    _f(
+        "supply_chain_model",
+        label_en="Feedstock / supply chain model",
+        label_ar="نموذج المواد الخام / سلسلة التوريد",
+        input_type="single_select",
+        options_en=["Own collection", "Third-party supply", "Mixed", "Not decided"],
+        options_ar=["تجميع ذاتي", "توريد طرف ثالث", "مختلط", "غير محدد"],
+    ),
+]
+
+FNB_SCHEMA = [
+    _f(
+        "business_model",
+        label_en="F&B business model",
+        label_ar="نموذج عمل المطاعم والمقاهي",
+        input_type="single_select",
+        options_en=["Café / specialty coffee", "QSR", "Casual dining", "Cloud kitchen", "Bakery", "Mixed"],
+        options_ar=["مقهى / قهوة مختصة", "وجبات سريعة", "مطعم عادي", "مطبخ سحابي", "مخبز", "مختلط"],
+    ),
+    _f("location_city", label_en="City / district", label_ar="المدينة / الحي", input_type="text"),
+    _f("seats_capacity", label_en="Seats / capacity", label_ar="المقاعد / السعة", input_type="number", unit="seats"),
+    _f("operating_hours_day", label_en="Operating hours / day", label_ar="ساعات التشغيل يومياً", input_type="number", unit="hours"),
+    _f("avg_ticket", label_en="Average ticket size", label_ar="متوسط قيمة الفاتورة", input_type="currency", unit="SAR"),
+    _f("daily_covers", label_en="Expected daily covers / transactions", label_ar="الزبائن / المعاملات اليومية المتوقعة", input_type="number"),
+    _f("rent_monthly", label_en="Monthly rent", label_ar="الإيجار الشهري", input_type="currency", unit="SAR"),
+    _f("labor_monthly", label_en="Monthly labor cost", label_ar="تكلفة العمالة الشهرية", input_type="currency", unit="SAR"),
+    _f("food_cost_pct", label_en="Food / beverage cost %", label_ar="نسبة تكلفة الطعام / المشروبات", input_type="percent", unit="%"),
+    _f(
+        "delivery_dependency",
+        label_en="Delivery dependency",
+        label_ar="الاعتماد على التوصيل",
+        input_type="single_select",
+        options_en=["None / dine-in only", "Partial (<30%)", "Significant (30–60%)", "Primarily delivery"],
+        options_ar=["بدون / حضوري فقط", "جزئي (<30%)", "ملحوظ (30–60%)", "توصيل بشكل أساسي"],
+    ),
+    _f("fitout_capex", label_en="Fit-out / opening CAPEX", label_ar="تجهيز / نفقات الافتتاح الرأسمالية", input_type="currency", unit="SAR"),
 ]
 
 RETAIL_SCHEMA = [
@@ -261,6 +300,7 @@ ASSUMPTION_SCHEMAS: dict[str, list[dict[str, Any]]] = {
     "data_center": DATA_CENTER_SCHEMA,
     "industrial": INDUSTRIAL_SCHEMA,
     "retail": RETAIL_SCHEMA,
+    "fnb": FNB_SCHEMA,
     "services": PROFESSIONAL_SERVICES_SCHEMA,
     "other": OTHER_SCHEMA,
 }

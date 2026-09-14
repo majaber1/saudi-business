@@ -462,14 +462,17 @@ class TestPhaseProgression:
     def test_approve_assumptions_in_assumptions_review(self):
         headers, _ = _register_and_login("phase5")
         sid = self._create_study(headers)
+        # Default archetype is "other"; hardening requires its critical keys.
         self._set_phase(sid, "ASSUMPTIONS_REVIEW", assumptions_json=[
-            {"key": "revenue", "value": "1000000", "source": "user", "confidence": "medium"}
+            {"key": "year1_revenue", "value": "1000000", "source": "user", "confidence": "medium"},
+            {"key": "initial_investment", "value": "500000", "source": "user", "confidence": "medium"},
+            {"key": "revenue", "value": "1000000", "source": "user", "confidence": "medium"},
         ])
 
         r = client.post(f"/api/v2/studies/{sid}/approve/assumptions", json={
             "approved": True,
         }, headers=headers)
-        assert r.status_code == 200
+        assert r.status_code == 200, r.text
 
     def test_approve_evidence_empty_claims_400(self):
         headers, _ = _register_and_login("phase6")

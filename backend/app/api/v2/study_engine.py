@@ -429,6 +429,40 @@ def _finalize_archetype_confirmation(state, req: StudyApprovalRequest):
     state.discovery_questions = questions_for_language(
         chosen, state.language, context_text=context_text, services_variant=services_variant
     )
+    # Hardening: attach why-required banners onto discovery questions (JSON only).
+    try:
+        from ai_engine.hardening import assumption_requirement_explanations
+
+        req = assumption_requirement_explanations(
+            chosen, language=state.language, context_text=context_text
+        )
+        banner = req.get("banner") or ""
+        why_by_key = {
+            f["key"]: (
+                f.get("why_required_ar")
+                if state.language == "ar"
+                else f.get("why_required_en")
+            )
+            for f in (req.get("fields") or [])
+        }
+        enriched = []
+        for q in state.discovery_questions or []:
+            item = dict(q)
+            key = item.get("field_key") or item.get("id")
+            if banner and not item.get("requirement_banner"):
+                item["requirement_banner"] = banner
+            if key and why_by_key.get(key) and not item.get("why_required"):
+                item["why_required"] = why_by_key[key]
+            enriched.append(item)
+        state.discovery_questions = enriched
+        state.assumption_requirements = {
+            "archetype": req.get("archetype"),
+            "banner": banner,
+            "critical_keys": req.get("critical_keys") or [],
+            "required_keys": req.get("required_keys") or [],
+        }
+    except Exception:
+        pass
     state.structured_answers = state.structured_answers or {}
 
     label = ARCHETYPE_LABELS.get(chosen, ARCHETYPE_LABELS["other"])[
@@ -620,6 +654,34 @@ def _attach_archetype_meta(payload: dict, state_like) -> dict:
         )
         if services_variant:
             payload["services_variant"] = services_variant
+        # Hardening: progressive-questioning metadata + lightweight sector pack (no benchmarks).
+        try:
+            from ai_engine.hardening import (
+                assumption_requirement_explanations,
+                sector_pack_for_archetype,
+            )
+
+            req = assumption_requirement_explanations(arch, language=lang)
+            payload["assumption_requirements"] = {
+                "archetype": req.get("archetype"),
+                "banner": req.get("banner"),
+                "critical_keys": req.get("critical_keys") or [],
+                "required_keys": req.get("required_keys") or [],
+            }
+            pack = sector_pack_for_archetype(arch)
+            if pack:
+                payload["sector_pack"] = {
+                    "id": pack.get("id"),
+                    "label_en": pack.get("label_en"),
+                    "label_ar": pack.get("label_ar"),
+                    "required_research_areas": pack.get("required_research_areas") or [],
+                    "critical_assumptions": pack.get("critical_assumptions") or [],
+                    "evidence_requirements": pack.get("evidence_requirements") or [],
+                    "note": pack.get("note"),
+                }
+        except Exception:
+            payload.setdefault("assumption_requirements", None)
+            payload.setdefault("sector_pack", None)
     except Exception:
         payload.setdefault("archetype_options", [])
         payload.setdefault("assumption_schema", [])
@@ -681,6 +743,8 @@ def _study_payload(study_id: str, record: dict, *, response: str | None = None) 
         "decision_rationale": s.get("decision_rationale"),
         "decision_conditions": s.get("decision_conditions") or [],
         "decision_risks": s.get("decision_risks") or [],
+        "decision_safety": s.get("decision_safety"),
+        "assumption_requirements": s.get("assumption_requirements"),
         "messages": _public_messages(s.get("messages")),
         "next_action": s.get("next_action"),
         "error": s.get("error"),
@@ -743,6 +807,8 @@ def _payload_from_state(study_id: str, state, *, response: str | None = None, re
         "decision_rationale": state.decision_rationale,
         "decision_conditions": state.decision_conditions or [],
         "decision_risks": state.decision_risks or [],
+        "decision_safety": getattr(state, "decision_safety", None),
+        "assumption_requirements": getattr(state, "assumption_requirements", None),
         "messages": _public_messages(state.messages),
         "next_action": state.next_action,
         "error": state.error,
@@ -1162,6 +1228,39 @@ async def approve_stage(
 
     if stage == "evidence" and not state.claims:
         raise HTTPException(status_code=400, detail="No evidence to approve.")
+
+    # Hardening choke point: block assumption approval when critical archetype keys are empty.
+    if stage == "assumptions" and req.approved:
+        try:
+            from ai_engine.hardening import assumption_requirement_explanations
+
+            arch = "other"
+            if state.profile and getattr(state.profile, "archetype", None):
+                arch = state.profile.archetype
+            req_meta = assumption_requirement_explanations(
+                arch, language=getattr(state, "language", None) or "en"
+            )
+            critical = set(req_meta.get("critical_keys") or [])
+            present = set()
+            for a in state.assumptions or []:
+                key = getattr(a, "key", None) if not isinstance(a, dict) else a.get("key")
+                val = getattr(a, "value", None) if not isinstance(a, dict) else a.get("value")
+                if key and str(val or "").strip():
+                    present.add(str(key))
+            missing_critical = sorted(k for k in critical if k not in present)
+            if missing_critical:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Cannot approve assumptions: critical keys missing for this business type: "
+                        + ", ".join(missing_critical[:12])
+                        + ". These questions are required because this business type depends on them."
+                    ),
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
 
     if not req.approved:
         if req.feedback:
