@@ -336,3 +336,21 @@ def test_osm_capacity_signals_to_bands():
     keys = {b.key for b in bands}
     assert "seats_capacity" in keys
     assert "operating_hours_day" in keys
+
+
+def test_adapter_html_slice_preserves_next_data_beyond_200k():
+    """Regression: Wasalt SSR JSON often sits past a naive 200KB HTML cut."""
+    sys.path.insert(0, str(_ROOT / "backend"))
+    from app.integrations.sources.commercial_discovery import _adapter_html_slice
+
+    payload = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        '{"props":{"pageProps":{"searchResult":{"properties":[{"id":1}]}}}}'
+        "</script>"
+    )
+    html = ("<!--pad-->" * 30000) + payload  # >200KB prefix
+    assert len(html) > 200_000
+    sliced = _adapter_html_slice(html, limit=200_000)
+    assert "__NEXT_DATA__" in sliced
+    assert "searchResult" in sliced
+    assert len(sliced) <= 200_000 + 200

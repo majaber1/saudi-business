@@ -101,6 +101,29 @@ _DDG_RESULT_RE = re.compile(
     re.I | re.S,
 )
 _TAG_RE = re.compile(r"<[^>]+>")
+_NEXT_DATA_RE = re.compile(
+    r'<script[^>]+id="__NEXT_DATA__"[^>]*>.*?</script>',
+    re.I | re.S,
+)
+
+
+def _adapter_html_slice(html: str | None, limit: int = 600_000) -> str:
+    """Truncate HTML for adapters while preserving SSR JSON blobs.
+
+    Wasalt (and similar Next.js portals) place `__NEXT_DATA__` after ~200KB of
+    assets. A naive [:200000] cut drops all listing prices.
+    """
+    raw = html or ""
+    if len(raw) <= limit:
+        return raw
+    m = _NEXT_DATA_RE.search(raw)
+    if not m:
+        return raw[:limit]
+    blob = m.group(0)
+    # Prefer keeping the SSR payload intact; fill remaining budget with head HTML.
+    head_budget = max(0, limit - len(blob) - 64)
+    head = raw[:head_budget]
+    return head + "\n" + blob
 
 
 def infer_amenity_tag(query: str) -> str:
@@ -641,7 +664,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                 page = self._reader.read(url)
                 fetched += 1
                 page_text = (page.text or "")[:6000]
-                page_html = (page.html or "")[:200000]
+                page_html = _adapter_html_slice(page.html, limit=600_000)
                 observations = adapt_page_for_classes(
                     evidence_class_ids=class_ids,
                     adapters_by_class=adapters_by_class,
@@ -705,7 +728,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                 page = self._reader.read(url)
                 fetched += 1
                 text = (page.text or "")[:8000]
-                html = (page.html or "")[:200000]
+                html = _adapter_html_slice(page.html, limit=600_000)
                 class_ids = list(seed_to_classes.get(url) or strategy.evidence_class_ids)
                 adapters = {
                     eid: strategy.adapters[eid]
@@ -1267,7 +1290,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                         page = self._reader.read(href)
                         follow_budget -= 1
                         page_text = (page.text or "")[:4000]
-                        page_html = (page.html or "")[:120000]
+                        page_html = _adapter_html_slice(page.html, limit=600_000)
                         doc["content"] = (
                             doc["content"]
                             + f" Page excerpt ({page.final_url}): {page_text[:1500]}"
@@ -1406,7 +1429,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                         follow_budget -= 1
                         pages_followed += 1
                         page_text = (page.text or "")[:6000]
-                        page_html = (page.html or "")[:200000]
+                        page_html = _adapter_html_slice(page.html, limit=600_000)
                         doc["content"] += f" Page excerpt: {page_text[:1200]}"
                         doc["url"] = page.final_url
                         doc["confidence"] = 0.5
