@@ -14,7 +14,8 @@ from ai_engine.research.evidence.observations import NumericObservation
 _SAR_NUM = re.compile(
     r"(?:SAR|SR|ر\.?\s*س\.?|ريال)\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)"
     r"|"
-    r"([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)\s*(?:SAR|SR|ر\.?\s*س\.?|ريال)",
+    # Suffix form: do not steal a calendar year from patterns like "2024 SAR4,000.00".
+    r"([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)\s*(?:SAR|SR|ر\.?\s*س\.?|ريال)(?!\s*[0-9])",
     re.I,
 )
 _AREA_M2 = re.compile(
@@ -30,6 +31,10 @@ _PCT = re.compile(
 )
 _SALARY_ROLE = re.compile(
     r"(barista|waiter|chef|manager|cashier|server|cook|موظف|باريستا|مدير|نادل)",
+    re.I,
+)
+_MIN_WAGE_HINT = re.compile(
+    r"minimum\s+wage|حد\s*أدنى|الحد\s*الأدنى\s*للأجور|private\s+sector\s*\(saudi",
     re.I,
 )
 _JSON_PRICE = re.compile(r'"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?', re.I)
@@ -647,15 +652,39 @@ def adapt_salary(
     amounts = extract_sar_amounts(blob)
     role_m = _SALARY_ROLE.search(blob)
     role = role_m.group(1) if role_m else None
-    period = "month"
-    if any(k in low for k in ("per year", "annual", "/year", "سنوي")):
+    is_min_wage = bool(_MIN_WAGE_HINT.search(blob))
+    if is_min_wage and not role:
+        role = "statutory_minimum_wage"
+    # Prefer explicit monthly framing. Long statutory pages often also mention
+    # "annual" elsewhere — that must not convert a "per month" SAR figure.
+    has_month = any(
+        k in low for k in ("per month", "/month", "monthly", "شهري", "per month")
+    )
+    has_year = any(k in low for k in ("per year", "/year", "annual salary", "سنوي"))
+    if is_min_wage or has_month or not has_year:
+        period = "month"
+    else:
         period = "year"
     obs: list[NumericObservation] = []
     now = datetime.now(timezone.utc).isoformat()
-    for amt in amounts:
+    # Prefer café-/wage-plausible amounts; skip calendar years (e.g. 2024) first.
+    ranked = sorted(
+        amounts,
+        key=lambda a: (
+            0 if 3_000 <= (a / 12.0 if period == "year" else a) <= 25_000 else 1,
+            a,
+        ),
+    )
+    for amt in ranked:
         monthly = amt / 12.0 if period == "year" else amt
         if not (2_500 <= monthly <= 40_000):
             continue
+        # Statutory minimum pages often list a single national figure — keep one high-signal obs.
+        conf = 0.55 if role else 0.45
+        if is_min_wage:
+            conf = 0.65
+            # Prefer the statutory figure itself over incidental role matches in chrome.
+            role = "statutory_minimum_wage"
         obs.append(
             NumericObservation(
                 evidence_class="salary_labor",
@@ -671,9 +700,16 @@ def adapt_salary(
                 retrieved_at=now,
                 adapter_id="salary",
                 raw_excerpt=blob[:240],
-                confidence=0.55 if role else 0.45,
+                confidence=conf,
+                metadata={
+                    "statutory_minimum_wage": is_min_wage,
+                    "source_host": _host(url),
+                    "period_detected": period,
+                },
             )
         )
+        if is_min_wage:
+            break
     return obs[:20]
 
 

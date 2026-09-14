@@ -99,6 +99,9 @@ DOMAIN_CLASSES: dict[str, DomainClass] = {
             "www.glassdoor.com",
             "drjobpro.com",
             "www.drjobpro.com",
+            # Statutory / published wage databases (reachable when job boards 403).
+            "wageindicator.org",
+            "www.wageindicator.org",
         ),
         allow_discovered_hosts=True,
     ),

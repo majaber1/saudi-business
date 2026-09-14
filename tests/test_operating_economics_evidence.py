@@ -362,3 +362,29 @@ def test_adapter_html_slice_preserves_next_data_beyond_200k():
     assert "__NEXT_DATA__" in sliced
     assert "searchResult" in sliced
     assert len(sliced) <= 200_000 + 200
+
+
+def test_wageindicator_minimum_wage_salary_adapter():
+    """Statutory Saudi private-sector minimum wage is a labor floor observation."""
+    html = """
+    Private Sector (Saudi nationals)
+    Minimum wage with effect from November 19, 2024 SAR4,000.00
+    Annual reports and living wage methodology are described elsewhere.
+    """
+    obs = adapt_salary(
+        text=html,
+        url="https://wageindicator.org/salary/minimum-wage/saudi-arabia",
+        title="Minimum wage - Saudi Arabia",
+        geography="Saudi Arabia",
+    )
+    assert obs
+    assert any(abs(o.value - 4000.0) < 0.01 for o in obs)
+    assert all(o.metric == "salary_monthly_sar" for o in obs)
+    bands = bands_from_observations(obs, geography="Saudi Arabia")
+    assert any(b.key == "labor_monthly" for b in bands)
+
+
+def test_salary_labor_strategy_includes_wageindicator_seed():
+    s = resolve_strategy(sector="fnb", city="Riyadh", district="Olaya", amenity="cafe")
+    assert any("wageindicator.org" in u for u in s.seed_urls)
+    assert any(d.endswith("wageindicator.org") or d == "wageindicator.org" for d in s.allowlist_domains)

@@ -78,9 +78,17 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
             "{sector} staff salary SAR Saudi Arabia {city}",
             "{sector} worker monthly salary SAR {city}",
             "راتب موظف {sector} {city}",
+            "Saudi Arabia private sector minimum wage SAR",
         ),
-        seed_url_templates=(),
-        notes="Role + geography + period → monthly SAR.",
+        seed_url_templates=(
+            # WageIndicator publishes statutory Saudi private-sector minimum wage (SAR/month).
+            # This is a labor-cost floor observation — not a café staffing model by itself.
+            "https://wageindicator.org/salary/minimum-wage/saudi-arabia",
+        ),
+        notes=(
+            "Role + geography + period → monthly SAR. Statutory minimum-wage pages are "
+            "valid floor observations when job boards are blocked; they are not role surveys."
+        ),
     ),
     "equipment_capex": EvidenceClassSpec(
         id="equipment_capex",

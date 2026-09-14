@@ -59,6 +59,7 @@ COMMERCIAL_ALLOWED_DOMAINS: tuple[str, ...] = (
     "overpass-api.de",
     "lz4.overpass-api.de",
     "overpass.osm.ch",
+    "maps.mail.ru",
     "html.duckduckgo.com",
     "duckduckgo.com",
     "www.bing.com",
@@ -1046,6 +1047,8 @@ class CommercialDiscoveryConnector(SourceConnector):
             f"out tags center {self.max_pois};"
         )
         endpoints = (
+            # mail.ru mirror currently answers from this environment; CH/DE often empty/406.
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
             "https://overpass.osm.ch/api/interpreter",
             "https://overpass-api.de/api/interpreter",
             "https://lz4.overpass-api.de/api/interpreter",
