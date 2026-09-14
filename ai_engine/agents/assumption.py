@@ -6,7 +6,6 @@ import re
 
 from langchain_core.messages import AIMessage, SystemMessage
 
-from ..config import get_llm
 from ..models.study_state import StudyState, Assumption
 from ..archetypes import (
     get_assumption_schema,
@@ -46,9 +45,16 @@ You are an assumptions analyst for Saudi feasibility studies.
 Fill ONLY the provided assumption keys for this project archetype.
 Do NOT add SaaS metrics (CAC/Churn/ARR/MRR) unless archetype is saas_digital.
 
+Critical rules:
+- You MAY reason over provided evidence observations and SYSTEM_ESTIMATE bands.
+- You must NOT invent unsupported numeric operating facts (rent, ticket, salaries, CAPEX, covers, COGS).
+- If evidence is insufficient for a numeric key, set value to "UNKNOWN" (do not guess).
+- Prefer evidence-backed numbers when present in context.
+
 For each assumption:
+- Use field "key" (not "name") matching the allowed keys exactly
 - value / low / base / high as strings
-- source: "user" or "AI Estimated Assumption" when you estimate
+- source: "user" or "AI Estimated Assumption" when you estimate from evidence
 - confidence: confirmed|medium|low
 - ai_estimated: true when AI estimated
 
@@ -126,6 +132,27 @@ def run_assumptions(state: StudyState) -> StudyState:
         )
         context_parts.append(f"Evidence:\n{claims_text}")
 
+    # Inject precomputed operating estimates / numeric observations for LLM reasoning
+    mr = getattr(state, "market_research_context", None) or {}
+    if isinstance(mr, dict):
+        if mr.get("operating_estimates"):
+            context_parts.append(
+                "Evidence-backed SYSTEM_ESTIMATE bands (use these; do not invent others):\n"
+                + json.dumps(mr.get("operating_estimates")[:12], ensure_ascii=False)[:4000]
+            )
+        if mr.get("pricing_signals"):
+            context_parts.append(
+                "Pricing signals:\n"
+                + json.dumps(mr.get("pricing_signals")[:8], ensure_ascii=False)[:1500]
+            )
+
+    rc = getattr(state, "research_context", None) or {}
+    if isinstance(rc, dict) and rc.get("operating_estimates_applied"):
+        context_parts.append(
+            "Applied operating estimates:\n"
+            + json.dumps(rc.get("operating_estimates_applied")[:12], ensure_ascii=False)[:3000]
+        )
+
     # Phase 6 — Knowledge Evidence Pack (citations only; never invent sources)
     knowledge = getattr(state, "knowledge_context", None) or {}
     if knowledge.get("citations") or knowledge.get("assumption_hints"):
@@ -154,31 +181,60 @@ def run_assumptions(state: StudyState) -> StudyState:
     assumption_data: dict | None = None
     response_text = ""
     llm_unavailable = False
-    # get_llm must be inside try/except: client init failures previously aborted
+    llm_error_detail: str | None = None
+    # get_llm / invoke_llm must be inside try/except: client init failures previously aborted
     # the agent after evidence approve had already set phase=ASSUMPTIONS_REVIEW,
     # leaving assumptions=[] and disabling Approve in the UI.
     try:
-        llm = get_llm("assumptions")
-        response = llm.invoke(messages)
+        from ..provider import ProviderUnavailableError, invoke_llm
+
+        response = invoke_llm("assumptions", messages, context="assumption.generate")
         response_text = response.content if hasattr(response, "content") else str(response)
         assumption_data = _extract_json(response_text)
         if assumption_data is None:
             llm_unavailable = True
+            llm_error_detail = "llm_response_not_parseable"
             response_text = (
                 response_text
                 or "Assumption generation used Rule Fallback (LLM response not parseable)."
             )
     except Exception as e:
         from ..utils.safe_messages import sanitize_error_for_user
+        from ..provider import ProviderUnavailableError
 
         llm_unavailable = True
+        llm_error_detail = f"{type(e).__name__}: {e}"
         sanitize_error_for_user(e, language=lang, context="assumption.invoke")
-        response_text = (
-            "تعذر الاتصال بنموذج الافتراضات؛ تم استخدام تقديرات قواعدية قابلة للمراجعة."
-            if lang == "ar"
-            else "Assumption model unavailable; rule-based estimates were prepared for review."
-        )
+        # Distinguish missing config vs runtime failure — do not hide behind vague fallback
+        if isinstance(e, ProviderUnavailableError) or "not configured" in str(e).lower():
+            response_text = (
+                "تعذر الاتصال بنموذج الافتراضات (مزود الذكاء غير متاح/غير مهيأ)؛ "
+                "تم استخدام تقديرات قواعدية قابلة للمراجعة. السبب: "
+                f"{type(e).__name__}."
+                if lang == "ar"
+                else (
+                    "Assumption LLM path unavailable: provider/runtime not configured or all "
+                    f"model candidates failed ({type(e).__name__}: {e}). "
+                    "Rule-based / evidence-estimate fill used — not a categorical silent fallback."
+                )
+            )
+        else:
+            response_text = (
+                "تعذر الاتصال بنموذج الافتراضات؛ تم استخدام تقديرات قواعدية قابلة للمراجعة."
+                if lang == "ar"
+                else (
+                    f"Assumption model invoke failed ({type(e).__name__}); "
+                    "rule-based / evidence-estimate fill prepared for review."
+                )
+            )
         assumption_data = None
+
+    if llm_error_detail:
+        state.research_context = dict(state.research_context or {})
+        state.research_context["assumption_llm_status"] = {
+            "available": not llm_unavailable,
+            "error": llm_error_detail,
+        }
 
     seeded: dict[str, Assumption] = {}
 
@@ -290,7 +346,7 @@ def run_assumptions(state: StudyState) -> StudyState:
         )
 
     for a in (assumption_data or {}).get("assumptions") or []:
-        key = str(a.get("key") or "").strip()
+        key = str(a.get("key") or a.get("name") or a.get("field") or "").strip()
         if key not in allowed:
             continue
         meta = schema_by_key.get(key, {})
@@ -605,6 +661,13 @@ def _extract_json(text: str) -> dict | None:
     if match:
         try:
             return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+    # Fallback: raw JSON object in response
+    brace = re.search(r"\{[\s\S]*\"assumptions\"[\s\S]*\}", text or "")
+    if brace:
+        try:
+            return json.loads(brace.group(0))
         except json.JSONDecodeError:
             pass
     return None

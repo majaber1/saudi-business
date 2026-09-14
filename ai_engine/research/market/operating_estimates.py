@@ -101,14 +101,105 @@ def synthesize_operating_estimates(
     evidence_items: list[dict[str, Any]],
     target_keys: list[str] | None = None,
     geography: str = "Saudi Arabia",
+    store_area_m2: float | None = None,
+    staffing_roles: int | None = None,
 ) -> list[OperatingEstimate]:
     """
     Build SYSTEM_ESTIMATE candidates from evidence numerics.
 
-    Returns only keys with at least one plausible sourced number.
-    Requires >=2 independent samples OR a single sample with explicit URL
-    and high keyword adjacency — never promotes one weak coincidence.
+    Prefer normalized adapter observations → estimate bands when present.
+    Fallback: keyword-window numerics from evidence text (legacy path).
+    Never invents values. SYSTEM_ESTIMATE without upstream evidence is forbidden.
     """
+    # --- Path A: structured observations / bands ---
+    try:
+        from ai_engine.research.evidence.bands import bands_from_observations
+        from ai_engine.research.evidence.observations import NumericObservation
+
+        structured: list[NumericObservation] = []
+        for item in evidence_items or []:
+            if not isinstance(item, dict):
+                continue
+            metric = item.get("metric")
+            value = item.get("value")
+            if metric is None or value is None:
+                # Parse from observation-shaped statements
+                if str(item.get("evidence_kind") or "").endswith(
+                    (
+                        "commercial_rent",
+                        "menu_pricing",
+                        "salary_labor",
+                        "equipment_capex",
+                        "furniture_pos_opening",
+                        "fitout_capex",
+                        "cogs_inputs",
+                        "numeric_observation",
+                    )
+                ) or "observation:" in str(item.get("statement") or item.get("content") or "").lower():
+                    pass
+                else:
+                    continue
+            try:
+                val_f = float(value)
+            except (TypeError, ValueError):
+                continue
+            structured.append(
+                NumericObservation(
+                    evidence_class=str(
+                        item.get("evidence_class")
+                        or item.get("evidence_kind")
+                        or "numeric_observation"
+                    ),
+                    metric=str(metric),
+                    value=val_f,
+                    unit=str(item.get("unit") or "SAR"),
+                    currency=str(item.get("currency") or "SAR"),
+                    geography=str(item.get("geography") or geography),
+                    district=item.get("district"),
+                    role_or_item=item.get("role_or_item"),
+                    period=item.get("period"),
+                    source_url=str(
+                        item.get("source_url") or item.get("url") or ""
+                    )
+                    or None,
+                    source_title=item.get("source_title") or item.get("title"),
+                    adapter_id=str(item.get("adapter_id") or ""),
+                    raw_excerpt=str(item.get("raw_excerpt") or "")[:240],
+                    confidence=float(item.get("confidence") or 0.5),
+                )
+            )
+        if structured:
+            bands = bands_from_observations(
+                structured,
+                geography=geography,
+                store_area_m2=store_area_m2,
+                staffing_roles=staffing_roles,
+            )
+            keyed = {b.key: b for b in bands}
+            if target_keys:
+                keyed = {k: v for k, v in keyed.items() if k in target_keys}
+            if keyed:
+                return [
+                    OperatingEstimate(
+                        key=b.key,
+                        value=f"{b.base:g}",
+                        low=f"{b.low:g}",
+                        base=f"{b.base:g}",
+                        high=f"{b.high:g}",
+                        currency=b.currency or "SAR",
+                        geography=b.geography,
+                        as_of=b.as_of,
+                        confidence=b.confidence,
+                        reasoning=b.derivation,
+                        source_urls=b.source_urls,
+                        estimate_basis=b.estimate_basis,
+                    )
+                    for b in keyed.values()
+                ]
+    except Exception:  # noqa: BLE001
+        pass
+
+    # --- Path B: legacy keyword-window synthesis ---
     keys = target_keys or list(_KEY_EVIDENCE_HINTS.keys())
     buckets: dict[str, list[tuple[float, str, str]]] = {k: [] for k in keys}
     as_of = datetime.now(timezone.utc).date().isoformat()

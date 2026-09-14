@@ -112,6 +112,54 @@ def evidence_items_from_research_claims(claims: list[Any]) -> list[dict[str, Any
                 item["evidence_kind"] = "location_context"
             elif "competitor / local venue" in low or "competitor poi:" in low:
                 item["evidence_kind"] = "competitor_poi"
+            elif "observation:" in low:
+                item["evidence_kind"] = "numeric_observation"
+        # Recover structured numeric observation fields from adapter statements
+        if item.get("metric") is None or item.get("value") is None:
+            m = re.search(
+                r"observation:\s*([^=\n]+?)\s*=\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*([A-Za-z/%²0-9\-]*)",
+                stmt,
+                re.I,
+            )
+            if m:
+                label = m.group(1).strip()
+                try:
+                    item["value"] = float(m.group(2).replace(",", ""))
+                except ValueError:
+                    pass
+                unit = (m.group(3) or "").strip() or "SAR"
+                item["unit"] = unit
+                # Map label/unit heuristics to metric ids used by bands
+                low_label = label.lower()
+                if "rent_sar_per_m2" in low_label or "sar/m2/year" in unit.lower():
+                    item["metric"] = "rent_sar_per_m2_year"
+                elif "rent_monthly" in low_label or unit.lower() in {"sar/month", "sar/mo"}:
+                    item["metric"] = "rent_monthly_sar"
+                elif "store_area" in low_label or unit.lower() in {"m2", "m²"}:
+                    item["metric"] = "store_area_m2"
+                elif "menu" in low_label or low_label == "menu_item":
+                    item["metric"] = "menu_item_sar"
+                elif "salary" in low_label:
+                    item["metric"] = "salary_monthly_sar"
+                elif "equipment" in low_label:
+                    item["metric"] = "equipment_item_sar"
+                elif "opening" in low_label or "furniture" in low_label or "pos" in low_label:
+                    item["metric"] = "opening_item_sar"
+                elif "fitout" in low_label and "m2" in unit.lower():
+                    item["metric"] = "fitout_sar_per_m2"
+                elif "fitout" in low_label:
+                    item["metric"] = "fitout_total_sar"
+                elif "food_cost" in low_label or unit.lower() in {"percent", "%"}:
+                    item["metric"] = "food_cost_pct"
+                else:
+                    # Use role_or_item / label as metric fallback for equipment package
+                    item["metric"] = re.sub(r"\s+", "_", low_label)[:64]
+                    if "espresso" in low_label or "grinder" in low_label or "machine" in low_label:
+                        item["metric"] = "equipment_item_sar"
+                    elif any(k in low_label for k in ("table", "chair", "pos", "register")):
+                        item["metric"] = "opening_item_sar"
+        if item.get("metric") and item.get("value") is not None:
+            item.setdefault("evidence_kind", "numeric_observation")
         items.append(item)
     return items
 
@@ -453,6 +501,145 @@ def execute_market_research(
         evidence_items=items, geography=geography
     )
     operating_estimates = [e.to_public_dict() for e in estimates]
+
+    # Coverage recovery: targeted re-fetch for material numeric gaps (once)
+    try:
+        from ai_engine.research.evidence.coverage import (
+            MATERIAL_NUMERIC_KEYS,
+            validate_numeric_coverage,
+        )
+        from ai_engine.research.evidence.demand import derive_capacity_and_demand
+
+        cov = validate_numeric_coverage(
+            estimate_keys=[e.get("key") for e in operating_estimates if e.get("key")],
+            required_keys=list(MATERIAL_NUMERIC_KEYS),
+        )
+        attempts.append(
+            {
+                "step": "numeric_coverage",
+                "status": cov.get("status"),
+                "gaps": cov.get("gaps"),
+                "present": cov.get("present"),
+            }
+        )
+        gaps = list(cov.get("gaps") or [])
+        # daily_covers / working_capital are derived — don't treat as retrieval gaps first
+        retrieval_gaps = [
+            g
+            for g in gaps
+            if g
+            not in {
+                "daily_covers",
+                "working_capital",
+                "other_capex",
+            }
+        ]
+        if retrieval_gaps:
+            try:
+                from ai_engine.research.service import _live_fetch
+
+                recovery_query = (
+                    f"{business_idea} {geography} "
+                    + " ".join(retrieval_gaps[:6])
+                )
+                geo_bits = [p.strip() for p in (geography or "").split(",") if p.strip()]
+                city = geo_bits[-2] if len(geo_bits) >= 2 else (geo_bits[0] if geo_bits else "")
+                district = geo_bits[0] if len(geo_bits) >= 3 else ""
+                live_claims, attempt, _docs = _live_fetch(
+                    "commercial_discovery",
+                    query=recovery_query,
+                    city=city,
+                    district=district,
+                    sector=sector,
+                    missing_keys=retrieval_gaps,
+                    archetype="fnb" if "food" in (sector or "").lower() or "fnb" in (sector or "").lower() or "coffee" in (business_idea or "").lower() else None,
+                )
+                attempts.append({"step": "coverage_recovery_fetch", **attempt})
+                if live_claims:
+                    extra_items = evidence_items_from_research_claims(live_claims)
+                    items = list(items) + extra_items
+                    estimates = synthesize_operating_estimates(
+                        evidence_items=items, geography=geography
+                    )
+                    operating_estimates = [e.to_public_dict() for e in estimates]
+                    cov2 = validate_numeric_coverage(
+                        estimate_keys=[
+                            e.get("key") for e in operating_estimates if e.get("key")
+                        ],
+                        required_keys=list(MATERIAL_NUMERIC_KEYS),
+                    )
+                    attempts.append(
+                        {
+                            "step": "numeric_coverage_after_recovery",
+                            "status": cov2.get("status"),
+                            "gaps": cov2.get("gaps"),
+                            "present": cov2.get("present"),
+                        }
+                    )
+            except Exception as exc:  # noqa: BLE001
+                attempts.append(
+                    {"step": "coverage_recovery_fetch", "status": "error", "error": str(exc)}
+                )
+
+        # CAPACITY vs DEMAND — never copy capacity into expected demand blindly
+        dens = None
+        for it in items:
+            if isinstance(it, dict) and it.get("density_count") is not None:
+                dens = int(it["density_count"])
+                break
+            stmt = str((it or {}).get("statement") or "") if isinstance(it, dict) else ""
+            if "competition density" in stmt.lower():
+                import re as _re
+
+                m = _re.search(r"approximately\s+(\d+)", stmt, _re.I)
+                if m:
+                    dens = int(m.group(1))
+                    break
+        # seats/hours only from estimate or explicit evidence — never invent
+        seats = None
+        hours = None
+        for e in operating_estimates:
+            if e.get("key") == "seats_capacity":
+                try:
+                    seats = float(e.get("base") or e.get("value"))
+                except (TypeError, ValueError):
+                    pass
+        throughput = derive_capacity_and_demand(
+            seats=seats,
+            operating_hours=hours,
+            competitor_density_count=dens,
+        )
+        attempts.append(
+            {
+                "step": "capacity_demand",
+                "capacity": bool(throughput.get("capacity")),
+                "demand": bool(throughput.get("demand")),
+                "notes": throughput.get("notes"),
+            }
+        )
+        demand = throughput.get("demand")
+        if demand and not any(e.get("key") == "daily_covers" for e in operating_estimates):
+            operating_estimates.append(
+                {
+                    "key": "daily_covers",
+                    "value": str(demand.get("base")),
+                    "low": str(demand.get("low")),
+                    "base": str(demand.get("base")),
+                    "high": str(demand.get("high")),
+                    "currency": "",
+                    "geography": geography,
+                    "as_of": "",
+                    "confidence": float(demand.get("confidence") or 0.4),
+                    "reasoning": demand.get("derivation"),
+                    "source_urls": [],
+                    "provenance_class": "SYSTEM_ESTIMATE",
+                    "estimate_basis": "DEMAND_ESTIMATE",
+                    "capacity_estimate": throughput.get("capacity"),
+                }
+            )
+    except Exception as exc:  # noqa: BLE001
+        attempts.append({"step": "coverage_recovery", "status": "skipped", "error": str(exc)})
+
     if operating_estimates:
         attempts.append(
             {
