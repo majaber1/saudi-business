@@ -253,3 +253,16 @@ def test_cogs_input_cost_not_promoted_to_food_cost_pct():
     assert all(o.metric == "input_cost_sar" for o in obs)
     bands = bands_from_observations(obs, geography="Riyadh")
     assert not any(b.key == "food_cost_pct" for b in bands)
+
+
+def test_sector_blurb_uses_amenity_search_token():
+    from ai_engine.research.evidence.strategy import resolve_strategy
+
+    long = (
+        "Premium specialty coffee shop (third-wave) targeting young professionals "
+        "and office workers in Olaya, Riyadh"
+    )
+    s = resolve_strategy(sector=long, city="Riyadh", district="Olaya", amenity="cafe")
+    joined = " | ".join(s.queries)
+    assert "cafe menu" in joined.lower()
+    assert "third-wave" not in joined.lower()

@@ -213,10 +213,25 @@ def build_render_context(
     amenity_token = (amenity or "").strip()
     # Opaque sector codes (fnb/saas) are bad web-search tokens (Bing → First National Bank).
     opaque = {"fnb", "f&b", "saas", "qsr"}
-    if raw_sector.lower() in opaque and amenity_token:
+    # Long free-text sector blurbs (owner concept sentences) also poison search queries.
+    looks_like_blurb = (
+        len(raw_sector) > 40
+        or raw_sector.count(" ") >= 5
+        or any(x in raw_sector.lower() for x in ("targeting", "positioning", "professionals", "workers"))
+    )
+    if (raw_sector.lower() in opaque or looks_like_blurb) and amenity_token:
         sector_token = amenity_token
     elif raw_sector.lower() in opaque:
         sector_token = "cafe" if raw_sector.lower() in {"fnb", "f&b", "qsr"} else "local business"
+    elif looks_like_blurb:
+        # Infer a short search token from the blurb when amenity is missing.
+        low = raw_sector.lower()
+        if any(k in low for k in ("cafe", "coffee", "مقهى", "قهوة")):
+            sector_token = "cafe"
+        elif any(k in low for k in ("restaurant", "dining", "مطعم")):
+            sector_token = "restaurant"
+        else:
+            sector_token = "local business"
     else:
         sector_token = (raw_sector or amenity_token or "local business").strip() or "local business"
     # Equipment seed keywords stay generic to sector/amenity — not coffee hardcodes.
