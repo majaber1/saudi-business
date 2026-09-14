@@ -221,13 +221,51 @@ def build_incomplete_evidence_synthesis(
         ]
 
     coverage = "PASS" if has_comp and has_loc and (has_est or has_user) else "PARTIAL"
+    # Investment-grade requires commercially useful coverage AND either
+    # evidence-backed numeric operating estimates OR explicit scenario bands
+    # on at least one critical cost/revenue driver — not categorical fallbacks alone.
+    numeric_est_keys = {
+        e["key"]
+        for e in classified["SYSTEM_ESTIMATE"]
+        if _as_float(e.get("value")) is not None
+        and str(e.get("key"))
+        in {
+            "rent_monthly",
+            "avg_ticket",
+            "labor_monthly",
+            "food_cost_pct",
+            "fitout_capex",
+            "equipment_capex",
+            "daily_covers",
+            "utilities_monthly",
+            "marketing_monthly",
+        }
+    }
+    scenario_bands = {
+        k
+        for k, v in (scenarios.get("base") or {}).items()
+        if k in {
+            "rent_monthly",
+            "avg_ticket",
+            "labor_monthly",
+            "food_cost_pct",
+            "fitout_capex",
+            "equipment_capex",
+            "daily_covers",
+        }
+        and _as_float(v) is not None
+    }
+    has_numeric_ops = bool(numeric_est_keys or scenario_bands)
     investment_grade = (
         "PASS"
         if coverage == "PASS"
         and usefulness == "PASS"
         and rec_verdict in {"GO_WITH_CONDITIONS", "DEFER", "GO", "NO_GO"}
         and has_comp
-        and (has_loc or has_est)
+        and has_loc
+        and has_numeric_ops
+        else "PARTIAL"
+        if has_comp and has_loc and usefulness == "PASS"
         else "FAIL"
     )
 

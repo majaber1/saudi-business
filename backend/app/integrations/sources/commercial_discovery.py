@@ -548,6 +548,8 @@ class CommercialDiscoveryConnector(SourceConnector):
                 )
                 if streetish:
                     continue
+                if re.fullmatch(r"(رقم|no\.?|#)\s*\d+", name, re.I):
+                    continue
                 # Prefer POIs in the requested city when city is known
                 if city:
                     city_l = city.lower()

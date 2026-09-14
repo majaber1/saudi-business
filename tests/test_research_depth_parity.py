@@ -268,8 +268,53 @@ def test_incomplete_evidence_synthesis_actionable():
     )
     assert syn["recommendation"]["commercially_actionable"] is True
     assert syn["parity_self_assessment"]["claude_level_coverage"] == "PASS"
+    assert syn["parity_self_assessment"]["claude_level_decision_usefulness"] == "PASS"
+    # rent_monthly SYSTEM_ESTIMATE provides numeric ops → investment-grade PASS
     assert syn["parity_self_assessment"]["investment_grade_study"] == "PASS"
     assert "avg_ticket" in syn["material_missing_evidence"]
+
+
+def test_investment_grade_partial_without_numeric_ops():
+    assumptions = [
+        Assumption(
+            key="owner_budget",
+            value="450000",
+            source="user",
+            confidence="confirmed",
+            provenance_class="USER_PROVIDED",
+            origin="user",
+        ),
+        Assumption(
+            key="business_model",
+            value="Café / specialty coffee",
+            source="Rule Fallback",
+            confidence="low",
+            provenance_class="SYSTEM_ESTIMATE",
+            origin="rule_fallback",
+        ),
+        Assumption(
+            key="rent_monthly",
+            value="UNKNOWN",
+            source="Unknown",
+            confidence="low",
+            provenance_class="UNKNOWN",
+            origin="default",
+        ),
+    ]
+    market = {
+        "competitors": [
+            {"name": "Starbucks", "status": "VERIFIED", "source_url": "https://osm.org/1"},
+        ],
+        "location_economics": [
+            {"factor": "competition_density", "status": "VERIFIED", "value": 10}
+        ],
+        "pricing_signals": [],
+    }
+    syn = build_incomplete_evidence_synthesis(
+        assumptions=assumptions, market_research=market, language="en"
+    )
+    assert syn["parity_self_assessment"]["claude_level_coverage"] == "PASS"
+    assert syn["parity_self_assessment"]["investment_grade_study"] == "PARTIAL"
 
 
 def test_mcp_boundary_resolves_commercial_discovery():
