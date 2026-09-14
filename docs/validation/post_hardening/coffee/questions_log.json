@@ -1,0 +1,79 @@
+[
+  {
+    "question": "F&B business model",
+    "inputType": "",
+    "placeholder": "",
+    "decision": "ASKED_USER_SELECT_PREF",
+    "value": "café / specialty coffee"
+  },
+  {
+    "question": "City / district",
+    "inputType": "text",
+    "placeholder": "",
+    "decision": "ASKED_USER",
+    "value": "Riyadh, Saudi Arabia"
+  },
+  {
+    "question": "Seats / capacity",
+    "inputType": "number",
+    "placeholder": "seats",
+    "decision": "AI_ESTIMATE",
+    "value": null
+  },
+  {
+    "question": "Operating hours / day",
+    "inputType": "number",
+    "placeholder": "hours",
+    "decision": "AI_ESTIMATE",
+    "value": null
+  },
+  {
+    "question": "Average ticket size",
+    "inputType": "number",
+    "placeholder": "SAR",
+    "decision": "AI_ESTIMATE",
+    "value": null
+  },
+  {
+    "question": "Expected daily covers / transactions",
+    "inputType": "number",
+    "placeholder": "",
+    "decision": "AI_ESTIMATE",
+    "value": null
+  },
+  {
+    "question": "Monthly rent",
+    "inputType": "number",
+    "placeholder": "SAR",
+    "decision": "AI_ESTIMATE",
+    "value": null
+  },
+  {
+    "question": "Monthly labor cost",
+    "inputType": "number",
+    "placeholder": "SAR",
+    "decision": "AI_ESTIMATE",
+    "value": null
+  },
+  {
+    "question": "Food / beverage cost %",
+    "inputType": "number",
+    "placeholder": "%",
+    "decision": "AI_ESTIMATE",
+    "value": null
+  },
+  {
+    "question": "Delivery dependency",
+    "inputType": "",
+    "placeholder": "",
+    "decision": "AI_ESTIMATE",
+    "value": null
+  },
+  {
+    "question": "Fit-out / opening CAPEX",
+    "inputType": "number",
+    "placeholder": "SAR",
+    "decision": "AI_ESTIMATE",
+    "value": null
+  }
+]
