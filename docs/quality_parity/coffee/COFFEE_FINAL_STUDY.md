@@ -94,3 +94,8 @@ Financial case is inconclusive (NPV=0.0, IRR=None). Defer full commitment until 
 ```
 
 Claude numbers were **not** copied into this study.
+
+
+See also the Claude-structure decision pack:
+- `COFFEE_CLAUDE_STYLE_FEASIBILITY_REPORT.md`
+- `COFFEE_CLAUDE_STYLE_FEASIBILITY_REPORT.html`
