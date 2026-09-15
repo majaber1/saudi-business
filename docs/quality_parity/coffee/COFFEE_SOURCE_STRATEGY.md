@@ -31,5 +31,10 @@ If evidence cannot be found: **INSUFFICIENT_EVIDENCE / UNKNOWN / SYSTEM_ESTIMATE
 ## Product wiring (this sprint)
 
 - F&B sector pack `source_categories`: official_saudi, market_industry_research, real_estate_location, competitor_primary, staffing_salary, equipment_supplier, fitout, fnb_operations
+- F&B sector pack `evidence_classes`: commercial_rent, menu_pricing, salary_labor, equipment_capex, fitout_capex, furniture_pos_opening, cogs_inputs
+- Evidence-class source strategy (`ai_engine/research/evidence/`): domain classes → allowlists + seed catalogs + adapters (scalable beyond coffee)
 - Market planner: coffee/F&B markers force COMPETITOR, PRICING, SECTOR_SIGNAL, REGULATION research types
-- Competitor extractor: café/coffee markers; empty evidence → empty list (safe)
+- Competitor extractor: café/coffee markers; empty evidence → empty list (safe); skips numeric observation / seed catalog docs
+- Coverage recovery: targeted commercial re-fetch for missing material numeric keys before financials
+
+See also: `COFFEE_OPERATING_ECONOMICS_REPORT.md`

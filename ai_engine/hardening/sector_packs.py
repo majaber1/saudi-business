@@ -62,9 +62,19 @@ _SECTOR_PACKS: dict[str, dict[str, Any]] = {
             "fitout",
             "fnb_operations",
         ],
+        # Evidence-class strategy ids (scalable; not coffee-only domain patches)
+        "evidence_classes": [
+            "commercial_rent",
+            "menu_pricing",
+            "salary_labor",
+            "equipment_capex",
+            "fitout_capex",
+            "furniture_pos_opening",
+            "cogs_inputs",
+        ],
         "research_principle": (
             "Macro evidence (GDP/inflation) does not validate ticket, rent, orders, "
-            "salaries, or CAPEX. Match source category to assumption type."
+            "salaries, or CAPEX. Match source category / evidence class to assumption type."
         ),
         "risk_areas": [
             "location_footfall",
@@ -118,6 +128,13 @@ _SECTOR_PACKS: dict[str, dict[str, Any]] = {
             "variable_cost_per_unit",
             "utilization_pct",
             "unit_selling_price",
+        ],
+        "evidence_classes": [
+            "commercial_rent",
+            "salary_labor",
+            "equipment_capex",
+            "fitout_capex",
+            "cogs_inputs",
         ],
         "risk_areas": [
             "feedstock_volatility",

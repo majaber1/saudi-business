@@ -40,19 +40,30 @@ from .validation import compute_content_hash
 
 CONNECTOR_ID = "live.commercial_discovery"
 REGISTRY_KEY = "commercial_discovery"
+SEARCH_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 USER_AGENT = (
     "SaudiBusinessBot/parity (+https://saudi-business.local; governed commercial research; "
     "contact=ops@saudi-business.local)"
 )
 
-# Domains we may fetch. Search index hosts + open geographic / encyclopedia sources.
+# Minimal bootstrap allowlist (geo + search + official). Full commercial follow
+# allowlist is resolved per-request from evidence-class source strategy so new
+# sectors reuse domain/evidence classes instead of coffee-only domain patches.
 COMMERCIAL_ALLOWED_DOMAINS: tuple[str, ...] = (
     "nominatim.openstreetmap.org",
     "openstreetmap.org",
     "www.openstreetmap.org",
     "overpass-api.de",
+    "lz4.overpass-api.de",
+    "overpass.osm.ch",
+    "maps.mail.ru",
     "html.duckduckgo.com",
     "duckduckgo.com",
+    "www.bing.com",
+    "bing.com",
     "en.wikipedia.org",
     "ar.wikipedia.org",
     "wikipedia.org",
@@ -93,6 +104,29 @@ _DDG_RESULT_RE = re.compile(
     re.I | re.S,
 )
 _TAG_RE = re.compile(r"<[^>]+>")
+_NEXT_DATA_RE = re.compile(
+    r'<script[^>]+id="__NEXT_DATA__"[^>]*>.*?</script>',
+    re.I | re.S,
+)
+
+
+def _adapter_html_slice(html: str | None, limit: int = 600_000) -> str:
+    """Truncate HTML for adapters while preserving SSR JSON blobs.
+
+    Wasalt (and similar Next.js portals) place `__NEXT_DATA__` after ~200KB of
+    assets. A naive [:200000] cut drops all listing prices.
+    """
+    raw = html or ""
+    if len(raw) <= limit:
+        return raw
+    m = _NEXT_DATA_RE.search(raw)
+    if not m:
+        return raw[:limit]
+    blob = m.group(0)
+    # Prefer keeping the SSR payload intact; fill remaining budget with head HTML.
+    head_budget = max(0, limit - len(blob) - 64)
+    head = raw[:head_budget]
+    return head + "\n" + blob
 
 
 def infer_amenity_tag(query: str) -> str:
@@ -172,6 +206,45 @@ def _strip_html(raw: str) -> str:
     return re.sub(r"\s+", " ", _TAG_RE.sub(" ", raw or "")).strip()
 
 
+
+def _unwrap_bing_url(url: str) -> str:
+    """Decode Bing /ck/a redirect wrappers to the destination URL when present."""
+    if not url:
+        return url
+    try:
+        from html import unescape
+        from urllib.parse import parse_qs, unquote, urlparse
+        import base64
+        import re as _re
+
+        cleaned = unescape(url).replace("&amp;", "&")
+        host = (urlparse(cleaned).hostname or "").lower()
+        if "bing.com" not in host:
+            return cleaned
+        qs = parse_qs(urlparse(cleaned).query)
+        for key in ("u", "r", "url"):
+            vals = qs.get(key) or []
+            if not vals:
+                continue
+            cand = unquote(vals[0])
+            if cand.startswith("a1"):
+                raw = cand[2:]
+                raw += "=" * ((4 - len(raw) % 4) % 4)
+                try:
+                    decoded = base64.urlsafe_b64decode(raw.encode()).decode("utf-8", "ignore")
+                    m = _re.search(r"https?://\S+", decoded)
+                    if m:
+                        return m.group(0).rstrip("'\"<>")
+                except Exception:
+                    pass
+            if cand.startswith("http"):
+                return cand
+        return cleaned
+    except Exception:
+        return url
+
+
+
 def _osm_url(osm_type: str, osm_id: Any) -> Optional[str]:
     t = (osm_type or "").lower()
     if t not in {"node", "way", "relation"} or osm_id is None:
@@ -196,12 +269,15 @@ class CommercialDiscoveryConnector(SourceConnector):
         self.max_queries = max_queries
         self.max_pois = max_pois
         self.max_ddg_follow = max_ddg_follow
+        self._allowlist: List[str] = list(COMMERCIAL_ALLOWED_DOMAINS)
         self._reader = SafePageReader(
-            allowed_domains=COMMERCIAL_ALLOWED_DOMAINS,
+            allowed_domains=self._allowlist,
             timeout_seconds=timeout_seconds,
             user_agent=USER_AGENT,
         )
         self._last_exhaustion: Dict[str, Any] = {}
+        self._strategy_meta: Dict[str, Any] = {}
+        self._observations: List[Dict[str, Any]] = []
 
     @property
     def connector_id(self) -> str:
@@ -214,8 +290,10 @@ class CommercialDiscoveryConnector(SourceConnector):
             "source_type": SourceType.OPEN_DATA.value,
             "authority_type": AuthorityType.COMMERCIAL_SOURCE.value,
             "registry_key": REGISTRY_KEY,
-            "allowed_domains": list(COMMERCIAL_ALLOWED_DOMAINS),
+            "allowed_domains": list(self._allowlist or COMMERCIAL_ALLOWED_DOMAINS),
             "retrieval": "multi_source_governed",
+            "source_strategy": "evidence_class",
+            "strategy_meta": dict(self._strategy_meta or {}),
         }
 
     def health(self) -> ConnectorHealth:
@@ -252,10 +330,54 @@ class CommercialDiscoveryConnector(SourceConnector):
 
         amenity = infer_amenity_tag(q)
         city, district = infer_city_district(q)
+        # Prefer explicit geography kwargs when callers provide them
+        city = str(kwargs.get("city") or city or "").strip() or city
+        district = str(kwargs.get("district") or district or "").strip() or district
+        sector = str(kwargs.get("sector") or amenity or "").strip()
+        missing_keys = kwargs.get("missing_keys") or kwargs.get("coverage_gaps")
+        if isinstance(missing_keys, str):
+            missing_keys = [missing_keys]
+
         geography = ", ".join(p for p in (district, city, "Saudi Arabia") if p)
+
+        # --- Evidence-class source strategy (scalable allowlist + seeds) ---
+        strategy = None
+        try:
+            from ai_engine.research.evidence.strategy import resolve_strategy
+
+            strategy = resolve_strategy(
+                sector=sector or amenity,
+                archetype=str(kwargs.get("archetype") or ""),
+                city=city,
+                district=district,
+                query=q,
+                amenity=amenity,
+                missing_keys=list(missing_keys) if missing_keys else None,
+                evidence_class_ids=kwargs.get("evidence_class_ids"),
+            )
+            self._apply_strategy_allowlist(strategy.allowlist_domains)
+            self._strategy_meta = dict(strategy.meta)
+            self._strategy_meta["evidence_class_ids"] = list(strategy.evidence_class_ids)
+            self._strategy_meta["adapters"] = dict(strategy.adapters)
+        except Exception as exc:  # noqa: BLE001
+            self._strategy_meta = {"error": str(exc), "fallback": "bootstrap_allowlist"}
+            strategy = None
 
         attempts: List[Dict[str, Any]] = []
         raw_docs: List[Dict[str, Any]] = []
+        self._observations = []
+
+        if strategy is not None:
+            attempts.append(
+                {
+                    "source": "evidence_class_strategy",
+                    "ok": True,
+                    "evidence_classes": list(strategy.evidence_class_ids),
+                    "allowlist_count": len(strategy.allowlist_domains),
+                    "seed_count": len(strategy.seed_urls),
+                    "query_count": len(strategy.queries),
+                }
+            )
 
         # --- 1) Geocode + Nominatim POI discovery ---
         geo = self._geocode(city or "Riyadh", district)
@@ -267,14 +389,9 @@ class CommercialDiscoveryConnector(SourceConnector):
         for poi in pois:
             raw_docs.append(poi)
 
-        # Competition density (best-effort Overpass) — prefer POI centroid when available
+        # Competition density (best-effort Overpass)
         dens_lat = geo.get("lat")
         dens_lon = geo.get("lon")
-        if pois:
-            # Use first POI coordinates embedded in content if present, else geocode
-            for poi in pois:
-                # content may include lat= from overpass only; use geocode + amenity
-                break
         if dens_lat is not None and amenity != "commercial":
             density, dens_meta = self._overpass_density(
                 lat=float(dens_lat), lon=float(dens_lon), amenity=amenity
@@ -282,7 +399,51 @@ class CommercialDiscoveryConnector(SourceConnector):
             attempts.append({"source": "overpass_density", **dens_meta})
             if density:
                 raw_docs.append(density)
-        # Also emit competitor-count based density proxy from Nominatim hits (always available)
+                # Promote OSM seat/opening_hours tags into numeric observations when present.
+                try:
+                    from ai_engine.research.evidence.adapters import (
+                        adapt_osm_capacity_signals,
+                    )
+
+                    capacity_obs = adapt_osm_capacity_signals(
+                        seat_tags=list(dens_meta.get("seat_tags") or []),
+                        opening_hours_tags=list(
+                            dens_meta.get("opening_hours_tags") or []
+                        ),
+                        geography=geography,
+                        district=district or None,
+                    )
+                    if capacity_obs:
+                        cap_docs = self._record_observations(
+                            capacity_obs, geography=geography
+                        )
+                        raw_docs.extend(cap_docs)
+                        attempts.append(
+                            {
+                                "source": "osm_capacity_signals",
+                                "ok": True,
+                                "observation_count": len(capacity_obs),
+                            }
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    attempts.append(
+                        {
+                            "source": "osm_capacity_signals",
+                            "ok": False,
+                            "error": str(exc),
+                        }
+                    )
+            # Follow OSM-tagged brand websites for menu/ticket evidence (session-merged).
+            brand_urls = list(dens_meta.get("websites") or [])
+            if brand_urls and strategy is not None:
+                brand_docs, brand_meta = self._fetch_brand_websites(
+                    urls=brand_urls,
+                    strategy=strategy,
+                    geography=geography,
+                    district=district or None,
+                )
+                attempts.append({"source": "osm_brand_websites", **brand_meta})
+                raw_docs.extend(brand_docs)
         if pois:
             names = [p.get("competitor_name") for p in pois if p.get("competitor_name")]
             raw_docs.append(
@@ -311,13 +472,66 @@ class CommercialDiscoveryConnector(SourceConnector):
         attempts.append({"source": "wikipedia", **wiki_meta})
         raw_docs.extend(wiki_docs)
 
-        # --- 3) DuckDuckGo multi-query (competitors, rent, pricing, labor) ---
-        ddg_queries = self._build_ddg_queries(
+        # --- 3) Evidence-class seed catalog fetches (works when search is blocked) ---
+        if strategy is not None and strategy.seed_urls:
+            seed_docs, seed_meta = self._fetch_seed_catalogs(
+                strategy=strategy, geography=geography, district=district or None
+            )
+            attempts.append({"source": "evidence_seed_catalogs", **seed_meta})
+            raw_docs.extend(seed_docs)
+
+        # --- 4) Multi-query web discovery (DDG; Bing fallback when DDG challenged) ---
+        ddg_queries = (
+            list(strategy.queries)
+            if strategy and strategy.queries
+            else self._build_ddg_queries(
+                amenity=amenity, city=city, district=district, query=q
+            )
+        )
+        # Keep legacy competitor query at front
+        legacy = self._build_ddg_queries(
             amenity=amenity, city=city, district=district, query=q
         )
-        ddg_docs, ddg_meta = self._duckduckgo_multi(ddg_queries)
+        for lq in legacy[:2]:
+            if lq not in ddg_queries:
+                ddg_queries.insert(0, lq)
+        ddg_queries = ddg_queries[: self.max_queries]
+
+        ddg_docs, ddg_meta = self._duckduckgo_multi(
+            ddg_queries,
+            strategy=strategy,
+            geography=geography,
+            district=district or None,
+        )
         attempts.append({"source": "duckduckgo", **ddg_meta})
         raw_docs.extend(ddg_docs)
+
+        if not ddg_meta.get("ok") or int(ddg_meta.get("results") or 0) == 0:
+            # Prefer economics queries (menu/rent/salary) when DDG is challenged —
+            # otherwise Bing's first-N cut was competitor-only and never followed menus.
+            def _econ_rank(query: str) -> int:
+                low = (query or "").lower()
+                if any(k in low for k in ("menu", "price", "أسعار", "قائمة", "ticket")):
+                    return 0
+                if any(k in low for k in ("rent", "إيجار", "sqm", "lease")):
+                    return 1
+                if any(k in low for k in ("salary", "راتب", "wage", "staff")):
+                    return 2
+                return 3
+
+            bing_queries = sorted(list(ddg_queries), key=_econ_rank)[:8]
+            bing_docs, bing_meta = self._bing_multi(
+                bing_queries,
+                strategy=strategy,
+                geography=geography,
+                district=district or None,
+            )
+            attempts.append({"source": "bing_fallback", **bing_meta})
+            raw_docs.extend(bing_docs)
+
+        # Attach normalized observation docs for downstream band derivation
+        for obs in self._observations:
+            raw_docs.append(obs)
 
         # Exhaustion document — always emitted for audit / NOT_FOUND justification
         found_competitors = sum(
@@ -329,7 +543,21 @@ class CommercialDiscoveryConnector(SourceConnector):
             if d.get("evidence_kind") in {"location_context", "competition_density"}
         )
         found_pricing = sum(
-            1 for d in raw_docs if d.get("evidence_kind") in {"pricing_signal", "rent_signal"}
+            1
+            for d in raw_docs
+            if d.get("evidence_kind")
+            in {
+                "pricing_signal",
+                "rent_signal",
+                "numeric_observation",
+                "commercial_rent",
+                "menu_pricing",
+                "equipment_capex",
+                "furniture_pos_opening",
+                "salary_labor",
+                "fitout_capex",
+                "cogs_inputs",
+            }
         )
         exhaustion = {
             "evidence_kind": "search_exhaustion",
@@ -348,11 +576,216 @@ class CommercialDiscoveryConnector(SourceConnector):
             "sector_hint": amenity,
             "attempts": attempts,
             "query": q,
+            "strategy_meta": dict(self._strategy_meta or {}),
+            "observation_count": len(self._observations),
             "retrieved_at": utcnow().isoformat(),
         }
         raw_docs.append(exhaustion)
         self._last_exhaustion = exhaustion
         return raw_docs
+
+    def _apply_strategy_allowlist(self, domains: List[str]) -> None:
+        merged = list(COMMERCIAL_ALLOWED_DOMAINS)
+        seen = {d.lower() for d in merged}
+        for d in domains or []:
+            key = str(d).lower()
+            if key and key not in seen:
+                seen.add(key)
+                merged.append(str(d))
+        self._allowlist = merged
+        self._reader = SafePageReader(
+            allowed_domains=self._allowlist,
+            timeout_seconds=self.timeout_seconds,
+            user_agent=USER_AGENT,
+        )
+
+    def _record_observations(
+        self,
+        observations: List[Any],
+        *,
+        geography: str,
+    ) -> List[Dict[str, Any]]:
+        docs: List[Dict[str, Any]] = []
+        for o in observations or []:
+            if hasattr(o, "to_evidence_item"):
+                item = o.to_evidence_item()
+            elif isinstance(o, dict):
+                item = dict(o)
+            else:
+                continue
+            item.setdefault("evidence_kind", item.get("evidence_class") or "numeric_observation")
+            item.setdefault("title", f"Numeric observation: {item.get('metric')}")
+            item.setdefault("geography", geography)
+            item.setdefault("retrieval_method", "evidence_adapter")
+            item.setdefault("retrieved_at", utcnow().isoformat())
+            item.setdefault("confidence", float(item.get("confidence") or 0.55))
+            # Ensure content field for SourceDocument normalize
+            if not item.get("content"):
+                item["content"] = item.get("statement") or item.get("title")
+            docs.append(item)
+            self._observations.append(item)
+        return docs
+
+    def _fetch_brand_websites(
+        self,
+        *,
+        urls: List[str],
+        strategy: Any,
+        geography: str,
+        district: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Fetch OSM-discovered brand/venue websites for menu adapters."""
+        from ai_engine.research.evidence.adapters import adapt_page_for_classes
+        from ai_engine.research.evidence.strategy import merge_session_hosts
+
+        out: List[Dict[str, Any]] = []
+        errors: List[str] = []
+        fetched = 0
+        # Session-merge discovered brand hosts into follow allowlist.
+        try:
+            merged = merge_session_hosts(
+                self._allowlist,
+                list(urls or []),
+                evidence_class_ids=list(getattr(strategy, "evidence_class_ids", []) or []),
+            )
+            if len(merged) > len(self._allowlist):
+                self._apply_strategy_allowlist(merged)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"allowlist_merge:{exc}")
+
+        adapters_by_class = dict(getattr(strategy, "adapters", {}) or {})
+        evidence_ids = list(getattr(strategy, "evidence_class_ids", []) or [])
+        # Prefer menu-oriented classes when present.
+        preferred = [e for e in evidence_ids if e in {"menu_pricing", "cogs_inputs", "commercial_rent"}]
+        class_ids = preferred or evidence_ids
+
+        menu_suffixes = ("", "/menu", "/en/menu", "/menus", "/our-menu", "/menu/")
+        expanded: List[str] = []
+        for base in list(urls or [])[:6]:
+            b = (base or "").rstrip("/")
+            for suf in menu_suffixes:
+                cand = b + suf if suf else base
+                if cand not in expanded:
+                    expanded.append(cand)
+        for url in expanded[:18]:
+            try:
+                if not self._url_allowlisted(url):
+                    errors.append(f"not_allowlisted:{url[:80]}")
+                    continue
+                page = self._reader.read(url)
+                fetched += 1
+                page_text = (page.text or "")[:80_000]
+                page_html = _adapter_html_slice(page.html, limit=600_000)
+                observations = adapt_page_for_classes(
+                    evidence_class_ids=class_ids,
+                    adapters_by_class=adapters_by_class,
+                    text=page_text,
+                    html=page_html,
+                    url=page.final_url or url,
+                    title=(page.title if hasattr(page, "title") else None) or url,
+                    geography=geography,
+                    district=district,
+                )
+                out.extend(
+                    self._record_observations(observations, geography=geography)
+                )
+                out.append(
+                    {
+                        "evidence_kind": "brand_website_page",
+                        "title": f"OSM brand website: {url}",
+                        "content": (
+                            f"Fetched OSM-tagged brand/venue website for commercial evidence. "
+                            f"Excerpt: {page_text[:1200]}"
+                        ),
+                        "url": page.final_url or url,
+                        "geography": geography,
+                        "confidence": 0.55,
+                        "retrieval_method": "osm_brand_website",
+                        "retrieved_at": utcnow().isoformat(),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{url[:60]}:{exc}")
+        return out, {
+            "ok": fetched > 0,
+            "urls_attempted": len(expanded[:18]),
+            "fetched": fetched,
+            "observation_docs": len(out),
+            "errors": errors[:8],
+        }
+
+    def _fetch_seed_catalogs(
+        self,
+        *,
+        strategy: Any,
+        geography: str,
+        district: Optional[str],
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        from ai_engine.research.evidence.adapters import adapt_page_for_classes
+
+        seed_to_classes: Dict[str, List[str]] = dict(
+            (strategy.meta or {}).get("seed_owners") or {}
+        )
+
+        out: List[Dict[str, Any]] = []
+        errors: List[str] = []
+        fetched = 0
+        obs_count = 0
+        for url in list(strategy.seed_urls or [])[:24]:
+            try:
+                if not self._url_allowlisted(url):
+                    errors.append(f"not_allowlisted:{url[:80]}")
+                    continue
+                page = self._reader.read(url)
+                fetched += 1
+                text = (page.text or "")[:120_000]
+                html = _adapter_html_slice(page.html, limit=600_000)
+                class_ids = list(seed_to_classes.get(url) or strategy.evidence_class_ids)
+                adapters = {
+                    eid: strategy.adapters[eid]
+                    for eid in class_ids
+                    if eid in (strategy.adapters or {})
+                }
+                observations = adapt_page_for_classes(
+                    evidence_class_ids=class_ids,
+                    adapters_by_class=adapters,
+                    text=text,
+                    html=html,
+                    url=page.final_url or url,
+                    title=page.title or url,
+                    geography=geography,
+                    district=district,
+                )
+                obs_docs = self._record_observations(observations, geography=geography)
+                obs_count += len(obs_docs)
+                out.append(
+                    {
+                        "evidence_kind": "seed_catalog_page",
+                        "title": f"Seed catalog: {page.title or url}",
+                        "content": (
+                            f"Evidence-class seed catalog fetch for {url}. "
+                            f"Classes={class_ids}. "
+                            f"Extracted {len(observations)} numeric observation(s). "
+                            f"Excerpt: {text[:1200]}"
+                        ),
+                        "url": page.final_url or url,
+                        "geography": geography,
+                        "confidence": 0.55,
+                        "retrieval_method": "evidence_seed_catalog",
+                        "retrieved_at": utcnow().isoformat(),
+                        "observation_count": len(observations),
+                    }
+                )
+                out.extend(obs_docs)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{url[:80]}: {exc}")
+        return out, {
+            "ok": fetched > 0,
+            "pages_fetched": fetched,
+            "observations": obs_count,
+            "errors": errors[:8],
+            "seeds_attempted": len(list(strategy.seed_urls or [])[:24]),
+        }
 
     def normalize(self, raw: Dict[str, Any]) -> SourceDocument:
         retrieved = utcnow()
@@ -421,6 +854,12 @@ class CommercialDiscoveryConnector(SourceConnector):
                 "relevance": raw.get("relevance"),
                 "attempts": raw.get("attempts"),
                 "query": raw.get("query"),
+                "metric": raw.get("metric"),
+                "value": raw.get("value"),
+                "unit": raw.get("unit"),
+                "adapter_id": raw.get("adapter_id"),
+                "observation_count": raw.get("observation_count"),
+                "strategy_meta": raw.get("strategy_meta"),
             },
             verification_eligibility=eligibility,
         )
@@ -608,34 +1047,101 @@ class CommercialDiscoveryConnector(SourceConnector):
         self, *, lat: float, lon: float, amenity: str, radius_m: int = 1500
     ) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
         # Use out body + count client-side; Overpass `out count` is flaky under load.
+        # Primary DE endpoints often return 406 from this environment; try mirrors.
         ql = (
             f'[out:json][timeout:20];'
             f'(node["amenity"="{amenity}"](around:{radius_m},{lat},{lon});'
             f'way["amenity"="{amenity}"](around:{radius_m},{lat},{lon}););'
             f"out tags center {self.max_pois};"
         )
+        endpoints = (
+            # Prefer mirrors that return non-empty elements from this environment.
+            # Empty 200 responses are skipped (see loop below) so order is best-effort.
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+            "https://overpass-api.de/api/interpreter",
+            "https://lz4.overpass-api.de/api/interpreter",
+            "https://overpass.osm.ch/api/interpreter",
+        )
+        last_err: Dict[str, Any] = {"ok": False, "reason": "no_endpoint"}
         try:
             with httpx.Client(timeout=22.0, headers={"User-Agent": USER_AGENT}) as client:
-                r = client.post(
-                    "https://overpass-api.de/api/interpreter",
-                    data={"data": ql},
-                )
-                if r.status_code >= 400:
-                    return None, {"ok": False, "status": r.status_code, "reason": "http_error"}
-                payload = r.json()
+                payload = None
+                used_url = endpoints[0]
+                for ep in endpoints:
+                    try:
+                        r = client.post(ep, data={"data": ql})
+                        if r.status_code >= 400:
+                            last_err = {
+                                "ok": False,
+                                "status": r.status_code,
+                                "reason": "http_error",
+                                "endpoint": ep,
+                            }
+                            continue
+                        candidate = r.json()
+                        # Empty 200s (common on some mirrors) must not short-circuit
+                        # fallthrough — otherwise seats/hours starve while DE has data.
+                        elems = candidate.get("elements") if isinstance(candidate, dict) else None
+                        if not isinstance(elems, list) or len(elems) == 0:
+                            last_err = {
+                                "ok": False,
+                                "reason": "empty_elements",
+                                "endpoint": ep,
+                            }
+                            continue
+                        payload = candidate
+                        used_url = ep
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        last_err = {"ok": False, "error": str(exc), "endpoint": ep}
+                        continue
+                if payload is None:
+                    return None, last_err
             elements = payload.get("elements") or []
-            names = []
+            names: list[str] = []
+            websites: list[str] = []
+            seats_obs: list[dict[str, Any]] = []
+            hours_obs: list[dict[str, Any]] = []
             for el in elements:
                 tags = el.get("tags") or {}
                 n = tags.get("name") or tags.get("name:en")
                 if n:
                     names.append(str(n))
+                web = tags.get("website") or tags.get("contact:website") or tags.get("url")
+                if web:
+                    w = str(web).strip()
+                    if w and not w.startswith("http"):
+                        w = "https://" + w
+                    if w.startswith("http") and w not in websites:
+                        websites.append(w)
+                for seat_key in ("seats", "capacity"):
+                    if seat_key in tags:
+                        try:
+                            seats_obs.append(
+                                {
+                                    "name": n,
+                                    "metric": seat_key,
+                                    "value": float(str(tags[seat_key]).split()[0]),
+                                }
+                            )
+                        except (TypeError, ValueError):
+                            pass
+                if tags.get("opening_hours"):
+                    hours_obs.append(
+                        {
+                            "name": n,
+                            "metric": "opening_hours",
+                            "value": str(tags.get("opening_hours")),
+                        }
+                    )
             count = len(elements)
             content = (
                 f"Location economics — competition density: approximately {count} "
                 f"OpenStreetMap '{amenity}' amenities within {radius_m}m of "
                 f"lat={lat:.4f}, lon={lon:.4f}. "
                 f"Named sample: {', '.join(names[:8]) or 'unnamed'}. "
+                f"Brand websites tagged: {', '.join(websites[:6]) or 'none'}. "
+                f"Seat/capacity tags: {len(seats_obs)}; opening_hours tags: {len(hours_obs)}. "
                 f"This is a footfall/competition-density proxy for district operating context, "
                 f"not a rent quote."
             )
@@ -644,15 +1150,26 @@ class CommercialDiscoveryConnector(SourceConnector):
                     "evidence_kind": "competition_density",
                     "title": f"Competition density ({amenity}) ~{count} within {radius_m}m",
                     "content": content,
-                    "url": "https://overpass-api.de/api/interpreter",
+                    "url": used_url,
                     "geography": f"{lat:.4f},{lon:.4f}",
                     "sector_hint": amenity,
                     "confidence": 0.65,
                     "retrieval_method": "overpass_around",
                     "retrieved_at": utcnow().isoformat(),
                     "density_count": count,
+                    "brand_websites": websites[:12],
+                    "seat_tags": seats_obs[:12],
+                    "opening_hours_tags": hours_obs[:12],
                 },
-                {"ok": True, "count": count, "named": len(names)},
+                {
+                    "ok": True,
+                    "count": count,
+                    "named": len(names),
+                    "websites": websites[:12],
+                    "seat_tags": seats_obs[:12],
+                    "opening_hours_tags": hours_obs[:12],
+                    "endpoint": used_url,
+                },
             )
         except Exception as exc:  # noqa: BLE001
             return None, {"ok": False, "error": str(exc)}
@@ -745,14 +1262,36 @@ class CommercialDiscoveryConnector(SourceConnector):
         return out[: self.max_queries]
 
     def _duckduckgo_multi(
-        self, queries: Sequence[str]
+        self,
+        queries: Sequence[str],
+        *,
+        strategy: Any = None,
+        geography: str = "Saudi Arabia",
+        district: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
         per_query: List[Dict[str, Any]] = []
         follow_budget = self.max_ddg_follow
+        adapters_by_class = dict(getattr(strategy, "adapters", {}) or {})
+        evidence_ids = list(getattr(strategy, "evidence_class_ids", []) or [])
         for q in queries:
             results, meta = self._ddg_search(q)
             per_query.append({"query": q, **meta})
+            # Session-merge discovered hosts when strategy allows
+            if strategy is not None and getattr(strategy, "allow_discovered_hosts", False):
+                try:
+                    from ai_engine.research.evidence.strategy import merge_session_hosts
+
+                    urls = [r["url"] for r in results if r.get("url")]
+                    merged = merge_session_hosts(
+                        self._allowlist,
+                        urls,
+                        evidence_class_ids=evidence_ids,
+                    )
+                    if len(merged) > len(self._allowlist):
+                        self._apply_strategy_allowlist(merged)
+                except Exception:  # noqa: BLE001
+                    pass
             for res in results:
                 title = res["title"]
                 snippet = res["snippet"]
@@ -766,7 +1305,6 @@ class CommercialDiscoveryConnector(SourceConnector):
                 elif any(k in low for k in ("competitor", "cafe", "restaurant", "coffee", "shop")):
                     kind = "competitor_web_mention"
 
-                # Extract numbers only when present in snippet (never invent)
                 rent_hits = [m.group(0) for m in _RENT_RE.finditer(snippet)]
                 price_hits = [m.group(0) for m in _PRICE_RE.finditer(snippet)]
                 content = (
@@ -786,7 +1324,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                     "title": title[:200],
                     "content": content,
                     "url": href if self._url_allowlisted(href) else None,
-                    "geography": "Saudi Arabia",
+                    "geography": geography,
                     "confidence": 0.4,
                     "retrieval_method": "duckduckgo_html",
                     "query": q,
@@ -794,26 +1332,69 @@ class CommercialDiscoveryConnector(SourceConnector):
                     "snippet_rent_mentions": rent_hits[:3],
                     "snippet_price_mentions": price_hits[:3],
                 }
-                # Follow a few allowlisted pages for richer text
                 if follow_budget > 0 and href and self._url_allowlisted(href):
                     try:
                         page = self._reader.read(href)
                         follow_budget -= 1
-                        page_text = (page.text or "")[:4000]
+                        page_text = (page.text or "")[:80_000]
+                        page_html = _adapter_html_slice(page.html, limit=600_000)
                         doc["content"] = (
                             doc["content"]
                             + f" Page excerpt ({page.final_url}): {page_text[:1500]}"
                         )
                         doc["url"] = page.final_url
                         doc["confidence"] = 0.5
-                        # Re-scan page for numbers
                         doc["snippet_rent_mentions"] = [
                             m.group(0) for m in _RENT_RE.finditer(page_text)
                         ][:5]
                         doc["snippet_price_mentions"] = [
                             m.group(0) for m in _PRICE_RE.finditer(page_text)
                         ][:5]
+                        if evidence_ids and adapters_by_class:
+                            from ai_engine.research.evidence.adapters import (
+                                adapt_page_for_classes,
+                            )
+
+                            observations = adapt_page_for_classes(
+                                evidence_class_ids=evidence_ids,
+                                adapters_by_class=adapters_by_class,
+                                text=page_text,
+                                html=page_html,
+                                url=page.final_url or href,
+                                title=title,
+                                geography=geography,
+                                district=district,
+                            )
+                            out.extend(
+                                self._record_observations(
+                                    observations, geography=geography
+                                )
+                            )
                     except (PageFetchError, UrlSecurityError, Exception):  # noqa: BLE001
+                        pass
+                elif snippet and evidence_ids and adapters_by_class:
+                    # Snippet-only adaptation (weaker confidence)
+                    try:
+                        from ai_engine.research.evidence.adapters import (
+                            adapt_page_for_classes,
+                        )
+
+                        observations = adapt_page_for_classes(
+                            evidence_class_ids=evidence_ids,
+                            adapters_by_class=adapters_by_class,
+                            text=f"{title}\n{snippet}",
+                            url=href if self._url_allowlisted(href) else None,
+                            title=title,
+                            geography=geography,
+                            district=district,
+                        )
+                        for o in observations:
+                            if hasattr(o, "confidence"):
+                                o.confidence = min(float(o.confidence), 0.42)
+                        out.extend(
+                            self._record_observations(observations, geography=geography)
+                        )
+                    except Exception:  # noqa: BLE001
                         pass
                 out.append(doc)
         return out, {
@@ -824,12 +1405,125 @@ class CommercialDiscoveryConnector(SourceConnector):
             "pages_followed": self.max_ddg_follow - follow_budget,
         }
 
-    def _ddg_search(self, query: str) -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
-        url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+    def _bing_multi(
+        self,
+        queries: Sequence[str],
+        *,
+        strategy: Any = None,
+        geography: str = "Saudi Arabia",
+        district: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Bing HTML fallback when DuckDuckGo is challenged — same connector, not a new subsystem."""
+        out: List[Dict[str, Any]] = []
+        per_query: List[Dict[str, Any]] = []
+        follow_budget = max(4, min(6, self.max_ddg_follow + 2))
+        adapters_by_class = dict(getattr(strategy, "adapters", {}) or {})
+        evidence_ids = list(getattr(strategy, "evidence_class_ids", []) or [])
+        pages_followed = 0
+        for q in queries:
+            results, meta = self._bing_search(q)
+            per_query.append({"query": q, **meta})
+            # Session-merge discovered hosts before follow (enables brand menus).
+            if strategy is not None and getattr(strategy, "allow_discovered_hosts", False):
+                try:
+                    from ai_engine.research.evidence.strategy import merge_session_hosts
+
+                    urls = [r["url"] for r in results if r.get("url")]
+                    merged = merge_session_hosts(
+                        self._allowlist,
+                        urls,
+                        evidence_class_ids=evidence_ids,
+                    )
+                    if len(merged) > len(self._allowlist):
+                        self._apply_strategy_allowlist(merged)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # Prefer following menu/pricing URLs within the budget.
+            def _follow_rank(res: Dict[str, str]) -> int:
+                low = f"{res.get('title','')} {res.get('snippet','')} {res.get('url','')}".lower()
+                if any(k in low for k in ("menu", "price", "قائمة", "أسعار", "/menu")):
+                    return 0
+                if any(k in low for k in ("rent", "إيجار", "lease")):
+                    return 1
+                if any(k in low for k in ("salary", "راتب", "job")):
+                    return 2
+                return 3
+
+            ordered = sorted(list(results), key=_follow_rank)
+            for res in ordered:
+                title = res["title"]
+                snippet = res["snippet"]
+                href = res["url"]
+                content = (
+                    f"Bing discovery result for query '{q}'. Title: {title}. "
+                    f"Snippet: {snippet}. Unverified commercial web signal."
+                )
+                doc = {
+                    "evidence_kind": "commercial_web",
+                    "title": title[:200],
+                    "content": content,
+                    "url": href if self._url_allowlisted(href) else None,
+                    "geography": geography,
+                    "confidence": 0.38,
+                    "retrieval_method": "bing_html",
+                    "query": q,
+                    "retrieved_at": utcnow().isoformat(),
+                }
+                if follow_budget > 0 and href and self._url_allowlisted(href):
+                    try:
+                        page = self._reader.read(href)
+                        follow_budget -= 1
+                        pages_followed += 1
+                        page_text = (page.text or "")[:6000]
+                        page_html = _adapter_html_slice(page.html, limit=600_000)
+                        doc["content"] += f" Page excerpt: {page_text[:1200]}"
+                        doc["url"] = page.final_url
+                        doc["confidence"] = 0.5
+                        if evidence_ids and adapters_by_class:
+                            from ai_engine.research.evidence.adapters import (
+                                adapt_page_for_classes,
+                            )
+
+                            observations = adapt_page_for_classes(
+                                evidence_class_ids=evidence_ids,
+                                adapters_by_class=adapters_by_class,
+                                text=page_text,
+                                html=page_html,
+                                url=page.final_url or href,
+                                title=title,
+                                geography=geography,
+                                district=district,
+                            )
+                            out.extend(
+                                self._record_observations(
+                                    observations, geography=geography
+                                )
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
+                out.append(doc)
+        return out, {
+            "ok": bool(out),
+            "queries_run": len(queries),
+            "results": len(out),
+            "per_query": per_query,
+            "pages_followed": pages_followed,
+        }
+
+    def _bing_search(self, query: str) -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
+        # Prefer Saudi market results — bare Bing queries from this IP often geo-bias to US.
+        url = (
+            f"https://www.bing.com/search?q={quote_plus(query)}"
+            f"&setmkt=en-SA&setlang=en&cc=SA"
+        )
         try:
             with httpx.Client(
                 timeout=self.timeout_seconds,
-                headers={"User-Agent": USER_AGENT},
+                headers={
+                    "User-Agent": SEARCH_USER_AGENT,
+                    "Accept-Language": "en-SA,ar-SA;q=0.9,en;q=0.8,ar;q=0.7",
+                },
                 follow_redirects=True,
             ) as client:
                 r = client.get(url)
@@ -839,9 +1533,49 @@ class CommercialDiscoveryConnector(SourceConnector):
             return [], {"ok": False, "error": str(exc), "hits": 0}
 
         results: List[Dict[str, str]] = []
+        for m in re.finditer(
+            r'class="b_algo".*?<h2[^>]*>\s*<a[^>]+href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>'
+            r'.*?(?:<p[^>]*>(?P<snippet>.*?)</p>)?',
+            html,
+            re.I | re.S,
+        ):
+            href = _strip_html(m.group("href"))
+            title = _strip_html(m.group("title"))
+            snippet = _strip_html(m.group("snippet") or "")
+            if not title or "bing.com/ck" in href and "http" not in href:
+                # Keep bing redirect URLs — reader may not follow off-allowlist
+                pass
+            if not title:
+                continue
+            results.append({"title": title, "url": _unwrap_bing_url(href), "snippet": snippet})
+            if len(results) >= 5:
+                break
+        return results, {"ok": True, "hits": len(results)}
+
+    def _ddg_search(self, query: str) -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
+        url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+        try:
+            with httpx.Client(
+                timeout=self.timeout_seconds,
+                headers={"User-Agent": SEARCH_USER_AGENT, "Accept-Language": "en-US,en;q=0.9,ar;q=0.8"},
+                follow_redirects=True,
+            ) as client:
+                r = client.get(url)
+                if r.status_code == 202 or "challenge" in (r.text or "")[:800].lower():
+                    return [], {
+                        "ok": False,
+                        "error": "ddg_bot_challenge",
+                        "status": r.status_code,
+                        "hits": 0,
+                    }
+                r.raise_for_status()
+                html = r.text
+        except Exception as exc:  # noqa: BLE001
+            return [], {"ok": False, "error": str(exc), "hits": 0}
+
+        results: List[Dict[str, str]] = []
         for m in _DDG_RESULT_RE.finditer(html):
             href = _strip_html(m.group("href"))
-            # DuckDuckGo wraps redirects sometimes
             if "uddg=" in href:
                 from urllib.parse import parse_qs, unquote, urlparse as _up
 
@@ -855,7 +1589,6 @@ class CommercialDiscoveryConnector(SourceConnector):
             results.append({"title": title, "url": href, "snippet": snippet})
             if len(results) >= 5:
                 break
-        # Fallback simpler parse if regex missed
         if not results:
             for m in re.finditer(
                 r'result__a[^>]*href="([^"]+)"[^>]*>([^<]+)', html, re.I
@@ -876,7 +1609,8 @@ class CommercialDiscoveryConnector(SourceConnector):
             host = (urlparse(url).hostname or "").lower()
         except Exception:
             return False
-        return any(host == d or host.endswith("." + d) for d in COMMERCIAL_ALLOWED_DOMAINS)
+        domains = self._allowlist or list(COMMERCIAL_ALLOWED_DOMAINS)
+        return any(host == d or host.endswith("." + d) for d in domains)
 
     def _exhaustion_text(
         self,

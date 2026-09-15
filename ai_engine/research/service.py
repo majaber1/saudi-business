@@ -170,6 +170,13 @@ def _claims_from_typed_docs(source_key: str, typed_docs: list[Any]) -> list[Rese
         statement = f"{title}: {content}" if content else title
         if competitor_name and competitor_name not in statement:
             statement = f"Competitor / local venue evidence: {competitor_name}. {statement}"
+        # Preserve structured numeric observations for band derivation
+        if meta.get("metric") is not None and meta.get("value") is not None:
+            statement = (
+                f"{meta.get('evidence_kind') or 'numeric'} observation: "
+                f"{meta.get('metric')} = {meta.get('value')} {meta.get('unit') or 'SAR'}. "
+                f"{statement}"
+            )
         limit = 2500 if source_key == "commercial_discovery" else 800
         claims.append(
             ResearchClaim(
@@ -178,7 +185,7 @@ def _claims_from_typed_docs(source_key: str, typed_docs: list[Any]) -> list[Rese
                 source_url=str(url) if url else None,
                 retrieved_date=retrieved,
                 confidence=float(getattr(doc, "confidence", None) or 0.7),
-                metric_key=title,
+                metric_key=str(meta.get("metric") or title),
                 source_key=source_key,
                 document_id=str(getattr(doc, "source_id", None) or "") or None,
                 origin="research",
@@ -189,7 +196,9 @@ def _claims_from_typed_docs(source_key: str, typed_docs: list[Any]) -> list[Rese
 
 
 def _live_fetch(
-    source_key: str, query: str | None = None
+    source_key: str,
+    query: str | None = None,
+    **fetch_kwargs: Any,
 ) -> tuple[list[ResearchClaim], dict[str, Any], list[Any]]:
     """Fetch via MCP boundary. Returns claims, attempt metadata, typed docs for ingest."""
     try:
@@ -223,7 +232,7 @@ def _live_fetch(
     typed_docs: list[Any] = []
     try:
         conn = connector_for_key(source_key)
-        typed_docs = list(conn.retrieve(query=query) or [])
+        typed_docs = list(conn.retrieve(query=query, **fetch_kwargs) or [])
     except Exception as exc:  # noqa: BLE001
         attempt["outcome"] = "fetch_failed"
         attempt["error"] = str(exc)
@@ -234,6 +243,12 @@ def _live_fetch(
     attempt["outcome"] = "ok" if claims else "empty"
     attempt["claim_count"] = len(claims)
     attempt["document_count"] = len(typed_docs)
+    if fetch_kwargs:
+        attempt["fetch_kwargs"] = {
+            k: fetch_kwargs[k]
+            for k in ("city", "district", "sector", "missing_keys", "archetype")
+            if k in fetch_kwargs
+        }
     return claims, attempt, typed_docs
 
 
@@ -436,10 +451,35 @@ def execute_research(
         try:
             # Prefer multi-query commercial depth when available
             live_query = query
-            if src.source_key == "commercial_discovery" and plan.queries:
-                live_query = " | ".join(plan.queries[:6])
+            fetch_kwargs: dict[str, Any] = {}
+            if src.source_key == "commercial_discovery":
+                if plan.queries:
+                    live_query = " | ".join(plan.queries[:6])
+                # Pass geography tokens so evidence-class strategy can seed catalogs
+                geo_text = f"{geography or ''} {live_query or ''}"
+                try:
+                    from app.integrations.sources.commercial_discovery import (
+                        infer_city_district,
+                    )
+                except ImportError:
+                    try:
+                        from backend.app.integrations.sources.commercial_discovery import (
+                            infer_city_district,
+                        )
+                    except ImportError:
+                        infer_city_district = None  # type: ignore
+                if infer_city_district:
+                    c, d = infer_city_district(geo_text)
+                    if c:
+                        fetch_kwargs["city"] = c
+                    if d:
+                        fetch_kwargs["district"] = d
+                if sector:
+                    fetch_kwargs["sector"] = sector
+                if business_idea:
+                    fetch_kwargs.setdefault("sector", business_idea)
             live_claims, attempt, typed_docs = _live_fetch(
-                src.source_key, query=live_query
+                src.source_key, query=live_query, **fetch_kwargs
             )
             attempts.append(attempt)
             if attempt.get("outcome") in {"unavailable", "fetch_failed"}:

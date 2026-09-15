@@ -208,7 +208,27 @@ def extract_competitors_from_evidence(
             or ""
         ).lower()
         # Never mine competitors from exhaustion logs / pure location wiki blurbs
-        if kind in {"search_exhaustion", "location_context", "competition_density"}:
+        # or numeric commercial observations / seed catalogs
+        if kind in {
+            "search_exhaustion",
+            "location_context",
+            "competition_density",
+            "seed_catalog_page",
+            "numeric_observation",
+            "commercial_rent",
+            "menu_pricing",
+            "salary_labor",
+            "equipment_capex",
+            "furniture_pos_opening",
+            "fitout_capex",
+            "cogs_inputs",
+        }:
+            continue
+        if item.get("metric") is not None and item.get("value") is not None:
+            continue
+        if "observation:" in text.lower() and "adapter" in text.lower():
+            continue
+        if "seed catalog" in text.lower() or "evidence-class seed" in text.lower():
             continue
         if "search exhaustion" in text.lower() or "queries executed:" in text.lower():
             continue
