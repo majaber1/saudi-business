@@ -2,7 +2,7 @@
 
 **Branch:** `cursor/coffee-operating-economics-1831`  
 **Base:** `cursor/coffee-research-depth-parity-1831`  
-**SHA:** `dfe71326d3dfd4ec4914d6a9f6f8cf9587f04de3`  
+**SHA:** `39b2e777b6f2637e985101e0a3a6d07a913dd95a`  
 **PR:** #56  
 **Verdict: PARTIAL — DO NOT MERGE**
 
