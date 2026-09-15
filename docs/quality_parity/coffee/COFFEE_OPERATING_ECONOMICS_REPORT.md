@@ -2,161 +2,99 @@
 
 **Branch:** `cursor/coffee-operating-economics-1831`  
 **Base:** `cursor/coffee-research-depth-parity-1831`  
-**SHA:** `367565d`  
+**SHA:** `4bbc301c746dfb30c44ca9cd708f17e23a9cb9cf`  
 **PR:** #56  
 **Verdict: PARTIAL — DO NOT MERGE**
 
-This report is the end-to-end proof from a **brand-new REAL_USER_FLOW** after the labor-promotion fix (`study_3503f2d24a1f` / project `1218`, artifacts `/opt/cursor/artifacts/coffee-operating-economics-ruf13/`).
+End-to-end proof from brand-new **REAL_USER_FLOW RUF15** (`study_ac43c9e296f1` / project `1221`, artifacts `/workspace/artifacts/coffee-operating-economics-ruf15/`).  
+Owner inputs only: specialty coffee, Olaya/Riyadh, SAR 450k budget, positioning. Ops numbers are SYSTEM_ESTIMATE from retrieved evidence.
 
 ---
 
-## 1. Required check results (RUF13)
+## 1. Required check results (RUF15)
 
 | Field | Status | Value (L/B/H) | Provenance |
 |---|---|---|---|
-| Rent | **RETRIEVED** | 5,983 / 7,921 / 9,778 SAR/mo | SYSTEM_ESTIMATE — Wasalt ≤250 m² F&B filter |
-| Ticket | **UNKNOWN** | — | Bing/menu follow returned 0 menu claims this run |
-| Labor | **RETRIEVED (floor only)** | 4,000 / 4,000 / 4,000 SAR/mo | SYSTEM_ESTIMATE — WageIndicator Saudi private-sector statutory minimum wage |
-| COGS % | **UNKNOWN** | — | No sourced food-cost % on allowlisted hosts |
-| CAPEX (equipment) | **RETRIEVED** | 114 / 2,568 / 36,856 SAR | SYSTEM_ESTIMATE — Amazon catalog package |
-| CAPEX (other/POS/furniture) | **RETRIEVED** | 138 / 1,396 / 10,208 SAR | SYSTEM_ESTIMATE — Amazon package |
-| Fit-out CAPEX | **UNKNOWN** | — | No sourced fit-out quotes |
-| Working capital | **PARTIAL / unreliable** | ~23,842 SAR | 2× months opex heuristic on **incomplete** opex (missing COGS; labor is floor-only) |
-| Hours/day | **RETRIEVED** | 13.5 | SYSTEM_ESTIMATE — OSM `opening_hours` via Overpass mirror |
-| Seats → covers | **UNKNOWN** | — | OSM seats/capacity tags absent; covers correctly blocked |
-
-**Feature is NOT complete.** Revenue, break-even, and investment-grade budget sufficiency remain blocked.
-
----
-
-## 2. Branch / SHA / changed files
-
-**Tip SHA:** `8267c01`
-
-**This follow-up (post-RUF11):**
-- `ai_engine/research/evidence/domain_classes.py` — WageIndicator host
-- `ai_engine/research/evidence/evidence_classes.py` — min-wage seed + queries
-- `ai_engine/research/evidence/adapters.py` — min-wage salary parse; SAR year-steal fix
-- `ai_engine/research/evidence/observations.py` — emit metric id in statements
-- `ai_engine/research/market/service.py` — do not remap salary SAR/month → rent
-- `backend/app/integrations/sources/commercial_discovery.py` — mail.ru Overpass mirror
-- `tests/test_operating_economics_evidence.py` — WageIndicator + remap regression
-- `docs/quality_parity/coffee/COFFEE_OPERATING_ECONOMICS_REPORT.md` — this report
+| Rent | **RETRIEVED** | 5,833 / 8,316 / 10,723 SAR/mo | SYSTEM_ESTIMATE — Wasalt ≤250 m² F&B filter |
+| Area | **RETRIEVED** | 41 / 70 / 125 m² | SYSTEM_ESTIMATE — Wasalt listing areas |
+| Ticket | **RETRIEVED** | 22 / 30 / 40 SAR | SYSTEM_ESTIMATE — Explore-Saudi + Rimthan (+ other menu hosts); **not** hardcoded 20/25/30 |
+| Hours/day | **RETRIEVED** | 13.5 | SYSTEM_ESTIMATE — OSM `opening_hours` |
+| Seats | **DERIVED** | 27 / 36 / 47 | Area × customer fraction ÷ Brave dining m²/seat — **CAPACITY**, not demand |
+| Daily covers | **DERIVED (DEMAND)** | 172 / 221 / 270 | CAPACITY × utilization 35–55% (competition density=7). Distinct from seats |
+| Labor | **PARTIAL** | 36,000 / 36,000 / 36,136 SAR/mo | Role **headcount** from Shifty FOH/BOH/mgr ratios × seats/hours; pay levels **pinned to WageIndicator SAR 4,000 floor** (Payscale role medians ≤ floor for most roles) |
+| COGS % | **RETRIEVED** | 30 / 32 / 40 % | SYSTEM_ESTIMATE — Square + 7shifts food-cost benchmarks |
+| Equipment CAPEX | **RETRIEVED** | 114 / 2,568 / 36,856 SAR | Amazon catalog package |
+| Other CAPEX | **RETRIEVED** | 138 / 1,316 / 10,208 SAR | Amazon furniture/POS package |
+| Fit-out CAPEX | **RETRIEVED** | 58,100 / 128,600 / 350,000 SAR | ArchSkills SAR/m² × area + totals |
+| Working capital | **DERIVED** | ~205,388 SAR | Policy 2× fixed opex + 2× monthly COGS on **complete** opex (ticket/covers/labor/COGS/rent present; labor is role-headcount not single-floor) |
 
 ---
 
-## 3. Evidence sources (RUF13)
+## 2. What changed since RUF13
+
+| Gap | Fix |
+|---|---|
+| Ticket UNKNOWN | Multi-source menu seeds (Explore-Saudi, Rimthan, DrCafe) + HTML fallback when connector truncates text |
+| Labor = 4k floor only | Payscale/Talent role salaries + Shifty staffing ratios → role headcount payroll (pay still floor-pinned when survey medians ≤ statutory min) |
+| COGS UNKNOWN | Square/7shifts food-cost % seeds |
+| Fit-out UNKNOWN | ArchSkills Riyadh SAR/m² seeds |
+| Seats/covers UNKNOWN | Brave density → seats from area; demand ≠ capacity |
+| WC incomplete heuristic | Gate requires complete opex; then 2× fixed + 2× COGS |
+| Staffing mis-tagged as salary | Preserve `role_or_item`; do not match `salary_labor` prefix when recovering metrics |
+
+**Tip SHA:** `4bbc301c746dfb30c44ca9cd708f17e23a9cb9cf`
+
+---
+
+## 3. Evidence sources (RUF15)
 
 | Source | Host | Used for |
 |---|---|---|
-| Wasalt commercial/showroom SSR | `wasalt.sa` | rent_monthly, store_area_m2 |
-| WageIndicator statutory min wage | `wageindicator.org` | salary_monthly_sar → labor_monthly **floor** |
-| Amazon vendor catalogs | `amazon.sa` | equipment_capex, other_capex, input_cost_sar (not COGS%) |
-| OSM Overpass | `maps.mail.ru` / mirrors | operating_hours_day (seats still empty) |
-| Bing / DDG | blocked / flaky | menu ticket (0 claims this run) |
-| Bayt / Indeed | 403 | role salaries |
+| Wasalt commercial SSR | `wasalt.sa` | rent_monthly, store_area_m2 |
+| Explore-Saudi / Rimthan | `explore-saudi.com`, `rimthancoffee.com` | menu_item_sar → avg_ticket |
+| Payscale SA jobs | `payscale.com` | role salary_monthly_sar |
+| WageIndicator | `wageindicator.org` | statutory floor 4,000 SAR/mo |
+| Shifty staffing calculator | `shifty-app.com` | FOH guests/staff=30, BOH=0.35, mgr/shift=1 |
+| Square / 7shifts | `squareup.com`, `7shifts.com` | food_cost_pct |
+| ArchSkills | `archskills.com` | fitout_sar_per_m2 / totals |
+| Amazon | `amazon.sa` | equipment / other CAPEX |
+| OSM Overpass | mirrors | operating_hours_day |
+| Brave Calculator | `bravecalculator.com` | dining_m2_per_seat |
 
 ---
 
-## 4. Extracted observations → SYSTEM_ESTIMATE
+## 4. Financial model (RUF15) — provisional
 
-| Observation metric | n (approx) | Band key | L / B / H | Confidence |
-|---|---|---|---|---|
-| `rent_monthly_sar` / `rent_sar_per_m2_year` + area | ~64 | `rent_monthly` | 5983 / 7921 / 9778 | ~0.78 |
-| `store_area_m2` | ~32 | `store_area_m2` | 36 / 63 / 79 | ~0.78 |
-| `salary_monthly_sar` (statutory min wage) | ≥1 | `labor_monthly` | 4000 / 4000 / 4000 | ~0.65 (floor, not staffing model) |
-| `equipment_item_sar` | ~120 | `equipment_capex` | 114 / 2568 / 36856 | ~0.69 |
-| `opening_item_sar` | ~236 | `other_capex` | 138 / 1396 / 10208 | ~0.69 |
-| OSM opening_hours | 2 | `operating_hours_day` | 13.5 | ~0.6 |
-
-**Derivations (honest):**
-- Labor = **statutory private-sector minimum wage**, single-role / unscaled — **not** a multi-barista café payroll.
-- Ingredient catalog SAR is **not** promoted to `food_cost_pct`.
-- Covers remain blocked without seats (hours alone insufficient).
-
----
-
-## 5. Financial model (RUF13) — incomplete by design
-
-| Output | Result | Why |
+| Output | Result | Caveat |
 |---|---|---|
-| Revenue Y1–Y3 | **0 / 0 / 0** | Blocked: ticket UNKNOWN and/or covers UNKNOWN |
-| Costs Y1–Y3 | **0 / 0 / 0** | No full P&L without COGS + real labor + covers |
-| CAPEX booked | ~3,964 | Equipment + other only; **fit-out = 0 (UNKNOWN)** |
-| NPV | -3,964 | No operating cash inflows modeled |
-| IRR / payback | **unavailable** | No sign-changing cash flows |
-| Break-even months | **not calculable** | Revenue path blocked |
-| Working capital | ~23.8k | 2× incomplete opex — **not investment-grade** |
-| Budget vs 450k | spurious “SURPLUS” | Understates true need (fit-out/labor/COGS missing) |
+| Revenue Y1 | ~2.19M SAR | Driven by DEMAND covers (221/day) × ticket 30 — **optimistic vs specialty-coffee reality**; validate with primary footfall |
+| Costs Y1 | ~1.23M SAR | Labor understated if true manager/barista market pay ≫ statutory floor |
+| CAPEX | ~132k (equip+fitout+other) | Fit-out dominates |
+| Opening need | CAPEX + WC ≈ 338k vs budget 450k | Model says surplus ~112k |
+| NPV / IRR / payback | ~2.4M / 731% / 1.7 mo | **Not investment-grade** — demand utilization + floor-pinned labor inflate returns |
+| Risk / GO decision | **Unavailable** | Risk agent rate-limited (429); no GO/GO_WITH_CONDITIONS issued |
 
-### Low / Base / High scenarios
-
-| Scenario | Revenue | OpEx | Result |
-|---|---|---|---|
-| Low | UNKNOWN | UNKNOWN | **Cannot publish** |
-| Base | UNKNOWN | UNKNOWN | **Cannot publish** |
-| High | UNKNOWN | UNKNOWN | **Cannot publish** |
-
-### Break-even
-**UNKNOWN** — not 18–26 months. Any such number would be invention.
-
-### Budget sufficiency (450k)
-**Cannot certify.** Partial known opening cash (~28k understated) vs 450k looks “surplus” only because fit-out, true labor, COGS, and WC are missing. Correct statement: **450k feasibility UNKNOWN pending fit-out + staffing + covers + COGS.**
-
-### Main risks (evidence-aligned)
-1. **Rent + utilization** (covers/seats still unknown)  
-2. **Labor understated** (only statutory floor, not café headcount)  
-3. **Fit-out gap** (often the largest CAPEX line)  
-4. **COGS % unknown**  
-5. **Ticket retrieval flaky** (search/bot blockers)
+### CAPACITY ≠ DEMAND
+- Capacity ≈ seats×hours path before utilization (~444 covers/day capacity estimate in payload).
+- Demand = capacity × 35–55% utilization → 172/221/270. Correctly separated.
 
 ---
 
-## 6. Exact retrieval blockers (remaining UNKNOWN)
+## 5. Remaining blockers (honest)
 
-| Gap | Exact blocker |
-|---|---|
-| `avg_ticket` | DDG bot challenge; Bing from this IP returns weak/empty menu follows this run |
-| `daily_covers` | Requires seats (+ hours). OSM seats/capacity tags = 0 near Olaya; capacity→covers correctly refused |
-| `food_cost_pct` | No allowlisted page with sourced F&B COGS %; Amazon inputs stay `input_cost_sar` only |
-| `fitout_capex` | No reachable fit-out SAR/m² or package quotes on allowlisted hosts |
-| Full `labor_monthly` | Bayt/Indeed 403; only statutory min wage reachable — not role survey / headcount |
-| Investment 420–580k card | Would require inventing fit-out + WC + payroll — **forbidden** |
+1. **Labor pay levels** still collapse to statutory 4,000 SAR/role after floor — need stronger Saudi café role surveys above the floor (Talent outliers filtered; Payscale SA medians low).
+2. **Demand/covers** are methodology estimates, not footfall sensors — specialty coffee at 221 covers/day is aggressive.
+3. **No owner GO gate** — risk model failed this run; do not treat surplus/IRR as a pass.
+4. Artifact store mount (`/opt/cursor/artifacts`) is broken in this VM (EIO); evidence kept under `/workspace/artifacts/coffee-operating-economics-ruf15/`.
 
 ---
 
-## 7. Tests
+## 6. Tests
 
-`tests/test_operating_economics_evidence.py` — **22 passed** (Wasalt footprint, WageIndicator min-wage, salary↛rent remap, HTML slice, OSM capacity bands).
-
----
-
-## 8. MERGE recommendation
-
-### DO NOT MERGE
-
-Reason: end-to-end study still cannot produce investment-grade revenue, break-even, or budget sufficiency. Closing rent + labor-floor + hours + component CAPEX is progress, but the product must not present a complete café feasibility card while ticket/covers/COGS/fit-out remain UNKNOWN.
-
-**Do not treat DEFER/PARTIAL as Claude-Level Decision Usefulness PASS.**
+`tests/test_operating_economics_evidence.py` — **29 passed** (includes staffing-metric recovery regression).
 
 ---
 
-## REAL_USER_FLOW log
+## 7. Merge recommendation
 
-| Run | Study | Wins | Gaps |
-|---|---|---|---|
-| RUF11 | `study_64691360abd8` / 1216 | café-plausible rent/area; ticket; CAPEX | labor not promoted; hours flaky |
-| RUF12 | `study_70025a81ed9e` / 1217 | rent; CAPEX; WageIndicator fetched but remapped to rent | labor UNKNOWN (bug) |
-| **RUF13** | **`study_3503f2d24a1f` / 1218** | **rent; labor floor 4000; hours 13.5; CAPEX** | **ticket; seats/covers; COGS%; fit-out; full payroll** |
-
-Artifacts: `/opt/cursor/artifacts/coffee-operating-economics-ruf13/`
-
-## 9. Post-RUF13 wiring follow-up (from gap audit)
-
-Applied evidence-backed plumbing fixes only (no invented economics values):
-
-1. **Overpass empty fallthrough** — HTTP 200 with `elements: []` no longer stops mirror rotation.
-2. **Hours → capacity path** — `operating_hours_day` SYSTEM_ESTIMATE is now passed into `derive_capacity_and_demand` (covers still require seats).
-3. **Gap-aware seed/query budget** — when `labor_monthly` / `food_cost_pct` / `fitout_capex` are missing, those evidence classes are prioritized and seed/query caps rise (16/14) so rent/equipment catalogs cannot starve them.
-
-These close retrieval *plumbing* gaps identified by the [Explore labor/COGS/seats gaps](bc-4025c127-4957-5736-aa9e-5cda04fae16c) audit. They do **not** by themselves close seats/COGS%/fit-out without upstream observations. **DO NOT MERGE** unchanged.
+**DO NOT MERGE.** Feature is materially advanced (ticket/COGS/fit-out/seats/WC/role-headcount labor) but **not FULL PASS**: labor compensation quality, demand credibility, and decision/risk gate remain insufficient for investment-grade coffee operating economics.
