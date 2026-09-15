@@ -1,0 +1,453 @@
+{
+  "study_id": "study_8de187025cb8",
+  "project_id": "proj_38aeab73",
+  "user_id": "owner_tabea_ai",
+  "language": "en",
+  "phase": "REPORT_READY",
+  "phase_history": [],
+  "profile": {
+    "archetype": "saas_digital",
+    "sector": "B2B SaaS / AI CRM & Sales Automation",
+    "stage": "idea",
+    "decision_goal": "Go/No-Go feasibility assessment for 350,000 SAR seed investment",
+    "language": "en",
+    "missing_information": [],
+    "recommended_model": "",
+    "archetype_confirmed": true,
+    "services_variant": null
+  },
+  "profile_confirmed": true,
+  "claims": [
+    {
+      "statement": "Saudi Arabia SaaS market estimated at USD 1.2B (SAR 4.5B) in 2025, growing 20-25% CAGR driven by Vision 2030 digital transformation mandates (MCIT, IDC Middle East 2024 report).",
+      "source_type": "official",
+      "source_url": "https://www.mcit.gov.sa/en",
+      "retrieved_date": null,
+      "confidence": 0.85,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    },
+    {
+      "statement": "Saudi CRM software market segment estimated at USD 180-220M (SAR 675M-825M) in 2025, with B2B sub-segment at ~40% (Mordor Intelligence, Statista MENA SaaS reports).",
+      "source_type": "official",
+      "source_url": "https://www.mordorintelligence.com/industry-reports/saudi-arabia-crm-market",
+      "retrieved_date": null,
+      "confidence": 0.75,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    },
+    {
+      "statement": "Major CRM competitors in Saudi market: Salesforce (enterprise, USD 25-300/user/mo), HubSpot (mid-market, USD 20-120/user/mo), Zoho CRM (SME, USD 14-52/user/mo), Microsoft Dynamics 365 (enterprise). Local: Qoyod (accounting+CRM), Foodics (F&B POS+CRM). No dominant Arabic-first AI CRM exists.",
+      "source_type": "official",
+      "source_url": null,
+      "retrieved_date": null,
+      "confidence": 0.8,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    },
+    {
+      "statement": "B2B SaaS pricing in Saudi/GCC for SME CRM tools: SAR 150-500/user/month (USD 40-133). Enterprise tiers: SAR 500-1500/user/month. Freemium conversion rate for MENA SaaS: 2-5% (OpenView SaaS Benchmarks 2024).",
+      "source_type": "official",
+      "source_url": null,
+      "retrieved_date": null,
+      "confidence": 0.7,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    },
+    {
+      "statement": "B2B SaaS Customer Acquisition Cost (CAC) in MENA: USD 200-800 per customer for SME segment, USD 1,500-5,000 for mid-market. Dominant channels: Google Ads (35%), LinkedIn (25%), referrals (20%), events (10%), cold outreach (10%). (SaaStr MENA, Wamda Research 2024).",
+      "source_type": "official",
+      "source_url": null,
+      "retrieved_date": null,
+      "confidence": 0.65,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    },
+    {
+      "statement": "B2B SaaS monthly churn rate benchmarks: 2-5% for SME segment, 1-2% for mid-market/enterprise. Annual net revenue retention for best-in-class B2B SaaS: 110-130%. MENA market shows higher churn (3-7% monthly) due to market maturity (Bessemer Cloud Index, ChartMogul 2024).",
+      "source_type": "official",
+      "source_url": null,
+      "retrieved_date": null,
+      "confidence": 0.65,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    },
+    {
+      "statement": "Cloud infrastructure costs for SaaS startup (AWS/GCP Middle East region): SAR 3,000-8,000/month for MVP, scaling to SAR 15,000-40,000/month at 200+ customers. AI/ML API costs (OpenAI/Anthropic): SAR 0.5-2.0 per active user per month depending on usage. (AWS MEA pricing, GCP Dammam region).",
+      "source_type": "official",
+      "source_url": "https://aws.amazon.com/local/middle-east/",
+      "retrieved_date": null,
+      "confidence": 0.7,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    },
+    {
+      "statement": "Saudi SaaS startup team costs (Riyadh): Senior developer SAR 18,000-30,000/month, Junior developer SAR 8,000-15,000/month, Sales/BD SAR 10,000-20,000/month + commission, Marketing SAR 8,000-15,000/month. Saudization quota for tech: 20-30% (HRDF/Nitaqat). (Bayt.com, GulfTalent 2024 salary surveys).",
+      "source_type": "official",
+      "source_url": null,
+      "retrieved_date": null,
+      "confidence": 0.75,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    },
+    {
+      "statement": "Saudi SaaS regulatory requirements: PDPL (Personal Data Protection Law) compliance mandatory since Sep 2023, data residency preferred (local cloud hosting). CITC licensing for cloud services. ZATCA e-invoicing integration required for B2B platforms. SAGIA license for foreign ownership up to 100% in tech sector. (SDAIA, CITC, ZATCA regulations).",
+      "source_type": "official",
+      "source_url": "https://sdaia.gov.sa/pdpl/",
+      "retrieved_date": null,
+      "confidence": 0.85,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    },
+    {
+      "statement": "Vision 2030 National Transformation Program allocates SAR 50B+ for digital transformation across government and enterprise. SME contribution target: 35% of GDP by 2030 (currently ~30%). Monsha'at (SME Authority) provides up to SAR 500K in tech adoption subsidies. (Vision 2030 delivery dashboard, Monsha'at).",
+      "source_type": "official",
+      "source_url": "https://www.vision2030.gov.sa/",
+      "retrieved_date": null,
+      "confidence": 0.8,
+      "origin": "research",
+      "document_id": null,
+      "chunk_id": null,
+      "source_key": null
+    }
+  ],
+  "evidence_approved": true,
+  "assumptions": [
+    {
+      "key": "pricing",
+      "value": "300 SAR/user/month",
+      "source": "Derived from Saudi B2B SaaS pricing benchmarks (SAR 150-500 range)",
+      "confidence": "medium",
+      "low": "150",
+      "base": "300",
+      "high": "500",
+      "origin": "ai_estimated",
+      "input_type": null,
+      "unit": "SAR/user/month",
+      "label_en": "Subscription Pricing",
+      "label_ar": "سعر الاشتراك",
+      "ai_estimated": true,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    },
+    {
+      "key": "target_customers",
+      "value": "80 paying customers by end of Year 1",
+      "source": "Derived from Saudi SME market size (~1M SMEs) with 0.008% penetration in Y1, benchmarked against similar MENA SaaS launches",
+      "confidence": "low",
+      "low": "40",
+      "base": "80",
+      "high": "150",
+      "origin": "ai_estimated",
+      "input_type": null,
+      "unit": "customers",
+      "label_en": "Target Customers Year 1",
+      "label_ar": "العملاء المستهدفون السنة 1",
+      "ai_estimated": true,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    },
+    {
+      "key": "initial_investment",
+      "value": "350000",
+      "source": "Owner-specified seed investment",
+      "confidence": "confirmed",
+      "low": "350000",
+      "base": "350000",
+      "high": "350000",
+      "origin": "user",
+      "input_type": null,
+      "unit": "SAR",
+      "label_en": "Initial Investment (CAPEX)",
+      "label_ar": "الاستثمار الأولي",
+      "ai_estimated": false,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    },
+    {
+      "key": "cac",
+      "value": "750 SAR per customer",
+      "source": "Derived from MENA B2B SaaS CAC benchmarks (USD 200-800, mid-range for Saudi market with higher acquisition costs)",
+      "confidence": "medium",
+      "low": "500",
+      "base": "750",
+      "high": "1200",
+      "origin": "ai_estimated",
+      "input_type": null,
+      "unit": "SAR/customer",
+      "label_en": "Customer Acquisition Cost",
+      "label_ar": "تكلفة اكتساب العميل",
+      "ai_estimated": true,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    },
+    {
+      "key": "churn",
+      "value": "4% monthly",
+      "source": "Derived from MENA B2B SaaS churn benchmarks (2-7% range, using 4% mid-point for newer market)",
+      "confidence": "medium",
+      "low": "2",
+      "base": "4",
+      "high": "7",
+      "origin": "ai_estimated",
+      "input_type": null,
+      "unit": "%/month",
+      "label_en": "Monthly Churn Rate",
+      "label_ar": "معدل التسرب الشهري",
+      "ai_estimated": true,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    },
+    {
+      "key": "opex_year1",
+      "value": "480000",
+      "source": "Derived from team costs (3 developers: SAR 20K avg, 1 sales: SAR 15K, 1 marketing: SAR 12K = SAR 67K/mo salary) + cloud (SAR 5K/mo) + AI APIs (SAR 2K/mo) + office/misc (SAR 8K/mo) = ~SAR 82K/mo * 12 * 0.5 ramp = SAR 480K effective Y1",
+      "confidence": "medium",
+      "low": "360000",
+      "base": "480000",
+      "high": "650000",
+      "origin": "ai_estimated",
+      "input_type": null,
+      "unit": "SAR/year",
+      "label_en": "Operating Expenses Year 1",
+      "label_ar": "مصاريف التشغيل السنة 1",
+      "ai_estimated": true,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    },
+    {
+      "key": "arr",
+      "value": "288000",
+      "source": "Derived from pricing (SAR 300/user/mo) × base customers (80) = SAR 24K MRR → SAR 288K ARR at full Y1 capacity. Actual Y1 lower due to ramp-up.",
+      "confidence": "low",
+      "low": "108000",
+      "base": "288000",
+      "high": "540000",
+      "origin": "ai_estimated",
+      "input_type": null,
+      "unit": "SAR/year",
+      "label_en": "Annual Recurring Revenue (ARR) Y1",
+      "label_ar": "الإيراد السنوي المتكرر",
+      "ai_estimated": true,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    },
+    {
+      "key": "growth_rate",
+      "value": "80% year-over-year",
+      "source": "B2B SaaS growth benchmarks for early-stage (Y1→Y2): 60-120% typical for high-growth MENA SaaS. Conservative mid-point used.",
+      "confidence": "medium",
+      "low": "50",
+      "base": "80",
+      "high": "120",
+      "origin": "ai_estimated",
+      "input_type": null,
+      "unit": "%/year",
+      "label_en": "Annual Growth Rate",
+      "label_ar": "معدل النمو السنوي",
+      "ai_estimated": true,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    },
+    {
+      "key": "discount_rate",
+      "value": "15%",
+      "source": "Saudi startup risk-adjusted discount rate: risk-free (SAMA repo rate ~6%) + equity risk premium (5-7%) + small-cap/startup premium (3-5%) = 14-18%",
+      "confidence": "medium",
+      "low": "12",
+      "base": "15",
+      "high": "18",
+      "origin": "ai_estimated",
+      "input_type": null,
+      "unit": "%",
+      "label_en": "Discount Rate",
+      "label_ar": "معدل الخصم",
+      "ai_estimated": true,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    },
+    {
+      "key": "team_size_y1",
+      "value": "5 FTEs",
+      "source": "Minimum viable SaaS team: 2 developers (full-stack + AI/ML), 1 product/design, 1 sales/BD, 1 marketing/growth. Scaled from comparable MENA SaaS launches.",
+      "confidence": "medium",
+      "low": "3",
+      "base": "5",
+      "high": "7",
+      "origin": "ai_estimated",
+      "input_type": null,
+      "unit": "FTEs",
+      "label_en": "Team Size Year 1",
+      "label_ar": "حجم الفريق السنة 1",
+      "ai_estimated": true,
+      "knowledge_refs": [],
+      "knowledge_confidence": null,
+      "knowledge_influence": null
+    }
+  ],
+  "assumptions_approved": true,
+  "assumptions_version": 1,
+  "discovery_questions": [],
+  "structured_answers": {},
+  "financial_snapshot_id": null,
+  "financial_results": {
+    "capex": 350000.0,
+    "revenue_projections": {
+      "year_1": 288000.0,
+      "year_2": 518400.0,
+      "year_3": 933120.0000000001
+    },
+    "cost_projections": {
+      "year_1": 480000.0,
+      "year_2": 528000.0,
+      "year_3": 576000.0
+    },
+    "projection_years": 3,
+    "cash_flows": [
+      -350000.0,
+      -192000.0,
+      -9600.0,
+      357120.0
+    ],
+    "discount_rate": 0.15,
+    "npv": -289403.3,
+    "irr": -0.1543,
+    "irr_display": "-15.4%",
+    "irr_available": true,
+    "irr_state": {
+      "label": "IRR",
+      "available": true,
+      "display": "-15.4%",
+      "reason": null,
+      "missing_condition": null
+    },
+    "payback_months": null,
+    "payback_display": "Payback period cannot be calculated for these cash flows.",
+    "payback_available": false,
+    "payback_state": {
+      "label": "Payback Period",
+      "available": false,
+      "display": "Payback period cannot be calculated for these cash flows.",
+      "reason": "Cumulative cash flow never recovers the initial investment inside the projection window.",
+      "missing_condition": "Requires cumulative net cash flows to turn non-negative within the modeled years."
+    },
+    "warnings": [
+      "explain_model_unavailable"
+    ],
+    "extract_notes": [
+      "services_billable_period_defaulted_hours_x_12",
+      "saas_growth_rate_applied=0.80",
+      "opex_growth_default_10pct_20pct"
+    ],
+    "scenarios": {
+      "optimistic": {
+        "npv": 200861.84,
+        "irr": 0.3486,
+        "irr_display": "34.9%"
+      },
+      "base": {
+        "npv": -289403.3,
+        "irr": -0.1543,
+        "irr_display": "-15.4%"
+      },
+      "conservative": {
+        "npv": -779668.45,
+        "irr": -0.813,
+        "irr_display": "-81.3%"
+      }
+    },
+    "trust_gates": {
+      "status": "PASS",
+      "codes": [],
+      "messages": [],
+      "confidence_penalty": 0.0,
+      "requires_validation": false,
+      "silent_correction_applied": false
+    },
+    "analysis_complete": true
+  },
+  "verdict": "DEFER",
+  "decision_rationale": "Deterministic decision based on financial analysis and evidence gates. Base NPV: -289,403.30 SAR | IRR: -15.4% | Optimistic NPV: 200,861.84 SAR | Conservative NPV: -779,668.45 SAR | Low-confidence assumptions: 2/10 | AI-estimated assumptions: 9/10. Base-case NPV is negative, but optimistic scenario shows positive potential. Defer commitment until key assumptions (pricing, customer acquisition, costs) are validated through market evidence.",
+  "decision_conditions": [
+    "Validate pricing through customer discovery interviews (min 20 Saudi SMEs)",
+    "Confirm team costs and hiring timeline with detailed vendor quotes",
+    "Secure at least 3-5 pilot customers before full product development",
+    "Implement PDPL compliance framework before public launch",
+    "Validate cloud/AI infrastructure costs with actual AWS/GCP quotes"
+  ],
+  "decision_risks": [
+    "Market risk: Competitive CRM market with established players (Salesforce, HubSpot, Zoho)",
+    "Regulatory risk: PDPL compliance and data residency requirements",
+    "Operational risk: Saudization requirements and talent scarcity in AI/ML",
+    "Financial risk: High CAC with 4% monthly churn may extend payback beyond runway",
+    "External risk: SAR-pegged economy sensitive to oil price fluctuations"
+  ],
+  "decision_version": 0,
+  "decision_safety": {
+    "financial": {
+      "status": "PASS",
+      "codes": [],
+      "messages": [],
+      "confidence_penalty": 0.0,
+      "requires_validation": false,
+      "silent_correction_applied": false
+    },
+    "evidence": {
+      "status": "PASS",
+      "codes": [],
+      "messages": [],
+      "missing_themes": [],
+      "required_themes": [
+        "pricing",
+        "competitors",
+        "acquisition",
+        "retention"
+      ],
+      "max_allowed_verdict": "GO",
+      "confidence_penalty": 0.0,
+      "numeric_contradictions": []
+    },
+    "applied": {
+      "original_verdict": "DEFER",
+      "verdict": "DEFER",
+      "gate_codes": [],
+      "downgraded": false
+    }
+  },
+  "assumption_requirements": null,
+  "next_action": "review_financials",
+  "blocking_reason": null,
+  "error": null,
+  "knowledge_context": null,
+  "research_context": null,
+  "research_status": null,
+  "research_attempts": [],
+  "market_research_context": null
+}

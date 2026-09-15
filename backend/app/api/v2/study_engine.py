@@ -1632,3 +1632,40 @@ async def regenerate_assumptions(study_id: str, user=Depends(get_current_user)):
 @router.get("")
 async def list_studies(user=Depends(get_current_user)):
     return {"studies": _list_user_studies(str(user.id))}
+
+
+@router.get("/{study_id}/report")
+async def download_v2_report(
+    study_id: str,
+    fmt: str = "pdf",
+    locale: str = "en",
+    user=Depends(get_current_user),
+):
+    """Download a standalone consulting-grade feasibility report from V2 study state."""
+    from fastapi.responses import Response
+    from app.services.reporting_v2 import (
+        build_v2_report_context,
+        generate_v2_pdf,
+        generate_v2_docx,
+    )
+
+    user_id = str(user.id)
+    record = _load_study(study_id, user_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Study not found")
+
+    state = record.get("state", {})
+    ctx = build_v2_report_context(state)
+
+    if fmt == "docx":
+        data = generate_v2_docx(ctx, locale)
+        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ext = "docx"
+    else:
+        data = generate_v2_pdf(ctx, locale)
+        media = "application/pdf"
+        ext = "pdf"
+
+    filename = f"feasibility_{study_id}_{locale}.{ext}"
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    return Response(content=data, media_type=media, headers=headers)
