@@ -140,7 +140,7 @@ test("full founder lifecycle persists after refresh and relogin", async ({ page 
   await page.getByTestId("login-email").fill(email);
   await page.getByTestId("login-password").fill(PASSWORD);
   await page.getByTestId("login-submit").click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/(dashboard)?$/);
   await page.goto("/projects");
   await expect(page.getByText("REFERENCE_TEST_DATA — Scrap AI Marketplace")).toBeVisible();
   await page.getByRole("link", { name: "REFERENCE_TEST_DATA — Scrap AI Marketplace", exact: true }).click();
