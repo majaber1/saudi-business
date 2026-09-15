@@ -25,12 +25,58 @@ _AREA_M2 = re.compile(
 _AMAZON_WHOLE = re.compile(r'a-price-whole[^>]*>([0-9,]+)', re.I)
 _IKEA_PRICE = re.compile(r'data-price="([0-9]+(?:\.[0-9]+)?)"', re.I)
 _PCT = re.compile(
-    r"(?:food\s*cost|cogs|cost of goods)[^\n%]{0,40}?([0-9]{1,2}(?:\.[0-9]+)?)\s*%|"
-    r"([0-9]{1,2}(?:\.[0-9]+)?)\s*%[^\n]{0,30}?(?:food\s*cost|cogs)",
+    r"(?:food\s*(?:and\s*beverage\s*)?cost|cogs|cost of goods|food\s*and\s*beverage\s*costs?)"
+    r"[^\n%]{0,60}?([0-9]{1,2}(?:\.[0-9]+)?)\s*(?:%|percent)|"
+    r"([0-9]{1,2}(?:\.[0-9]+)?)\s*(?:%|percent)[^\n]{0,40}?"
+    r"(?:food\s*(?:and\s*beverage\s*)?cost|cogs|food\s*and\s*beverage)",
     re.I,
 )
+_PCT_SPEND = re.compile(
+    r"(?:spend|spends|spending)\s+(?:roughly|about|approximately|around)?\s*"
+    r"([0-9]{1,2}(?:\.[0-9]+)?)\s*(?:%|percent)\s+(?:of\s+(?:each\s+)?dollar\s+)?"
+    r"(?:on\s+)?food(?:\s+and\s+beverage)?",
+    re.I,
+)
+_FITOUT_PER_M2_RANGE = re.compile(
+    r"(?:SAR|SR|ر\.?\s*س)\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,5})"
+    r"\s*(?:to|–|-|—)\s*"
+    r"(?:SAR|SR|ر\.?\s*س)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,5})"
+    r"\s*(?:per\s*)?(?:m(?:2|²)|/\s*m(?:2|²)|sqm)",
+    re.I,
+)
+_FITOUT_PER_M2_SINGLE = re.compile(
+    r"(?:SAR|SR|ر\.?\s*س)\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,5})"
+    r"\s*(?:per\s*)?(?:m(?:2|²)|/\s*m(?:2|²)|sqm)|"
+    r"([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,5})\s*(?:SAR|SR)"
+    r"\s*(?:per\s*)?(?:m(?:2|²)|/\s*m(?:2|²)|sqm)|"
+    r"From\s*(?:SAR|SR)\s*([0-9]{3,5})\s*/\s*m",
+    re.I,
+)
+_SEAT_DENSITY_SQFT = re.compile(
+    r"(?:Dining|Cafe|Café|Quick\s*Service|casual)[^\n]{0,40}?"
+    r"([0-9]{1,2}(?:\.[0-9]+)?)\s*[–-]?\s*([0-9]{1,2}(?:\.[0-9]+)?)?\s*"
+    r"(?:sq\.?\s*ft|sqft|square\s*feet)\s*per\s*seat",
+    re.I,
+)
+_SEAT_DENSITY_SQFT_ALT = re.compile(
+    r"([0-9]{1,2}(?:\.[0-9]+)?)\s*[–-]\s*([0-9]{1,2}(?:\.[0-9]+)?)\s*"
+    r"(?:sq\.?\s*ft|sqft|square\s*feet)\s*per\s*seat",
+    re.I,
+)
+_STAFF_FOH_RATIO = re.compile(
+    r"fohRatio\s*:\s*([0-9]+)|Coffee\s*shop\s+([0-9]{2})\s*[–-]\s*([0-9]{2})",
+    re.I,
+)
+_STAFF_BOH_PCT = re.compile(
+    r"bohPct\s*:\s*(0?\.[0-9]+)|Coffee\s*shop[^\n]{0,40}?([0-9]{2})\s*[–-]\s*([0-9]{2})%",
+    re.I,
+)
+_SQFT_TO_M2 = 0.092903
 _SALARY_ROLE = re.compile(
-    r"(barista|waiter|chef|manager|cashier|server|cook|موظف|باريستا|مدير|نادل)",
+    r"(head\s*barista|senior\s*barista|barista|restaurant\s*manager|"
+    r"store\s*manager|cafe\s*manager|coffee\s*shop\s*manager|"
+    r"assistant\s*manager|shift\s*(?:supervisor|manager)|"
+    r"waiter|chef|manager|cashier|server|cook|موظف|باريستا|مدير|نادل)",
     re.I,
 )
 _MIN_WAGE_HINT = re.compile(
@@ -145,6 +191,30 @@ _WASALT_EXCLUDE_SUBTYPES = {
     "فيلا",
     "villa",
 }
+
+
+
+def _visible_scan_blob(text: str, html: str = "", *, limit: int = 200_000) -> str:
+    """Prefer connector text; when truncated, fold stripped HTML so deep page numbers remain visible.
+
+    Commercial discovery historically passed only ~6–8KB of page.text while keeping
+    a large HTML slice — WageIndicator / Square / ArchSkills / Brave numbers often
+    sit past that text cut.
+    """
+    base = text or ""
+    if len(base) >= 40_000:
+        return base[:limit]
+    extra = html or ""
+    if not extra:
+        return base[:limit]
+    extra = re.sub(r"<script[\s\S]*?</script>", " ", extra, flags=re.I)
+    extra = re.sub(r"<style[\s\S]*?</style>", " ", extra, flags=re.I)
+    extra = re.sub(r"<[^>]+>", " ", extra)
+    extra = re.sub(r"\s+", " ", extra)
+    merged = (base + "\n" + extra).strip()
+    return merged[:limit]
+
+
 
 
 def _parse_opening_hours_daily(value: str) -> float | None:
@@ -547,6 +617,155 @@ def adapt_rent_listing(
     return obs
 
 
+
+
+def _normalize_role(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    # Collapse underscores from PayScale Job=Assistant_Manager style tokens.
+    r = re.sub(r"[\s_]+", " ", raw.strip().lower()).strip()
+    if "statutory" in r or "minimum wage" in r:
+        return "statutory_minimum_wage"
+    if "head barista" in r or "senior barista" in r:
+        return "head_barista"
+    if "assistant manager" in r or ("shift" in r and "manager" in r) or "shift supervisor" in r:
+        return "senior_barista"  # shift lead / asst mgr proxy for head-of-bar when head barista absent
+    if "barista" in r:
+        return "barista"
+    if (
+        "restaurant manager" in r
+        or "store manager" in r
+        or "cafe manager" in r
+        or "coffee shop manager" in r
+    ):
+        return "store_manager"
+    if "cashier" in r:
+        return "cashier"
+    if r == "manager":
+        return "store_manager"
+    return r.replace(" ", "_")
+
+
+def _parse_payscale_salaries(html: str, url: str | None, geography: str, district: str | None) -> list[NumericObservation]:
+    """Extract annual SAR salary percentiles from PayScale __NEXT_DATA__."""
+    if "payscale.com" not in (url or "") and "__NEXT_DATA__" not in (html or ""):
+        return []
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html or "", re.S)
+    if not m:
+        return []
+    try:
+        data = json.loads(m.group(1))
+        page = data["props"]["pageProps"]["pageData"]
+    except Exception:
+        return []
+    job = ""
+    try:
+        job = str((page.get("dimensions") or {}).get("job") or "")
+    except Exception:
+        job = ""
+    role = _normalize_role(job) or _normalize_role(job.replace("_", " "))
+    if not role:
+        # Infer from URL
+        um = re.search(r"Job=([^/]+)/Salary", url or "")
+        if um:
+            role = _normalize_role(um.group(1).replace("_", " "))
+    sal = (page.get("compensation") or {}).get("salary") or {}
+    obs: list[NumericObservation] = []
+    now = datetime.now(timezone.utc).isoformat()
+    for key, meta_label in (("25", "p25"), ("50", "p50"), ("75", "p75")):
+        raw = sal.get(key)
+        if raw is None:
+            continue
+        try:
+            annual = float(raw)
+        except (TypeError, ValueError):
+            continue
+        monthly = annual / 12.0
+        if not (800 <= monthly <= 40_000):
+            continue
+        obs.append(
+            NumericObservation(
+                evidence_class="salary_labor",
+                metric="salary_monthly_sar",
+                value=round(monthly, 2),
+                unit="SAR/month",
+                geography=geography,
+                district=district,
+                role_or_item=role or "role",
+                period="month",
+                source_url=url,
+                source_title=f"PayScale {job or role}",
+                retrieved_at=now,
+                adapter_id="salary_payscale",
+                raw_excerpt=f"PayScale SA {job} annual {meta_label}={annual:g} → monthly {monthly:g}",
+                confidence=0.72,
+                metadata={
+                    "source_host": "payscale.com",
+                    "period_detected": "year",
+                    "annual_sar": annual,
+                    "percentile": meta_label,
+                    "role_normalized": role,
+                },
+            )
+        )
+    return obs
+
+
+def _parse_talent_salaries(html: str, url: str | None, geography: str, district: str | None) -> list[NumericObservation]:
+    """Extract Talent.com average annual/monthly SAR from meta description."""
+    if "talent.com" not in (url or "").lower():
+        return []
+    desc = ""
+    m = re.search(r'<meta name="description" content="([^"]+)"', html or "", re.I)
+    if m:
+        desc = m.group(1)
+    blob = desc + "\n" + re.sub(r"<[^>]+>", " ", html or "")[:5000]
+    # "متوسط راتب قدره 60,000 SAR سنويا" or "average salary of 60,000 SAR per year"
+    annual = None
+    monthly = None
+    m = re.search(r"(?:متوسط راتب قدره|average (?:salary|pay) of)\s*([0-9,]+)\s*SAR\s*(?:سنويا|per year|a year|/year)", blob, re.I)
+    if m:
+        annual = float(m.group(1).replace(",", ""))
+    m2 = re.search(r"([0-9,]+)\s*SAR[^.]{0,40}(?:month|شهر|/mo)", blob, re.I)
+    if m2:
+        monthly = float(m2.group(1).replace(",", ""))
+    if annual and not monthly:
+        monthly = annual / 12.0
+    if not monthly or not (800 <= monthly <= 50_000):
+        return []
+    job = ""
+    um = re.search(r"[?&]job=([^&]+)", url or "")
+    if um:
+        job = um.group(1).replace("+", " ")
+    role = _normalize_role(job)
+    now = datetime.now(timezone.utc).isoformat()
+    return [
+        NumericObservation(
+            evidence_class="salary_labor",
+            metric="salary_monthly_sar",
+            value=round(float(monthly), 2),
+            unit="SAR/month",
+            geography=geography,
+            district=district,
+            role_or_item=role or "role",
+            period="month",
+            source_url=url,
+            source_title=f"Talent.com {job or role}",
+            retrieved_at=now,
+            adapter_id="salary_talent",
+            raw_excerpt=(desc or blob)[:240],
+            confidence=0.68,
+            metadata={
+                "source_host": "talent.com",
+                "period_detected": "year" if annual else "month",
+                "annual_sar": annual,
+                "role_normalized": role,
+            },
+        )
+    ]
+
+
+
 def adapt_menu_pricing(
     *,
     text: str,
@@ -556,7 +775,7 @@ def adapt_menu_pricing(
     geography: str = "Saudi Arabia",
     district: str | None = None,
 ) -> list[NumericObservation]:
-    blob = f"{title or ''}\n{text or ''}"
+    blob = _visible_scan_blob(f"{title or ''}\n{text or ''}", html)
     html_blob = html or ""
     combined = f"{blob}\n{html_blob[:200000]}"
     low = combined.lower()
@@ -579,6 +798,11 @@ def adapt_menu_pricing(
             "woocommerce",
             "add-to-cart",
             "add to cart",
+            "coffee price",
+            "coffee prices",
+            "specialty coffee",
+            "drink price",
+            "prices in riyadh",
         )
     )
     has_sar_currency = bool(_SAR_CURRENCY_HINT.search(combined))
@@ -637,12 +861,23 @@ def adapt_menu_pricing(
 def adapt_salary(
     *,
     text: str,
+    html: str = "",
     url: str | None = None,
     title: str | None = None,
     geography: str = "Saudi Arabia",
     district: str | None = None,
 ) -> list[NumericObservation]:
-    blob = f"{title or ''}\n{text or ''}"
+    structured: list[NumericObservation] = []
+    html_blob = html or text or ""
+    structured.extend(_parse_payscale_salaries(html_blob, url, geography, district))
+    structured.extend(_parse_talent_salaries(html_blob, url, geography, district))
+    # Prefer structured aggregators when present (role-level, not min-wage floor).
+    if structured:
+        for o in structured:
+            o.role_or_item = _normalize_role(o.role_or_item) or o.role_or_item
+        return structured[:20]
+
+    blob = _visible_scan_blob(f"{title or ''}\n{text or ''}", html_blob)
     low = blob.lower()
     if not any(
         k in low
@@ -651,7 +886,7 @@ def adapt_salary(
         return []
     amounts = extract_sar_amounts(blob)
     role_m = _SALARY_ROLE.search(blob)
-    role = role_m.group(1) if role_m else None
+    role = _normalize_role(role_m.group(1) if role_m else None)
     is_min_wage = bool(_MIN_WAGE_HINT.search(blob))
     if is_min_wage and not role:
         role = "statutory_minimum_wage"
@@ -660,7 +895,7 @@ def adapt_salary(
     has_month = any(
         k in low for k in ("per month", "/month", "monthly", "شهري", "per month")
     )
-    has_year = any(k in low for k in ("per year", "/year", "annual salary", "سنوي"))
+    has_year = any(k in low for k in ("per year", "/year", "/ year", "annual salary", "a year", "سنوي"))
     if is_min_wage or has_month or not has_year:
         period = "month"
     else:
@@ -677,7 +912,7 @@ def adapt_salary(
     )
     for amt in ranked:
         monthly = amt / 12.0 if period == "year" else amt
-        if not (2_500 <= monthly <= 40_000):
+        if not (800 <= monthly <= 40_000):
             continue
         # Statutory minimum pages often list a single national figure — keep one high-signal obs.
         conf = 0.55 if role else 0.45
@@ -786,37 +1021,62 @@ def adapt_equipment_catalog(
 def adapt_fitout(
     *,
     text: str,
+    html: str = "",
     url: str | None = None,
     title: str | None = None,
     geography: str = "Saudi Arabia",
 ) -> list[NumericObservation]:
-    blob = f"{title or ''}\n{text or ''}"
+    blob = _visible_scan_blob(f"{title or ''}\n{text or ''}", html)
     amounts = extract_sar_amounts(blob)
     areas = [float(m.group(1)) for m in _AREA_M2.finditer(blob)]
     low = blob.lower()
-    if not any(k in low for k in ("fit-out", "fit out", "fitout", "renovation", "تشطيب", "تجهيز")):
+    if not any(k in low for k in ("fit-out", "fit out", "fitout", "renovation", "تشطيب", "تجهيز", "sar/m", "/m²", "/m2")):
         return []
     obs: list[NumericObservation] = []
     now = datetime.now(timezone.utc).isoformat()
+    seen: set[float] = set()
+
+    def _emit_m2(val: float, conf: float = 0.62) -> None:
+        if not (100 <= val <= 20_000):
+            return
+        key = round(val, 2)
+        if key in seen:
+            return
+        seen.add(key)
+        obs.append(
+            NumericObservation(
+                evidence_class="fitout_capex",
+                metric="fitout_sar_per_m2",
+                value=float(key),
+                unit="SAR/m2",
+                geography=geography,
+                period="one_time",
+                source_url=url,
+                source_title=title,
+                retrieved_at=now,
+                adapter_id="fitout",
+                raw_excerpt=blob[:240],
+                confidence=conf,
+                metadata={"parse": "per_m2_rate"},
+            )
+        )
+
+    for m in _FITOUT_PER_M2_RANGE.finditer(blob):
+        a = _f(m.group(1) or "")
+        b = _f(m.group(2) or "")
+        if a is not None:
+            _emit_m2(a, 0.7)
+        if b is not None:
+            _emit_m2(b, 0.7)
+    for m in _FITOUT_PER_M2_SINGLE.finditer(blob):
+        raw = next((g for g in m.groups() if g), None)
+        val = _f(raw or "")
+        if val is not None:
+            _emit_m2(val, 0.65)
+
     for amt in amounts:
         if areas and 15 <= areas[0] <= 2000 and 100 <= amt <= 20_000:
-            obs.append(
-                NumericObservation(
-                    evidence_class="fitout_capex",
-                    metric="fitout_sar_per_m2",
-                    value=float(amt),
-                    unit="SAR/m2",
-                    geography=geography,
-                    period="one_time",
-                    source_url=url,
-                    source_title=title,
-                    retrieved_at=now,
-                    adapter_id="fitout",
-                    raw_excerpt=blob[:240],
-                    confidence=0.5,
-                    metadata={"area_m2": areas[0]},
-                )
-            )
+            _emit_m2(amt, 0.5)
         elif 20_000 <= amt <= 5_000_000:
             obs.append(
                 NumericObservation(
@@ -845,14 +1105,21 @@ def adapt_cogs(
     title: str | None = None,
     geography: str = "Saudi Arabia",
 ) -> list[NumericObservation]:
-    blob = f"{title or ''}\n{text or ''}"
+    blob = _visible_scan_blob(f"{title or ''}\n{text or ''}", html)
     obs: list[NumericObservation] = []
     now = datetime.now(timezone.utc).isoformat()
-    for m in _PCT.finditer(blob):
-        raw = m.group(1) or m.group(2)
+    pct_hits: list[tuple[float, int, int]] = []
+    for m in list(_PCT.finditer(blob)) + list(_PCT_SPEND.finditer(blob)):
+        raw = m.group(1) or (m.group(2) if m.lastindex and m.lastindex >= 2 else None)
         val = _f(raw or "")
         if val is None or not (8 <= val <= 55):
             continue
+        pct_hits.append((float(val), m.start(), m.end()))
+    seen_pct: set[float] = set()
+    for val, start, end in pct_hits:
+        if val in seen_pct:
+            continue
+        seen_pct.add(val)
         obs.append(
             NumericObservation(
                 evidence_class="cogs_inputs",
@@ -865,8 +1132,9 @@ def adapt_cogs(
                 source_title=title,
                 retrieved_at=now,
                 adapter_id="cogs",
-                raw_excerpt=blob[max(0, m.start() - 40) : m.end() + 40],
-                confidence=0.5,
+                raw_excerpt=blob[max(0, start - 40) : end + 40],
+                confidence=0.62,
+                metadata={"benchmark_class": "sourced_food_cost_pct"},
             )
         )
     # Ingredient catalog prices (Amazon etc.) — labeled input_cost_sar only.
@@ -999,7 +1267,160 @@ def run_adapter(
     }
     if adapter_id in {"rent_listing", "menu_pricing", "salary"}:
         kwargs["district"] = district
+    if adapter_id in {"salary", "fitout", "cogs"}:
+        kwargs["html"] = html
     return fn(**kwargs)
+
+
+
+def adapt_space_density(
+    *,
+    text: str,
+    html: str = "",
+    url: str | None = None,
+    title: str | None = None,
+    geography: str = "Saudi Arabia",
+) -> list[NumericObservation]:
+    """Parse dining sq-ft-per-seat benchmarks → m²/seat observations."""
+    blob = _visible_scan_blob(f"{title or ''}\n{text or ''}", html)
+    low = blob.lower()
+    if not any(k in low for k in ("per seat", "sq ft", "sqft", "square feet", "dining")):
+        return []
+    obs: list[NumericObservation] = []
+    now = datetime.now(timezone.utc).isoformat()
+    seen: set[float] = set()
+    for rx in (_SEAT_DENSITY_SQFT, _SEAT_DENSITY_SQFT_ALT):
+        for m in rx.finditer(blob):
+            a = _f(m.group(1) or "")
+            b = _f(m.group(2) or "") if m.lastindex and m.lastindex >= 2 else None
+            vals = [v for v in (a, b) if v and 6 <= v <= 40]
+            for sqft in vals:
+                m2 = round(sqft * _SQFT_TO_M2, 3)
+                if m2 in seen:
+                    continue
+                seen.add(m2)
+                obs.append(
+                    NumericObservation(
+                        evidence_class="cogs_inputs",
+                        metric="dining_m2_per_seat",
+                        value=float(m2),
+                        unit="m2/seat",
+                        geography=geography,
+                        period="ongoing",
+                        source_url=url,
+                        source_title=title,
+                        retrieved_at=now,
+                        adapter_id="space_density",
+                        raw_excerpt=m.group(0)[:200],
+                        confidence=0.6,
+                        metadata={"sqft_per_seat": sqft, "note": "dining density benchmark"},
+                    )
+                )
+    return obs
+
+
+def adapt_staffing_ratios(
+    *,
+    text: str,
+    html: str = "",
+    url: str | None = None,
+    title: str | None = None,
+    geography: str = "Saudi Arabia",
+) -> list[NumericObservation]:
+    """Parse café staffing calculator ratios (FOH guests/staff, BOH share)."""
+    blob = f"{title or ''}\n{text or ''}\n{html or ''}"
+    low = blob.lower()
+    if not any(k in low for k in ("fohratio", "coffee shop", "staffing", "bohpct", "guests/staff")):
+        return []
+    obs: list[NumericObservation] = []
+    now = datetime.now(timezone.utc).isoformat()
+    # Prefer explicit cafe RATIOS object when present.
+    m = re.search(
+        r"['\"]cafe['\"]\s*:\s*\{\s*fohRatio\s*:\s*([0-9]+)\s*,\s*bohPct\s*:\s*(0?\.[0-9]+)",
+        blob,
+        re.I,
+    )
+    if m:
+        foh = float(m.group(1))
+        boh = float(m.group(2))
+        obs.append(
+            NumericObservation(
+                evidence_class="salary_labor",
+                metric="staff_foh_guests_per",
+                value=foh,
+                unit="guests/foh_staff",
+                geography=geography,
+                role_or_item="cafe_foh",
+                period="ongoing",
+                source_url=url,
+                source_title=title,
+                retrieved_at=now,
+                adapter_id="staffing_ratio",
+                raw_excerpt=m.group(0)[:180],
+                confidence=0.75,
+                metadata={"biz_type": "cafe"},
+            )
+        )
+        obs.append(
+            NumericObservation(
+                evidence_class="salary_labor",
+                metric="staff_boh_share_of_foh",
+                value=boh,
+                unit="ratio",
+                geography=geography,
+                role_or_item="cafe_boh",
+                period="ongoing",
+                source_url=url,
+                source_title=title,
+                retrieved_at=now,
+                adapter_id="staffing_ratio",
+                raw_excerpt=m.group(0)[:180],
+                confidence=0.75,
+                metadata={"biz_type": "cafe"},
+            )
+        )
+        obs.append(
+            NumericObservation(
+                evidence_class="salary_labor",
+                metric="staff_mgr_per_shift",
+                value=1.0,
+                unit="managers/shift",
+                geography=geography,
+                role_or_item="store_manager",
+                period="ongoing",
+                source_url=url,
+                source_title=title,
+                retrieved_at=now,
+                adapter_id="staffing_ratio",
+                raw_excerpt="mgrPerShift: 1 (cafe)",
+                confidence=0.7,
+                metadata={"biz_type": "cafe"},
+            )
+        )
+    # Table text fallback: Coffee shop 25-35 ...
+    m2 = re.search(r"Coffee\s*shop\s+([0-9]{2})\s*[–-]\s*([0-9]{2})", blob, re.I)
+    if m2 and not obs:
+        lo, hi = float(m2.group(1)), float(m2.group(2))
+        mid = (lo + hi) / 2.0
+        obs.append(
+            NumericObservation(
+                evidence_class="salary_labor",
+                metric="staff_foh_guests_per",
+                value=mid,
+                unit="guests/foh_staff",
+                geography=geography,
+                role_or_item="cafe_foh",
+                period="ongoing",
+                source_url=url,
+                source_title=title,
+                retrieved_at=now,
+                adapter_id="staffing_ratio",
+                raw_excerpt=m2.group(0),
+                confidence=0.6,
+                metadata={"range": [lo, hi]},
+            )
+        )
+    return obs
 
 
 def adapt_page_for_classes(
@@ -1030,6 +1451,15 @@ def adapt_page_for_classes(
                 geography=geography,
                 district=district,
                 evidence_class=eid,
+            )
+        )
+    # Cross-cutting capacity/staffing benchmarks (when those classes are in scope).
+    if any(c in evidence_class_ids for c in ("cogs_inputs", "menu_pricing", "commercial_rent")):
+        out.extend(adapt_space_density(text=text, html=html, url=url, title=title, geography=geography))
+    if "salary_labor" in evidence_class_ids:
+        out.extend(
+            adapt_staffing_ratios(
+                text=text, html=html, url=url, title=title, geography=geography
             )
         )
     return out

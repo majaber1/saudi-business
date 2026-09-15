@@ -440,3 +440,117 @@ def test_capacity_demand_uses_operating_hours_estimate():
     assert blocked.get("capacity") is None
     ok = derive_capacity_and_demand(seats=20.0, operating_hours=13.5)
     assert ok.get("capacity") is not None
+
+
+def test_normalize_role_underscores_and_assistant_manager():
+    from ai_engine.research.evidence.adapters import _normalize_role
+
+    assert _normalize_role("Assistant_Manager") == "senior_barista"
+    assert _normalize_role("Head_Barista") == "head_barista"
+    assert _normalize_role("Restaurant_Manager") == "store_manager"
+
+
+def test_cogs_fitout_density_html_fallback_when_text_truncated():
+    """Connector may pass thin text; adapters must still read HTML body numbers."""
+    from ai_engine.research.evidence.adapters import (
+        adapt_cogs,
+        adapt_fitout,
+        adapt_space_density,
+        adapt_salary,
+        adapt_staffing_ratios,
+    )
+
+    cogs_html = "<html><body>" + ("pad " * 5000) + " Food cost percentage is typically 32 percent of sales.</body></html>"
+    cogs = adapt_cogs(text=cogs_html[:200], html=cogs_html, url="https://squareup.com/x", title="Food cost")
+    assert any(o.metric == "food_cost_pct" and abs(o.value - 32) < 0.1 for o in cogs)
+
+    fit_html = "<html><body>" + ("x" * 5000) + " Fit-out ranges from SAR 480 – 1,960/m² for retail interiors.</body></html>"
+    fit = adapt_fitout(text=fit_html[:200], html=fit_html, url="https://archskills.com/x", title="Fit-out")
+    assert {round(o.value) for o in fit if o.metric == "fitout_sar_per_m2"} >= {480, 1960}
+
+    dens_html = "<html><body>" + ("y" * 5000) + " Allow 12–15 square feet per seat for coffee shops.</body></html>"
+    dens = adapt_space_density(text=dens_html[:200], html=dens_html, url="https://bravecalculator.com/x")
+    assert dens and all(o.metric == "dining_m2_per_seat" for o in dens)
+
+    wage_html = "<html><body>" + ("z" * 9000) + " Minimum wage SAR4,000.00 private sector Saudi nationals.</body></html>"
+    wage = adapt_salary(
+        text=wage_html[:800],
+        html=wage_html,
+        url="https://wageindicator.org/salary/minimum-wage/saudi-arabia",
+        title="Minimum wage - Saudi Arabia",
+    )
+    assert any(abs(o.value - 4000) < 0.1 for o in wage)
+
+    staff_html = "const RATIOS = { 'cafe': { fohRatio: 30, bohPct: 0.35, mgrPerShift: 1 } };"
+    staff = adapt_staffing_ratios(text="", html=staff_html, url="https://shifty-app.com/staffing-calculator/")
+    assert {o.metric for o in staff} >= {"staff_foh_guests_per", "staff_boh_share_of_foh", "staff_mgr_per_shift"}
+
+
+def test_role_payroll_and_seats_from_density():
+    from datetime import datetime, timezone
+    from ai_engine.research.evidence.observations import NumericObservation
+    from ai_engine.research.evidence.bands import bands_from_observations
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    def O(metric, value, **kw):
+        return NumericObservation(
+            evidence_class=kw.get("ec", "salary_labor"),
+            metric=metric,
+            value=float(value),
+            unit=kw.get("unit", "SAR/month"),
+            geography="Riyadh",
+            role_or_item=kw.get("role"),
+            source_url=kw.get("url", "https://www.payscale.com/x"),
+            retrieved_at=now,
+            adapter_id="test",
+            confidence=0.7,
+            metadata=kw.get("meta") or {},
+        )
+
+    obs = [
+        O("salary_monthly_sar", 3000, role="barista"),
+        O("salary_monthly_sar", 4500, role="store_manager"),
+        O("salary_monthly_sar", 3500, role="head_barista"),
+        O("salary_monthly_sar", 2800, role="cashier"),
+        O("salary_monthly_sar", 4000, role="statutory_minimum_wage", meta={"statutory_minimum_wage": True}, url="https://wageindicator.org/x"),
+        O("staff_foh_guests_per", 30, unit="guests/foh_staff", url="https://shifty-app.com/x"),
+        O("staff_boh_share_of_foh", 0.35, unit="ratio", url="https://shifty-app.com/x"),
+        O("staff_mgr_per_shift", 1.0, unit="managers/shift", url="https://shifty-app.com/x"),
+        O("dining_m2_per_seat", 1.2, unit="m2/seat", ec="cogs_inputs", url="https://bravecalculator.com/x"),
+        O("dining_m2_per_seat", 1.4, unit="m2/seat", ec="cogs_inputs", url="https://bravecalculator.com/x"),
+        O("store_area_m2", 57, unit="m2", ec="commercial_rent", url="https://wasalt.sa/x"),
+        O("operating_hours_day", 13.5, unit="hours", ec="capacity_signals", url="https://overpass-api.de/x"),
+        O("menu_item_sar", 18, unit="SAR", ec="menu_pricing", url="https://explore-saudi.com/x"),
+        O("menu_item_sar", 24, unit="SAR", ec="menu_pricing", url="https://explore-saudi.com/x"),
+        O("menu_item_sar", 30, unit="SAR", ec="menu_pricing", url="https://rimthancoffee.com/x"),
+        O("food_cost_pct", 32, unit="percent", ec="cogs_inputs", url="https://squareup.com/x"),
+        O("fitout_sar_per_m2", 1000, unit="SAR/m2", ec="fitout_capex", url="https://archskills.com/x"),
+        O("fitout_sar_per_m2", 1800, unit="SAR/m2", ec="fitout_capex", url="https://archskills.com/x"),
+    ]
+    bands = bands_from_observations(obs, geography="Olaya, Riyadh", store_area_m2=57.0)
+    by = {b.key: b for b in bands}
+    assert "avg_ticket" in by
+    assert by["avg_ticket"].base != 25 or by["avg_ticket"].low != 20  # not the old hardcoded 20/25/30 triple alone
+    assert "labor_monthly" in by
+    assert by["labor_monthly"].base > 10000  # role payroll, not 4000 floor
+    assert "role_based" in (by["labor_monthly"].derivation or "").lower() or (
+        (by["labor_monthly"].metadata or {}).get("payroll_model") == "role_based_staffing_ratios"
+    )
+    assert "seats_capacity" in by
+    assert by["seats_capacity"].base > 10
+    assert "food_cost_pct" in by
+    assert abs(by["food_cost_pct"].base - 32) < 1
+    assert "fitout_capex" in by
+    assert by["fitout_capex"].base > 10000
+
+
+def test_strategy_includes_opecon_benchmark_seeds():
+    s = resolve_strategy(sector="fnb", city="Riyadh", district="Olaya", amenity="cafe", query="specialty coffee")
+    joined = " ".join(s.seed_urls)
+    assert "payscale.com" in joined
+    assert "shifty-app.com" in joined
+    assert "archskills.com" in joined
+    assert "squareup.com" in joined
+    assert "bravecalculator.com" in joined
+    assert "explore-saudi.com" in joined or "rimthancoffee.com" in joined

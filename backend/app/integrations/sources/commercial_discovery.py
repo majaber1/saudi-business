@@ -659,14 +659,22 @@ class CommercialDiscoveryConnector(SourceConnector):
         preferred = [e for e in evidence_ids if e in {"menu_pricing", "cogs_inputs", "commercial_rent"}]
         class_ids = preferred or evidence_ids
 
-        for url in list(urls or [])[:6]:
+        menu_suffixes = ("", "/menu", "/en/menu", "/menus", "/our-menu", "/menu/")
+        expanded: List[str] = []
+        for base in list(urls or [])[:6]:
+            b = (base or "").rstrip("/")
+            for suf in menu_suffixes:
+                cand = b + suf if suf else base
+                if cand not in expanded:
+                    expanded.append(cand)
+        for url in expanded[:18]:
             try:
                 if not self._url_allowlisted(url):
                     errors.append(f"not_allowlisted:{url[:80]}")
                     continue
                 page = self._reader.read(url)
                 fetched += 1
-                page_text = (page.text or "")[:6000]
+                page_text = (page.text or "")[:80_000]
                 page_html = _adapter_html_slice(page.html, limit=600_000)
                 observations = adapt_page_for_classes(
                     evidence_class_ids=class_ids,
@@ -700,7 +708,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                 errors.append(f"{url[:60]}:{exc}")
         return out, {
             "ok": fetched > 0,
-            "urls_attempted": len(list(urls or [])[:6]),
+            "urls_attempted": len(expanded[:18]),
             "fetched": fetched,
             "observation_docs": len(out),
             "errors": errors[:8],
@@ -723,14 +731,14 @@ class CommercialDiscoveryConnector(SourceConnector):
         errors: List[str] = []
         fetched = 0
         obs_count = 0
-        for url in list(strategy.seed_urls or [])[:12]:
+        for url in list(strategy.seed_urls or [])[:24]:
             try:
                 if not self._url_allowlisted(url):
                     errors.append(f"not_allowlisted:{url[:80]}")
                     continue
                 page = self._reader.read(url)
                 fetched += 1
-                text = (page.text or "")[:8000]
+                text = (page.text or "")[:120_000]
                 html = _adapter_html_slice(page.html, limit=600_000)
                 class_ids = list(seed_to_classes.get(url) or strategy.evidence_class_ids)
                 adapters = {
@@ -776,7 +784,7 @@ class CommercialDiscoveryConnector(SourceConnector):
             "pages_fetched": fetched,
             "observations": obs_count,
             "errors": errors[:8],
-            "seeds_attempted": len(list(strategy.seed_urls or [])[:12]),
+            "seeds_attempted": len(list(strategy.seed_urls or [])[:24]),
         }
 
     def normalize(self, raw: Dict[str, Any]) -> SourceDocument:
@@ -1328,7 +1336,7 @@ class CommercialDiscoveryConnector(SourceConnector):
                     try:
                         page = self._reader.read(href)
                         follow_budget -= 1
-                        page_text = (page.text or "")[:4000]
+                        page_text = (page.text or "")[:80_000]
                         page_html = _adapter_html_slice(page.html, limit=600_000)
                         doc["content"] = (
                             doc["content"]

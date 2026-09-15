@@ -65,8 +65,14 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
             "أسعار قائمة {sector} {city}",
             "{city} {sector} menu SAR site:.sa",
         ),
-        seed_url_templates=("https://hungerstation.com/sa-en",),
-        notes="Product observations → comparable basket → low/base/high ticket.",
+        seed_url_templates=(
+            "https://hungerstation.com/sa-en",
+            # Reachable Riyadh specialty-coffee price surveys (menu-item SAR).
+            "https://explore-saudi.com/en/the-best-specialty-coffee-roasters-in-riyadh-2026-edition/",
+            "https://rimthancoffee.com/how-to-specialty-coffee-cost-riyadh-proven-tips-strategies/",
+            "https://www.drcafe.com/en-sa/menu/168?def=1",
+        ),
+        notes="Product observations → comparable basket → low/base/high ticket. Multi-source seeds reduce search flakiness.",
     ),
     "salary_labor": EvidenceClassSpec(
         id="salary_labor",
@@ -77,17 +83,32 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
         query_templates=(
             "{sector} staff salary SAR Saudi Arabia {city}",
             "{sector} worker monthly salary SAR {city}",
+            "barista salary SAR Saudi Arabia",
+            "cafe manager salary SAR Riyadh",
+            "cashier salary SAR Saudi Arabia",
             "راتب موظف {sector} {city}",
             "Saudi Arabia private sector minimum wage SAR",
         ),
         seed_url_templates=(
             # WageIndicator publishes statutory Saudi private-sector minimum wage (SAR/month).
-            # This is a labor-cost floor observation — not a café staffing model by itself.
+            # Floor observation only — not a café staffing model by itself.
             "https://wageindicator.org/salary/minimum-wage/saudi-arabia",
+            # Sourced coffee-shop staffing ratio methodology (guests/FOH, BOH%).
+            "https://shifty-app.com/staffing-calculator/",
+            # Role-level salary aggregators reachable when Bayt/Indeed 403.
+            "https://www.payscale.com/research/SA/Job=Barista/Salary",
+            "https://www.payscale.com/research/SA/Job=Restaurant_Manager/Salary",
+            "https://www.payscale.com/research/SA/Job=Cashier/Salary",
+            "https://www.payscale.com/research/SA/Job=Assistant_Manager/Salary",
+            "https://sa.talent.com/salary?job=barista",
+            "https://sa.talent.com/salary?job=cafe+manager",
+            "https://sa.talent.com/salary?job=cashier",
+            "https://sa.talent.com/salary?job=head+barista",
+            # Sourced coffee-shop staffing ratio methodology (guests/FOH, BOH%).
         ),
         notes=(
-            "Role + geography + period → monthly SAR. Statutory minimum-wage pages are "
-            "valid floor observations when job boards are blocked; they are not role surveys."
+            "Role + geography + period → monthly SAR. Statutory minimum wage is a floor "
+            "only. Role surveys + sourced staffing ratios produce payroll — not min wage alone."
         ),
     ),
     "equipment_capex": EvidenceClassSpec(
@@ -117,7 +138,11 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
             "{sector} fit out cost SAR Saudi Arabia small shop",
             "commercial fit-out cost per sqm SAR {city}",
         ),
-        seed_url_templates=(),
+        seed_url_templates=(
+            "https://archskills.com/retail-fit-out-cost-riyadh/",
+            "https://archskills.com/calculator/",
+            "https://archskills.com/services/restaurant-cafes/",
+        ),
         notes="Prefer SAR/m² with scope; do not confuse unit rates with total CAPEX.",
     ),
     "furniture_pos_opening": EvidenceClassSpec(
@@ -150,12 +175,18 @@ EVIDENCE_CLASSES: dict[str, EvidenceClassSpec] = {
             "تكلفة البضاعة المباعة مطاعم السعودية",
         ),
         seed_url_templates=(
+            # Sourced F&B food-cost percent + dining density (sq ft/seat) for seats-from-area.
+            "https://squareup.com/us/en/the-bottom-line/managing-your-finances/food-cost-percentage",
+            "https://bravecalculator.com/restaurant-space-calculator/",
+            "https://www.7shifts.com/blog/restaurant-food-cost/",
+            # Ingredient catalog prices → input_cost_sar only (never food_cost_pct).
             "https://www.amazon.sa/s?k={cogs_milk_query_enc}",
             "https://www.amazon.sa/s?k={cogs_beans_query_enc}",
         ),
         notes=(
             "Percent COGS only when sourced. Amazon ingredient catalog prices are "
-            "input_cost_sar observations only — never promoted to food_cost_pct."
+            "input_cost_sar observations only — never promoted to food_cost_pct. "
+            "Space-density seeds support seats-from-area derivation when OSM seats are absent."
         ),
     ),
 }

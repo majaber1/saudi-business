@@ -74,16 +74,47 @@ def extract_fnb_financials(
         extract_notes.append("fnb_capex_missing_or_unknown")
 
     if wc is None:
-        monthly_fixed = (rent_m or 0.0) + (labor_m or 0.0) + util_m + mkt_m
-        monthly_cogs = (cogs_y1 / 12.0) if cogs_y1 else 0.0
-        if monthly_fixed > 0 or monthly_cogs > 0:
-            wc = 2.0 * (monthly_fixed + monthly_cogs)
-            extract_notes.append("fnb_working_capital_estimated_2_months_opex")
+        # Refuse investment-grade WC when material opex inputs are missing/unknown.
+        # A 2×-opex heuristic on incomplete labor/COGS/covers systematically understates need.
+        material_unknown = {
+            k
+            for k in ("labor_monthly", "food_cost_pct", "daily_covers", "avg_ticket", "rent_monthly")
+            if k in unknown_keys
+            or exact(
+                *{
+                    "labor_monthly": ("labor_monthly", "monthly_labor"),
+                    "food_cost_pct": ("food_cost_pct", "cogs_pct", "beverage_cost_pct"),
+                    "daily_covers": ("daily_covers", "daily_transactions", "transactions_per_day"),
+                    "avg_ticket": ("avg_ticket", "average_ticket", "ticket_size"),
+                    "rent_monthly": ("rent_monthly", "monthly_rent"),
+                }[k]
+            )
+            is None
+        }
+        # labor that is statutory-floor-only is still incomplete for WC.
+        labor_floor_only = any(
+            "STATUTORY_MINIMUM_WAGE" in str(n) or "floor only" in str(n).lower()
+            for n in extract_notes
+        )
+        if material_unknown or labor_floor_only or annual_revenues is None:
+            wc = None
+            extract_notes.append(
+                "fnb_working_capital_blocked_incomplete_opex:"
+                + (",".join(sorted(material_unknown)) if material_unknown else "revenue_or_floor_labor")
+            )
         else:
-            wc = 0.0
-            extract_notes.append("fnb_working_capital_unknown")
+            monthly_fixed = (rent_m or 0.0) + (labor_m or 0.0) + util_m + mkt_m
+            monthly_cogs = (cogs_y1 / 12.0) if cogs_y1 else 0.0
+            # Explicit launch-liquidity policy once true operating economics exist:
+            # 2 months fixed opex + 1 month COGS + opening inventory buffer (=1 month COGS).
+            wc = (2.0 * monthly_fixed) + (2.0 * monthly_cogs)
+            extract_notes.append(
+                "fnb_working_capital_from_opex_policy_2mo_fixed_plus_2mo_cogs"
+            )
 
-    total_initial = float(capex) + float(wc or 0.0)
+    total_initial = float(capex) + (float(wc) if wc is not None else 0.0)
+    if wc is None:
+        extract_notes.append("fnb_total_initial_excludes_unknown_working_capital")
     budget_gap = None
     budget_status = "UNKNOWN_BUDGET"
     if owner_budget is not None:
@@ -125,7 +156,7 @@ def extract_fnb_financials(
             if k in vals
         },
         "capex_components": capex_components,
-        "working_capital": float(wc or 0.0),
+        "working_capital": (float(wc) if wc is not None else None),
         "total_initial_funding": total_initial,
         "owner_budget": float(owner_budget) if owner_budget is not None else None,
         "budget_gap": budget_gap,

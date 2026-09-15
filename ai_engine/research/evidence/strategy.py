@@ -97,7 +97,7 @@ def seed_urls_for_classes(
     sector: str = "",
     query: str = "",
     amenity: str = "",
-    max_urls: int = 12,
+    max_urls: int = 24,
     prioritize_class_ids: list[str] | None = None,
 ) -> list[str]:
     ctx = build_render_context(
@@ -137,6 +137,12 @@ def seed_urls_for_classes(
                 _append_from(eid, limit=2)
                 if len(out) >= max_urls:
                     return out
+    # Round-robin first pass so salary/menu seed growth cannot starve
+    # equipment / fit-out / COGS catalogs under the default budget.
+    for eid in ordered:
+        _append_from(eid, limit=3)
+        if len(out) >= max_urls:
+            return out
     for eid in ordered:
         _append_from(eid)
         if len(out) >= max_urls:
@@ -241,8 +247,8 @@ def resolve_strategy(
             # Rebuild adapters/domain order is already done; class order mainly
             # affects seed/query budget allocation below.
 
-    seed_budget = 16 if prioritize else 12
-    query_budget = 14 if prioritize else 10
+    seed_budget = 32 if prioritize else 28
+    query_budget = 18 if prioritize else 14
     queries = query_templates_for_classes(
         classes,
         city=city,
