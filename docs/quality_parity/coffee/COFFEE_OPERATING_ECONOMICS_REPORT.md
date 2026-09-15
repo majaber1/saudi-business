@@ -2,95 +2,75 @@
 
 **Branch:** `cursor/coffee-operating-economics-1831`  
 **Base:** `cursor/coffee-research-depth-parity-1831`  
-**SHA:** `4d7d6ef12834afd07e8d79b49b2eb708a3eba7c4`  
+**SHA:** `dfe71326d3dfd4ec4914d6a9f6f8cf9587f04de3`  
 **PR:** #56  
 **Verdict: PARTIAL — DO NOT MERGE**
 
-End-to-end proof from brand-new **REAL_USER_FLOW RUF15** (`study_ac43c9e296f1` / project `1221`, artifacts `/workspace/artifacts/coffee-operating-economics-ruf15/`).  
-Owner inputs only: specialty coffee, Olaya/Riyadh, SAR 450k budget, positioning. Ops numbers are SYSTEM_ESTIMATE from retrieved evidence.
+Brand-new REAL_USER_FLOW **RUF15** (`study_ac43c9e296f1` / project `1221`).  
+Artifacts: `/workspace/artifacts/coffee-operating-economics-ruf15/`.  
+Owner inputs only: specialty coffee, Olaya/Riyadh, SAR 450k, positioning.
 
 ---
 
-## 1. Required check results (RUF15)
+## 1. Required checks (RUF15)
 
-| Field | Status | Value (L/B/H) | Provenance |
+| Field | Status | L / B / H | Provenance |
 |---|---|---|---|
-| Rent | **RETRIEVED** | 5,833 / 8,316 / 10,723 SAR/mo | SYSTEM_ESTIMATE — Wasalt commercial comps |
-| Area | **RETRIEVED** | 41 / 70 / 125 m² | SYSTEM_ESTIMATE — Wasalt listing areas |
-| Ticket | **RETRIEVED** | 22 / 30 / 40 SAR | SYSTEM_ESTIMATE — Explore-Saudi + Rimthan (+ hosts); **not** hardcoded 20/25/30 (60 menu observations) |
-| Hours/day | **RETRIEVED** | 13.5 | SYSTEM_ESTIMATE — OSM `opening_hours` |
-| Seats | **DERIVED** | 27.2 / 36.4 / 47.1 | Area × customer fraction ÷ Brave dining m²/seat — **CAPACITY** |
-| Daily covers | **DERIVED (DEMAND)** | 172 / 221 / 270 | CAPACITY × utilization 35–55% (competition density=7). ≠ seats |
-| Labor | **PARTIAL** | 36,000 / 36,000 / 36,136 SAR/mo | Role **headcount** from Shifty ratios × seats/hours; pay **pinned to WageIndicator SAR 4,000 floor** per role (Payscale medians ≤ floor) |
-| COGS % | **RETRIEVED** | 30 / 32 / 40 % | SYSTEM_ESTIMATE — Square + 7shifts |
-| Equipment CAPEX | **RETRIEVED** | 114 / 2,568 / 36,856 SAR | Amazon catalog package |
-| Other CAPEX | **RETRIEVED** | 138 / 1,316 / 10,208 SAR | Amazon furniture/POS package |
-| Fit-out CAPEX | **RETRIEVED** | 58,100 / 128,600 / 350,000 SAR | ArchSkills SAR/m² × area |
-| Working capital | **DERIVED** | ~205,388 SAR | 2× fixed opex + 2× monthly COGS on complete opex set |
+| Rent | RETRIEVED | 5833.33 / 8315.57 / 10723.1 SAR/mo | Wasalt commercial comps |
+| Area | RETRIEVED | 41.17 / 70 / 124.5 m² | Wasalt listing areas |
+| Ticket | RETRIEVED | 22 / 30 / 40 SAR | Explore-Saudi + Rimthan (+ hosts); 60 menu obs — **not** hardcoded 20/25/30 |
+| Hours/day | RETRIEVED | 13.5 / 13.5 / 13.5 | OSM opening_hours |
+| Seats | DERIVED (CAPACITY) | 27.2 / 36.4 / 47.1 | Area × customer fraction ÷ Brave m²/seat |
+| Daily covers | DERIVED (DEMAND) | 171.99 / 221.13 / 270.27 | Capacity × 35–55% utilization — ≠ seats |
+| Labor | PARTIAL | 36000 / 36000 / 36135.9 SAR/mo | Shifty role headcount × seats/hours; pay pinned to WageIndicator **4,000** floor/role |
+| COGS % | RETRIEVED | 30 / 32 / 40 % | Square + 7shifts |
+| Equipment | RETRIEVED | 114 / 2568 / 36856 SAR | Amazon package |
+| Other CAPEX | RETRIEVED | 138 / 1316 / 10208 SAR | Amazon furniture/POS |
+| Fit-out | RETRIEVED | 58100 / 128600 / 350000 SAR | ArchSkills SAR/m² × area |
+| Working capital | DERIVED | 205388 SAR | 2× fixed opex + 2× monthly COGS (complete opex) |
+
+Labor composition: store_manager×3 + head_barista×3 + barista×2 + cashier×1 @ floor 4,000 = 36,000 SAR/mo.
 
 ---
 
-## 2. What changed since RUF13
+## 2. Fixes since RUF13
 
-| Gap | Fix |
-|---|---|
-| Ticket UNKNOWN | Multi-source menu seeds + HTML fallback when connector truncates text |
-| Labor = single 4k floor | Shifty role headcount × role salaries (pay still floor-pinned when surveys ≤ min wage) |
-| COGS / fit-out / seats UNKNOWN | Square/7shifts, ArchSkills, Brave density seeds |
-| WC incomplete heuristic | Gate on complete opex; then policy WC |
-| Staffing mis-tagged as salary | Persist `role_or_item`; recover explicit metric tokens (ignore `salary_labor` prefix) |
+- Multi-source ticket/COGS/fit-out/density seeds + HTML fallback for truncated connector text  
+- Round-robin seed budget so equipment/COGS are not starved  
+- Role×staffing payroll path; preserve `role_or_item`; stop `salary_labor` prefix from reclassifying staffing metrics  
+- WC gated on complete opex  
 
 ---
 
-## 3. Evidence sources (RUF15)
+## 3. Financial snapshot (provisional)
 
-| Source | Host | Used for |
+| Output | Value | Caveat |
 |---|---|---|
-| Wasalt | `wasalt.sa` | rent, area |
-| Explore-Saudi / Rimthan | `explore-saudi.com`, `rimthancoffee.com` | menu → ticket |
-| Payscale SA | `payscale.com` | role salaries |
-| WageIndicator | `wageindicator.org` | statutory 4,000 floor |
-| Shifty | `shifty-app.com` | FOH=30, BOH=0.35, mgr/shift=1 |
-| Square / 7shifts | `squareup.com`, `7shifts.com` | food_cost_pct |
-| ArchSkills | `archskills.com` | fit-out SAR/m² |
-| Amazon | `amazon.sa` | equipment / other CAPEX |
-| OSM | Overpass mirrors | hours/day |
-| Brave | `bravecalculator.com` | dining_m2_per_seat |
+| CAPEX | 132484 SAR | Fit-out dominates |
+| WC | 205388 SAR | Policy on complete opex |
+| Opening vs 450k | SURPLUS (gap -112128) | Model surplus — not a GO |
+| Revenue Y1 | 2189187 SAR | Optimistic DEMAND×ticket |
+| NPV / IRR / payback | 2401559 / 731.3% / 1.7 months | Not investment-grade |
+| Risk / GO | Unavailable | Risk agent 429 |
 
-Labor composition (from estimate reasoning): `store_manager×3 + head_barista×3 + barista×2 + cashier×1` at floor 4,000 each → 36,000 SAR/mo.
+CAPACITY ≠ DEMAND enforced.
 
 ---
 
-## 4. Financial model (RUF15) — provisional
+## 4. Blockers for FULL PASS
 
-| Output | Result | Caveat |
-|---|---|---|
-| Revenue Y1 | ~2.19M SAR | DEMAND covers × ticket — optimistic for specialty coffee |
-| Costs Y1 | ~1.23M SAR | Labor may be understated vs true market manager/barista pay |
-| CAPEX booked | ~132.5k | Fit-out dominates |
-| Opening need | CAPEX+WC ≈ 338k vs 450k budget | Model surplus ~112k |
-| NPV / IRR / payback | ~2.4M / 731% / 1.7 mo | **Not investment-grade** (optimistic demand + floor labor) |
-| Risk / GO | **Unavailable** | Risk agent 429; no GO issued |
-
-CAPACITY ≠ DEMAND is enforced (utilization band on seats×hours capacity).
-
----
-
-## 5. Remaining blockers
-
-1. Labor **pay** still floor-pinned — need Saudi café role surveys above 4,000 SAR.  
+1. Labor **pay** floor-pinned (need café role surveys > 4,000 SAR).  
 2. Covers are methodology DEMAND, not footfall — 221/day is aggressive.  
-3. No GO/risk verdict this run.  
-4. `/opt/cursor/artifacts` store mount EIO in this VM — artifacts under `/workspace/artifacts/coffee-operating-economics-ruf15/`.
+3. No risk/GO verdict this run.  
 
 ---
 
-## 6. Tests
+## 5. Tests
 
 `tests/test_operating_economics_evidence.py` — **29 passed**.
 
 ---
 
-## 7. Merge recommendation
+## 6. Merge recommendation
 
-**DO NOT MERGE.** Material progress (ticket, COGS, fit-out, seats, WC, role-headcount labor) but **not FULL PASS** until labor compensation quality, demand credibility, and decision/risk gate are investment-grade.
+**DO NOT MERGE.** Advanced but not investment-grade coffee operating economics.
