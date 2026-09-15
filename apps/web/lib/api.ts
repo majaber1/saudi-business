@@ -2557,4 +2557,117 @@ export function updateGrowthAction(
   );
 }
 
+// --- Decision Simulator API ---
+
+export type SimulatorVariable = {
+  key: string;
+  en: string;
+  ar: string;
+  unit: string;
+};
+
+export type SimulatorVariablesMeta = {
+  archetype: string | null;
+  archetype_key: string | null;
+  variables: SimulatorVariable[];
+  current_values: Record<string, number>;
+};
+
+export type SimulationDelta = {
+  baseline: number | null;
+  scenario: number | null;
+  absolute: number | null;
+  percent?: number | null;
+};
+
+export type SimulationResult = {
+  scenario: {
+    id: number;
+    study_id: number;
+    scenario_type: string;
+    scenario_name: string;
+    assumption_overrides: Record<string, number>;
+    source_assumption_values: Record<string, { origin: string; value: number }>;
+    financial_result_snapshot: Record<string, any>;
+    calculation_version: string;
+  };
+  baseline: Record<string, any>;
+  delta: Record<string, SimulationDelta>;
+  decision_impact: {
+    baseline_decision: string;
+    baseline_reason: string;
+    scenario_decision: string;
+    scenario_reason: string;
+    changed: boolean;
+    changed_gates: Array<{ gate: string; baseline: string; scenario: string }>;
+    scenario_conditions: string[];
+    scenario_risks: string[];
+  };
+  risk_impact: Array<{
+    category: string;
+    direction: string;
+    baseline?: any;
+    scenario?: any;
+    change_pct?: number;
+    variable?: string;
+    override_value?: number;
+  }>;
+  trust: {
+    counts: Record<string, number>;
+    total: number;
+    verified_pct: number;
+    grade: string;
+    note: string;
+  };
+  warnings: string[];
+  is_hypothetical: boolean;
+};
+
+export type ScenarioRunOut = {
+  id: number;
+  study_id: number;
+  scenario_type: string;
+  scenario_name: string;
+  assumption_overrides: Record<string, number>;
+  source_assumption_values: Record<string, any>;
+  financial_result_snapshot: Record<string, any>;
+  calculation_version: string;
+};
+
+export function getSimulatorVariables(token: string, studyId: number) {
+  return authedRequest<SimulatorVariablesMeta>(
+    `/studies/${studyId}/scenarios/variables/meta`,
+    token,
+  );
+}
+
+export function runSimulation(
+  token: string,
+  studyId: number,
+  data: {
+    scenario_type?: string;
+    scenario_name?: string;
+    assumption_overrides: Record<string, number>;
+  },
+) {
+  return authedRequest<SimulationResult>(
+    `/studies/${studyId}/scenarios/simulate`,
+    token,
+    { method: "POST", body: JSON.stringify({ scenario_type: "CUSTOM", ...data }) },
+  );
+}
+
+export function listScenarios(token: string, studyId: number) {
+  return authedRequest<ScenarioRunOut[]>(
+    `/studies/${studyId}/scenarios/`,
+    token,
+  );
+}
+
+export function getScenarioCompare(token: string, studyId: number) {
+  return authedRequest<Record<string, ScenarioRunOut | null>>(
+    `/studies/${studyId}/scenarios/compare`,
+    token,
+  );
+}
 

@@ -55,8 +55,8 @@ const MODULES: ModuleCard[] = [
     nameEn: "Decision Simulator",
     descAr: "محاكاة سيناريوهات مالية متعددة للمقارنة",
     descEn: "Simulate multiple financial scenarios for comparison",
-    status: "beta",
-    href: null,
+    status: "active",
+    href: "/tools/simulator",
     testId: "module-simulator",
   },
   {

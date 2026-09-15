@@ -50,7 +50,7 @@ const NAV_GROUPS: NavGroup[] = [
     titleEn: "DECISIONS",
     items: [
       { href: "/tools/funding", icon: "₪", labelAr: "جاهزية التمويل", labelEn: "Funding Readiness", testId: "nav-funding", status: "active" },
-      { href: "#simulator", icon: "▦", labelAr: "محاكي القرارات", labelEn: "Decision Simulator", testId: "nav-simulator", status: "beta" },
+      { href: "/tools/simulator", icon: "▦", labelAr: "محاكي القرارات", labelEn: "Decision Simulator", testId: "nav-simulator", status: "active" },
       { href: "#monitoring", icon: "◉", labelAr: "المراقبة", labelEn: "Monitoring", testId: "nav-monitoring", status: "coming" },
     ],
   },
