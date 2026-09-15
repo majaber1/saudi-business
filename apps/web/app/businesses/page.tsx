@@ -11,6 +11,18 @@ interface StudySnapshot {
   project_id: number;
   phase: string;
   verdict?: string | null;
+  updated_at?: string;
+}
+
+function deduplicateStudies(studies: StudySnapshot[]): StudySnapshot[] {
+  const map = new Map<number, StudySnapshot>();
+  for (const s of studies) {
+    const existing = map.get(s.study_id);
+    if (!existing || (s.updated_at && (!existing.updated_at || s.updated_at > existing.updated_at))) {
+      map.set(s.study_id, s);
+    }
+  }
+  return Array.from(map.values());
 }
 
 function money(value: number, locale: "ar" | "en") {
@@ -68,7 +80,7 @@ export default function BusinessesPage() {
     ])
       .then(([p, s]) => {
         setProjects(p);
-        setStudies(s as StudySnapshot[]);
+        setStudies(deduplicateStudies(s as StudySnapshot[]));
       })
       .catch(() => {})
       .finally(() => setLoading(false));

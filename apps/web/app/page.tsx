@@ -15,6 +15,102 @@ interface StudySnapshot {
   updated_at?: string;
 }
 
+type ModuleStatus = "active" | "beta" | "coming";
+
+interface ModuleCard {
+  icon: string;
+  nameAr: string;
+  nameEn: string;
+  descAr: string;
+  descEn: string;
+  status: ModuleStatus;
+  href: string | null;
+  testId: string;
+}
+
+const MODULES: ModuleCard[] = [
+  {
+    icon: "🔬",
+    nameAr: "دراسة الجدوى بالذكاء الاصطناعي",
+    nameEn: "AI Feasibility",
+    descAr: "تحليل شامل لجدوى المشروع باستخدام الذكاء الاصطناعي",
+    descEn: "Comprehensive AI-powered project feasibility analysis",
+    status: "active",
+    href: "/businesses",
+    testId: "module-feasibility",
+  },
+  {
+    icon: "🔍",
+    nameAr: "ذكاء الأدلة",
+    nameEn: "Evidence Intelligence",
+    descAr: "تتبع الأدلة والمصادر وتقييم مستوى الثقة",
+    descEn: "Track evidence, sources, and confidence levels",
+    status: "active",
+    href: "/businesses",
+    testId: "module-evidence",
+  },
+  {
+    icon: "📊",
+    nameAr: "محاكي القرارات",
+    nameEn: "Decision Simulator",
+    descAr: "محاكاة سيناريوهات مالية متعددة للمقارنة",
+    descEn: "Simulate multiple financial scenarios for comparison",
+    status: "beta",
+    href: null,
+    testId: "module-simulator",
+  },
+  {
+    icon: "💰",
+    nameAr: "جاهزية التمويل",
+    nameEn: "Funding Readiness",
+    descAr: "تقييم جاهزية التمويل ومطابقة البرامج",
+    descEn: "Assess funding readiness and match programs",
+    status: "active",
+    href: "/tools/funding",
+    testId: "module-funding",
+  },
+  {
+    icon: "🎯",
+    nameAr: "رادار الفرص",
+    nameEn: "Opportunity Radar",
+    descAr: "اكتشف فرص استثمارية متوافقة مع ملفك",
+    descEn: "Discover investment opportunities matching your profile",
+    status: "active",
+    href: "/tools/opportunities",
+    testId: "module-opportunities",
+  },
+  {
+    icon: "📡",
+    nameAr: "المراقبة",
+    nameEn: "Monitoring",
+    descAr: "مراقبة مستمرة لمؤشرات الأداء والسوق",
+    descEn: "Continuous monitoring of performance and market indicators",
+    status: "coming",
+    href: null,
+    testId: "module-monitoring",
+  },
+  {
+    icon: "📄",
+    nameAr: "التقارير",
+    nameEn: "Reports",
+    descAr: "تقارير PDF و Word بالعربية والإنجليزية",
+    descEn: "PDF & Word reports in Arabic and English",
+    status: "active",
+    href: "/tools/reports",
+    testId: "module-reports",
+  },
+  {
+    icon: "⚡",
+    nameAr: "مركز الإجراءات",
+    nameEn: "Action Center",
+    descAr: "إدارة المهام والإجراءات المطلوبة",
+    descEn: "Manage tasks and required actions",
+    status: "coming",
+    href: null,
+    testId: "module-action-center",
+  },
+];
+
 function money(value: number, locale: "ar" | "en") {
   return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-SA", {
     style: "currency",
@@ -60,6 +156,27 @@ function verdictBadge(verdict: string | null | undefined, ar: boolean) {
   );
 }
 
+function deduplicateStudies(studies: StudySnapshot[]): StudySnapshot[] {
+  const map = new Map<number, StudySnapshot>();
+  for (const s of studies) {
+    const existing = map.get(s.study_id);
+    if (!existing || (s.updated_at && (!existing.updated_at || s.updated_at > existing.updated_at))) {
+      map.set(s.study_id, s);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function ModuleStatusBadge({ status, ar }: { status: ModuleStatus; ar: boolean }) {
+  if (status === "active") {
+    return <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">{ar ? "نشط" : "ACTIVE"}</span>;
+  }
+  if (status === "beta") {
+    return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">BETA</span>;
+  }
+  return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-ink-400">{ar ? "قريباً" : "COMING NEXT"}</span>;
+}
+
 export default function CommandCenterPage() {
   const { locale } = useLanguage();
   const ar = locale === "ar";
@@ -82,7 +199,7 @@ export default function CommandCenterPage() {
           listV2Studies(token).catch(() => []),
         ]);
         setProjects(projs);
-        setStudies(studs as StudySnapshot[]);
+        setStudies(deduplicateStudies(studs as StudySnapshot[]));
       } catch {
         // graceful fallback
       } finally {
@@ -114,6 +231,7 @@ export default function CommandCenterPage() {
         <div className="mx-auto max-w-lg text-center">
           <div className="mx-auto mb-6 grid h-16 w-16 place-items-center rounded-2xl bg-brand-50 text-3xl text-brand-600">⌘</div>
           <h1 className="text-2xl font-bold text-ink-900">{ar ? "مركز التحكم" : "Command Center"}</h1>
+          <p className="mt-2 text-sm text-ink-500">{ar ? "نظام تشغيل الأعمال بالذكاء الاصطناعي" : "AI Business Operating System"}</p>
           <p className="mt-3 text-sm text-ink-500">{ar ? "سجّل دخولك لعرض ملخص أعمالك" : "Sign in to view your business portfolio"}</p>
           <div className="mt-6 flex justify-center gap-3">
             <Link href="/login" className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700">
@@ -122,6 +240,29 @@ export default function CommandCenterPage() {
             <Link href="/register" className="rounded-xl border border-slate-200 px-6 py-3 text-sm font-semibold text-ink-700 hover:border-brand-300">
               {ar ? "إنشاء حساب" : "Create account"}
             </Link>
+          </div>
+
+          {/* Module grid — discoverable even when signed out */}
+          <div className="mt-12 text-start">
+            <h2 className="mb-4 text-base font-bold text-ink-900">{ar ? "قدرات نظام التشغيل" : "Platform Capabilities"}</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {MODULES.map((m) => (
+                <div
+                  key={m.testId}
+                  data-testid={m.testId}
+                  className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-start"
+                >
+                  <span className="mt-0.5 text-xl">{m.icon}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-ink-900">{ar ? m.nameAr : m.nameEn}</span>
+                      <ModuleStatusBadge status={m.status} ar={ar} />
+                    </div>
+                    <p className="mt-0.5 text-xs text-ink-500">{ar ? m.descAr : m.descEn}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -132,7 +273,7 @@ export default function CommandCenterPage() {
     <div className="px-4 py-6 lg:px-8" data-testid="command-center">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-ink-900">{ar ? "مركز التحكم" : "Command Center"}</h1>
-        <p className="mt-1 text-sm text-ink-500">{ar ? "ملخص أعمالك ودراساتك" : "Your business portfolio at a glance"}</p>
+        <p className="mt-1 text-sm text-ink-500">{ar ? "نظام تشغيل الأعمال بالذكاء الاصطناعي" : "AI Business Operating System"}</p>
       </div>
 
       {/* KPI summary - real data only */}
@@ -155,6 +296,53 @@ export default function CommandCenterPage() {
           <p className="mt-2 text-2xl font-bold text-ink-900">
             {totalInvestment > 0 ? money(totalInvestment, locale as "ar" | "en") : "—"}
           </p>
+        </div>
+      </div>
+
+      {/* AI Business OS Module Grid */}
+      <div className="mb-8">
+        <h2 className="mb-4 text-lg font-bold text-ink-900">{ar ? "قدرات نظام التشغيل" : "Platform Capabilities"}</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="module-grid">
+          {MODULES.map((m) => {
+            const disabled = m.status === "coming" || !m.href;
+            const isBeta = m.status === "beta" && !m.href;
+
+            if (disabled || isBeta) {
+              return (
+                <div
+                  key={m.testId}
+                  data-testid={m.testId}
+                  className="flex flex-col rounded-2xl border border-slate-200 bg-white/60 p-5 opacity-70"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl">{m.icon}</span>
+                    <ModuleStatusBadge status={m.status} ar={ar} />
+                  </div>
+                  <h3 className="mt-3 text-sm font-bold text-ink-700">{ar ? m.nameAr : m.nameEn}</h3>
+                  <p className="mt-1 flex-1 text-xs text-ink-400">{ar ? m.descAr : m.descEn}</p>
+                </div>
+              );
+            }
+
+            return (
+              <Link
+                key={m.testId}
+                href={m.href!}
+                data-testid={m.testId}
+                className="group flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-card-hover"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl">{m.icon}</span>
+                  <ModuleStatusBadge status={m.status} ar={ar} />
+                </div>
+                <h3 className="mt-3 text-sm font-bold text-ink-900 group-hover:text-brand-700">{ar ? m.nameAr : m.nameEn}</h3>
+                <p className="mt-1 flex-1 text-xs text-ink-500">{ar ? m.descAr : m.descEn}</p>
+                <span className="mt-3 text-xs font-semibold text-brand-600 group-hover:text-brand-700">
+                  {ar ? "فتح ←" : "Open →"}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       </div>
 

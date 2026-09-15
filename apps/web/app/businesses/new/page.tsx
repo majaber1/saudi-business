@@ -4,9 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
-import { getToken } from "@/lib/api";
-
-const API_BASE = "/api/backend";
+import { getToken, createProject } from "@/lib/api";
 
 export default function NewBusinessPage() {
   const { locale } = useLanguage();
@@ -34,25 +32,11 @@ export default function NewBusinessPage() {
     setError("");
 
     try {
-      const res = await fetch(`${API_BASE}/api/projects`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: name.trim(),
-          industry: industry.trim() || undefined,
-          investment: investment ? Number(investment) : undefined,
-        }),
+      const project = await createProject(token, {
+        name: name.trim(),
+        industry: industry.trim() || "other",
+        investment: investment ? Number(investment) : 0,
       });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `HTTP ${res.status}`);
-      }
-
-      const project = await res.json();
       router.push(`/businesses/${project.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : (ar ? "حدث خطأ" : "Something went wrong"));

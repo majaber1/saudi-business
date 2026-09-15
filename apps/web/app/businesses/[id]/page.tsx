@@ -17,6 +17,17 @@ interface V2Study {
   updated_at?: string;
 }
 
+function deduplicateV2Studies(studies: V2Study[]): V2Study[] {
+  const map = new Map<number, V2Study>();
+  for (const s of studies) {
+    const existing = map.get(s.study_id);
+    if (!existing || (s.updated_at && (!existing.updated_at || s.updated_at > existing.updated_at))) {
+      map.set(s.study_id, s);
+    }
+  }
+  return Array.from(map.values());
+}
+
 function money(value: number, locale: "ar" | "en") {
   return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-SA", {
     style: "currency",
@@ -106,7 +117,7 @@ export default function BusinessHomePage() {
         ]);
         setProject(p);
         setV1Studies(s1);
-        setV2Studies((s2raw as V2Study[]).filter((s) => s.project_id === Number(id)));
+        setV2Studies(deduplicateV2Studies((s2raw as V2Study[]).filter((s) => s.project_id === Number(id))));
       } catch {
         // graceful
       } finally {

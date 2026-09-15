@@ -93,11 +93,51 @@ def build_report_context(study, result, project):
     }
 
 
+_ARABIC_FONTS_REGISTERED = False
+
+
+def _register_arabic_fonts():
+    global _ARABIC_FONTS_REGISTERED
+    if _ARABIC_FONTS_REGISTERED:
+        return
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        pdfmetrics.registerFont(TTFont("FreeSerif", "/usr/share/fonts/truetype/freefont/FreeSerif.ttf"))
+        pdfmetrics.registerFont(TTFont("FreeSerifBold", "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf"))
+        _ARABIC_FONTS_REGISTERED = True
+    except Exception:
+        pass
+
+
+def _font(locale, bold=False):
+    if locale == "ar" and _ARABIC_FONTS_REGISTERED:
+        return "FreeSerifBold" if bold else "FreeSerif"
+    return "Helvetica-Bold" if bold else "Helvetica"
+
+
+def _trust_label(result):
+    """Determine trust level for financial results based on data quality."""
+    if not result:
+        return None
+    verdict = result.get("verdict")
+    roi = result.get("roi_percent")
+    irr = result.get("irr_percent")
+    if roi is not None and roi > 500:
+        return "UNVERIFIED_PROJECTION"
+    if irr is not None and irr > 200:
+        return "UNVERIFIED_PROJECTION"
+    if verdict in ("feasible", "not_feasible", "borderline"):
+        return "SYSTEM_ESTIMATE"
+    return "SYSTEM_ESTIMATE"
+
+
 def generate_pdf(ctx, locale="ar"):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas
 
+    _register_arabic_fonts()
     L = LABELS.get(locale, LABELS["en"])
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
@@ -106,8 +146,8 @@ def generate_pdf(ctx, locale="ar"):
     left = 20 * mm
     y = [height - 25 * mm]
 
-    def line(label, value, size=11):
-        c.setFont("Helvetica", size)
+    def line(label, value, size=11, bold=False):
+        c.setFont(_font(locale, bold), size)
         text = _dir_text(label, locale) + ": " + _dir_text(value, locale)
         if locale == "ar":
             c.drawRightString(right, y[0], text)
@@ -115,7 +155,7 @@ def generate_pdf(ctx, locale="ar"):
             c.drawString(left, y[0], text)
         y[0] -= 8 * mm
 
-    c.setFont("Helvetica-Bold", 18)
+    c.setFont(_font(locale, bold=True), 18)
     header = _dir_text(L["brand"], locale) + " - " + _dir_text(L["title"], locale)
     if locale == "ar":
         c.drawRightString(right, y[0], header)
@@ -123,7 +163,7 @@ def generate_pdf(ctx, locale="ar"):
         c.drawString(left, y[0], header)
     y[0] -= 14 * mm
 
-    c.setFont("Helvetica-Bold", 13)
+    c.setFont(_font(locale, bold=True), 13)
     if locale == "ar":
         c.drawRightString(right, y[0], _dir_text(ctx.get("title", ""), locale))
     else:
@@ -137,7 +177,7 @@ def generate_pdf(ctx, locale="ar"):
     line(L["status"], _fmt(ctx.get("status")))
     y[0] -= 4 * mm
 
-    c.setFont("Helvetica-Bold", 13)
+    c.setFont(_font(locale, bold=True), 13)
     if locale == "ar":
         c.drawRightString(right, y[0], _dir_text(L["results"], locale))
     else:
@@ -148,13 +188,34 @@ def generate_pdf(ctx, locale="ar"):
     if not result:
         line("", L["no_result"])
     else:
+        trust = _trust_label(result)
         line(L["roi"], _fmt(result.get("roi_percent")))
         line(L["payback"], _fmt(result.get("payback_years")))
         line(L["npv"], _fmt(result.get("npv")))
         line(L["irr"], _fmt(result.get("irr_percent")))
         line(L["verdict"], _fmt(result.get("verdict")))
+        y[0] -= 2 * mm
+        if trust == "UNVERIFIED_PROJECTION":
+            trust_text = (_dir_text("تنبيه: التوقعات المالية غير موثقة — لا تعتمد عليها كأساس استثماري", locale)
+                          if locale == "ar"
+                          else "Warning: Financial projections are unverified — not investment-grade")
+            c.setFont(_font(locale), 9)
+            if locale == "ar":
+                c.drawRightString(right, y[0], trust_text)
+            else:
+                c.drawString(left, y[0], trust_text)
+            y[0] -= 8 * mm
+        confidence_text = (_dir_text("مستوى الثقة: تقدير نظام — يتطلب مراجعة مستقلة", locale)
+                           if locale == "ar"
+                           else "Confidence: System estimate — requires independent review")
+        c.setFont(_font(locale), 8)
+        if locale == "ar":
+            c.drawRightString(right, y[0], confidence_text)
+        else:
+            c.drawString(left, y[0], confidence_text)
+        y[0] -= 8 * mm
 
-    c.setFont("Helvetica-Oblique", 8)
+    c.setFont(_font(locale), 8)
     footer = _dir_text(L["disclaimer"], locale)
     if locale == "ar":
         c.drawRightString(right, 18 * mm, footer)
@@ -204,11 +265,23 @@ def generate_docx(ctx, locale="ar"):
     if not result:
         para(L["no_result"])
     else:
+        trust = _trust_label(result)
         field(L["roi"], _fmt(result.get("roi_percent")))
         field(L["payback"], _fmt(result.get("payback_years")))
         field(L["npv"], _fmt(result.get("npv")))
         field(L["irr"], _fmt(result.get("irr_percent")))
         field(L["verdict"], _fmt(result.get("verdict")))
+        if trust == "UNVERIFIED_PROJECTION":
+            para("")
+            para("تنبيه: التوقعات المالية غير موثقة — لا تعتمد عليها كأساس استثماري"
+                 if locale == "ar"
+                 else "Warning: Financial projections are unverified — not investment-grade",
+                 size=9)
+        para("")
+        para("مستوى الثقة: تقدير نظام — يتطلب مراجعة مستقلة"
+             if locale == "ar"
+             else "Confidence: System estimate — requires independent review",
+             size=8)
 
     para("")
     para(L["disclaimer"], size=8)
