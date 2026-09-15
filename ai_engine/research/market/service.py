@@ -131,16 +131,38 @@ def evidence_items_from_research_claims(claims: list[Any]) -> list[dict[str, Any
                 item["unit"] = unit
                 # Map label/unit heuristics to metric ids used by bands.
                 # Order matters: salary/COGS/menu before generic SAR/month→rent.
-                low_label = label.lower()
-                low_stmt = stmt.lower()
-                if "rent_sar_per_m2" in low_label or "sar/m2/year" in unit.lower():
+                low_label = label.lower().strip()
+                # Prefer the explicit metric token after "observation:" — never let the
+                # evidence_class prefix (e.g. "salary_labor observation: staff_foh…")
+                # reclassify staffing/density/COGS rows as salary.
+                known_metrics = {
+                    "salary_monthly_sar",
+                    "staff_foh_guests_per",
+                    "staff_boh_share_of_foh",
+                    "staff_mgr_per_shift",
+                    "dining_m2_per_seat",
+                    "food_cost_pct",
+                    "menu_item_sar",
+                    "rent_monthly_sar",
+                    "rent_sar_per_m2_year",
+                    "store_area_m2",
+                    "equipment_item_sar",
+                    "opening_item_sar",
+                    "fitout_sar_per_m2",
+                    "fitout_total_sar",
+                    "seats_capacity",
+                    "operating_hours_day",
+                    "input_cost_sar",
+                }
+                if low_label in known_metrics:
+                    item["metric"] = low_label
+                elif "rent_sar_per_m2" in low_label or "sar/m2/year" in unit.lower():
                     item["metric"] = "rent_sar_per_m2_year"
                 elif any(
-                    k in low_label or k in low_stmt
+                    k in low_label
                     for k in (
                         "salary",
                         "wage",
-                        "labor",
                         "minimum_wage",
                         "statutory_minimum",
                         "راتب",
@@ -164,9 +186,11 @@ def evidence_items_from_research_claims(claims: list[Any]) -> list[dict[str, Any
                     item["metric"] = "fitout_sar_per_m2"
                 elif "fitout" in low_label:
                     item["metric"] = "fitout_total_sar"
-                elif "food_cost" in low_label or unit.lower() in {"percent", "%"}:
+                elif "food_cost" in low_label or (
+                    unit.lower() in {"percent", "%"} and "food" in low_label
+                ):
                     item["metric"] = "food_cost_pct"
-                elif unit.lower() in {"sar/month", "sar/mo"} and "rent" in low_stmt:
+                elif unit.lower() in {"sar/month", "sar/mo"} and "rent" in low_label:
                     item["metric"] = "rent_monthly_sar"
                 else:
                     # Use role_or_item / label as metric fallback for equipment package
@@ -175,6 +199,10 @@ def evidence_items_from_research_claims(claims: list[Any]) -> list[dict[str, Any
                         item["metric"] = "equipment_item_sar"
                     elif any(k in low_label for k in ("table", "chair", "pos", "register")):
                         item["metric"] = "opening_item_sar"
+                # Recover role/item when adapters emitted it into the statement.
+                rm = re.search(r"Role/item:\s*([^.\n]+)", stmt, re.I)
+                if rm and not item.get("role_or_item"):
+                    item["role_or_item"] = rm.group(1).strip()
         if item.get("metric") and item.get("value") is not None:
             item.setdefault("evidence_kind", "numeric_observation")
         items.append(item)

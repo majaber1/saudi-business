@@ -353,6 +353,8 @@ def bands_from_observations(
 
     # labor: role-based payroll from salary observations × sourced staffing ratios
     sal = by_metric.get("salary_monthly_sar") or []
+    # Drop staffing-ratio / density residue that was historically mis-tagged as salary.
+    sal = [o for o in sal if 800 <= float(o.value) <= 40_000]
     foh_ratio_obs = by_metric.get("staff_foh_guests_per") or []
     boh_share_obs = by_metric.get("staff_boh_share_of_foh") or []
     mgr_shift_obs = by_metric.get("staff_mgr_per_shift") or []

@@ -554,3 +554,38 @@ def test_strategy_includes_opecon_benchmark_seeds():
     assert "squareup.com" in joined
     assert "bravecalculator.com" in joined
     assert "explore-saudi.com" in joined or "rimthancoffee.com" in joined
+
+
+def test_salary_labor_prefix_does_not_reclassify_staffing():
+    """salary_labor observation statements must keep staff_* metrics (not salary)."""
+    from ai_engine.research.evidence.observations import NumericObservation
+    from ai_engine.research.market.service import evidence_items_from_research_claims
+    from ai_engine.research.schemas import ResearchClaim
+
+    staff = NumericObservation(
+        evidence_class="salary_labor",
+        metric="staff_foh_guests_per",
+        value=30.0,
+        unit="guests/foh_staff",
+        role_or_item="cafe_foh",
+        adapter_id="staffing_ratios",
+        source_url="https://shifty-app.com/staffing-calculator/",
+    )
+    barista = NumericObservation(
+        evidence_class="salary_labor",
+        metric="salary_monthly_sar",
+        value=3044.72,
+        unit="SAR/month",
+        role_or_item="barista",
+        adapter_id="salary",
+        source_url="https://www.payscale.com/research/SA/Job=Barista/Salary",
+    )
+    assert staff.to_evidence_item()["role_or_item"] == "cafe_foh"
+    claims = [
+        ResearchClaim(statement=o.to_evidence_item()["statement"], source_type="document", source_url=o.source_url, confidence=0.7)
+        for o in (staff, barista)
+    ]
+    items = evidence_items_from_research_claims(claims)
+    by = {i["metric"]: i for i in items}
+    assert "staff_foh_guests_per" in by
+    assert by["salary_monthly_sar"]["role_or_item"] == "barista"
