@@ -1,16 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Footer } from "@/components/Footer";
-import { Navbar } from "@/components/Navbar";
+import { AppSidebar, MobileSidebar } from "@/components/AppSidebar";
 import { useLanguage } from "@/components/LanguageProvider";
+import { AppTopBar } from "@/components/AppTopBar";
+import { Navbar } from "@/components/Navbar";
 
-/**
- * Routes that keep the full marketing footer (landing / public content).
- * Everything else uses a compact product shell (no marketing chrome).
- */
-const MARKETING_FOOTER_PREFIXES = [
-  "/", // exact match handled in isExactOrChild
+const MARKETING_PREFIXES = [
   "/pricing",
   "/help",
   "/about",
@@ -37,7 +35,7 @@ function isExactOrChild(pathname: string, prefix: string): boolean {
 function useShellMode(pathname: string | null): "marketing" | "auth" | "app" {
   const path = pathname || "/";
   if (AUTH_GATE_PREFIXES.some((p) => isExactOrChild(path, p))) return "auth";
-  if (MARKETING_FOOTER_PREFIXES.some((p) => isExactOrChild(path, p))) return "marketing";
+  if (MARKETING_PREFIXES.some((p) => isExactOrChild(path, p))) return "marketing";
   return "app";
 }
 
@@ -46,12 +44,12 @@ function CompactProductFooter() {
   const year = new Date().getFullYear();
   return (
     <footer className="border-t border-slate-200 bg-white" data-testid="product-footer">
-      <div className="container-page flex flex-wrap items-center justify-between gap-2 py-3 text-xs text-ink-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-3 text-xs text-ink-500">
         <p>
           © {year} {t.brand}
         </p>
         <p className="text-ink-400">
-          {locale === "ar" ? "مساحة عمل المنتج" : "Product workspace"}
+          {locale === "ar" ? "نظام أعمال ذكي" : "AI Business OS"}
         </p>
       </div>
     </footer>
@@ -70,31 +68,47 @@ function AuthMinimalFooter() {
   );
 }
 
-/**
- * Application chrome: marketing footer only on public pages;
- * authenticated product routes get a dense SaaS shell.
- */
 export function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const mode = useShellMode(pathname);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  if (mode === "app") {
+    return (
+      <div className="app-shell flex min-h-screen bg-[var(--sb-surface)]" data-shell="app" data-testid="app-chrome">
+        <div className="hidden lg:block">
+          <AppSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+        </div>
+        <MobileSidebar open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
+        <div
+          className={`flex min-h-screen flex-1 flex-col transition-[margin] duration-200 ${
+            sidebarCollapsed ? "lg:ms-[68px]" : "lg:ms-[240px]"
+          }`}
+        >
+          <AppTopBar onMobileMenuToggle={() => setMobileMenuOpen(!mobileMenuOpen)} />
+          <main className="flex-1 pb-4">{children}</main>
+          <CompactProductFooter />
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "auth") {
+    return (
+      <div className="auth-shell flex min-h-screen flex-col bg-slate-50" data-shell="auth" data-testid="app-chrome">
+        <Navbar dense={false} />
+        <main className="flex-1">{children}</main>
+        <AuthMinimalFooter />
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={
-        mode === "app"
-          ? "app-shell flex min-h-screen flex-col bg-slate-50"
-          : mode === "auth"
-            ? "auth-shell flex min-h-screen flex-col bg-slate-50"
-            : "marketing-shell flex min-h-screen flex-col"
-      }
-      data-shell={mode}
-      data-testid="app-chrome"
-    >
-      <Navbar dense={mode === "app"} />
-      <main className={mode === "app" ? "flex-1 pb-4" : "flex-1"}>{children}</main>
-      {mode === "marketing" ? <Footer /> : null}
-      {mode === "app" ? <CompactProductFooter /> : null}
-      {mode === "auth" ? <AuthMinimalFooter /> : null}
+    <div className="marketing-shell flex min-h-screen flex-col" data-shell="marketing" data-testid="app-chrome">
+      <Navbar dense={false} />
+      <main className="flex-1">{children}</main>
+      <Footer />
     </div>
   );
 }
