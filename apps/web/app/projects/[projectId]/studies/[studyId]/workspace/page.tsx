@@ -659,11 +659,11 @@ export default function StudyWorkspacePage() {
       ?.research_quality_observability ?? null);
 
   return (
-    <main className="container-page flex h-[calc(100vh-4rem)] flex-col py-4" data-testid="v2-study-workspace">
+    <main className="container-page flex min-h-0 flex-col py-4" data-testid="v2-study-workspace">
       <header className="mb-4 flex items-center justify-between">
         <div>
-          <Link href={`/projects`} className="text-sm text-brand-600 hover:underline">
-            {ar ? "← المشاريع" : "← Projects"}
+          <Link href={`/businesses`} className="text-sm text-brand-600 hover:underline">
+            {ar ? "← أعمالي" : "← My Businesses"}
           </Link>
           <h1 className="mt-1 text-xl font-bold text-ink-900">
             {ar ? "مساحة عمل الدراسة" : "Study Workspace"}
@@ -790,7 +790,7 @@ export default function StudyWorkspacePage() {
       {(claims.length > 0 || assumptions.length > 0 || financial || study?.verdict) && (
         <div
           ref={filledPanelsRef}
-          className="mb-3 grid max-h-56 gap-3 overflow-y-auto md:grid-cols-2 xl:grid-cols-3"
+          className="mb-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3"
           data-testid="ai-filled-panels"
         >
           {claims.length > 0 && (

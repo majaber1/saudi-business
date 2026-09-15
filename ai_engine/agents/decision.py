@@ -135,6 +135,29 @@ def run_decision(state: StudyState) -> StudyState:
             else "Decision model unavailable; a provisional verdict was prepared for the report."
         )
 
+    # Financial gate: if financial analysis was blocked due to missing material inputs,
+    # force DEFER regardless of AI verdict
+    fr = state.financial_results or {}
+    if fr.get("gate_status") == "BLOCKED":
+        missing = fr.get("missing_material_inputs", [])
+        state.verdict = "DEFER"
+        state.decision_rationale = (
+            f"Financial analysis blocked: material inputs missing ({', '.join(missing)}). "
+            f"Cannot issue investment-grade verdict. Status: NOT INVESTMENT-GRADE."
+        )
+        state.decision_conditions = [
+            f"Resolve missing financial input: {m}" for m in missing
+        ]
+        state.decision_risks = list(state.decision_risks or [])
+        state.decision_version += 1
+        state.phase = "REPORT_READY"
+        state.error = None
+        from langchain_core.messages import AIMessage as _AI
+        msg = state.decision_rationale
+        state.messages.append(_AI(content=msg))
+        state.next_action = "present_decision"
+        return state
+
     if decision_data:
         provisional_verdict = decision_data.get("verdict", "INSUFFICIENT_EVIDENCE")
         provisional_rationale = decision_data.get("rationale", "")

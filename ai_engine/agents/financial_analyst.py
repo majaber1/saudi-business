@@ -197,7 +197,7 @@ def _deterministic_extract(state: StudyState) -> dict | None:
     rides = first("monthly_trips", "monthly rides", "rides/mo", "rides per month", "رحلات")
     fixed_opex = first("monthly_fixed_opex", "fixed opex", "monthly fixed", "opex", "تشغيل", "opex_year1")
     variable = first("variable cost", "per ride", "تكلفة متغيرة")
-    discount = first("discount rate", "معدل الخصم") or 0.12
+    discount = first("discount_rate", "discount rate", "معدل الخصم") or 0.12
 
     # Professional / managed services model
     mrc = first("monthly_recurring_contracts", "monthly recurring", "mrc", "monthly_retainer")
@@ -251,6 +251,7 @@ def _deterministic_extract(state: StudyState) -> dict | None:
     mrr = first("mrr")
     pricing = first("pricing", "subscription")
     customers = first("target_customers", "customers")
+    growth_rate = first("growth_rate", "growth rate", "yoy_growth", "annual_growth")
 
     if take_rate is not None and take_rate > 1:
         take_rate = take_rate / 100.0
@@ -323,21 +324,34 @@ def _deterministic_extract(state: StudyState) -> dict | None:
         elif opex_annual is not None:
             annual_costs = [opex_annual, opex_annual * 1.05, opex_annual * 1.1]
     elif arr is not None:
-        annual_revenues = [arr, arr * 1.4, arr * 1.4 * 1.3]
+        g = (growth_rate / 100.0 if growth_rate is not None and growth_rate > 1 else growth_rate) if growth_rate else None
+        if g is not None:
+            annual_revenues = [arr * (1 + g) ** i for i in range(3)]
+            extract_notes.append(f"saas_growth_rate_applied={g:.2f}")
+        else:
+            annual_revenues = [arr, arr * 1.4, arr * 1.4 * 1.3]
+            extract_notes.append("saas_growth_rate_missing_default_40pct_30pct")
     elif mrr is not None:
-        annual_revenues = [mrr * 12, mrr * 12 * 1.4, mrr * 12 * 1.4 * 1.3]
+        g = (growth_rate / 100.0 if growth_rate is not None and growth_rate > 1 else growth_rate) if growth_rate else None
+        y1 = mrr * 12
+        if g is not None:
+            annual_revenues = [y1 * (1 + g) ** i for i in range(3)]
+        else:
+            annual_revenues = [y1, y1 * 1.4, y1 * 1.4 * 1.3]
     elif pricing is not None and customers is not None:
-        annual_revenues = [
-            pricing * customers,
-            pricing * customers * 1.5,
-            pricing * customers * 2.0,
-        ]
+        g = (growth_rate / 100.0 if growth_rate is not None and growth_rate > 1 else growth_rate) if growth_rate else None
+        y1 = pricing * customers
+        if g is not None:
+            annual_revenues = [y1 * (1 + g) ** i for i in range(3)]
+        else:
+            annual_revenues = [y1, y1 * 1.5, y1 * 2.0]
 
     if fixed_opex is not None and annual_costs is None:
         # monthly_fixed_opex vs annual opex_year1
         if "opex_year1" in vals or any("opex_year1" in k for k in vals):
-            base = fixed_opex
-            annual_costs = [base, base * 1.1, base * 1.2]
+            base_cost = fixed_opex
+            annual_costs = [base_cost, base_cost * 1.1, base_cost * 1.2]
+            extract_notes.append("opex_growth_default_10pct_20pct")
         else:
             var = variable or 0.0
             ride_count = rides or 0.0
@@ -350,6 +364,15 @@ def _deterministic_extract(state: StudyState) -> dict | None:
 
     if capex is None and annual_revenues is None and annual_costs is None:
         return None
+
+    # SaaS consistency: customers × monthly_price × 12 should ≈ ARR
+    if arr is not None and pricing is not None and customers is not None:
+        calculated_arr = pricing * customers * 12
+        if abs(calculated_arr - arr) / max(calculated_arr, arr, 1) > 0.15:
+            extract_notes.append(
+                f"saas_arr_consistency_conflict: stated_arr={arr:.0f} vs "
+                f"calculated(price×customers×12)={calculated_arr:.0f}"
+            )
 
     # Data center / other revenue models: never leave costs as silent None → [0,0,0].
     if annual_revenues is not None and annual_costs is None:
@@ -408,7 +431,10 @@ def _merge_extract(primary: dict | None, fallback: dict | None) -> dict | None:
 
 def _extract_financials_from_assumptions(state: StudyState) -> dict | None:
     lang = state.language
-    llm = get_llm("extraction")
+    try:
+        llm = get_llm("extraction")
+    except Exception:
+        llm = None
 
     context_parts = []
     if state.assumptions:
@@ -419,7 +445,7 @@ def _extract_financials_from_assumptions(state: StudyState) -> dict | None:
             context_parts.append(f"- {c.statement} ({c.source_type})")
 
     llm_extracted = None
-    if context_parts:
+    if context_parts and llm is not None:
         prompt = (EXTRACT_PROMPT_AR if lang == "ar" else EXTRACT_PROMPT_EN) + "\n\n" + "\n".join(context_parts)
         try:
             response = llm.invoke([SystemMessage(content=prompt)])
@@ -452,7 +478,10 @@ def _compute_scenario(capex: float, revenues: list, costs: list, discount_rate: 
 
 def run_financial_analysis(state: StudyState) -> StudyState:
     lang = state.language
-    llm = get_llm("decision")
+    try:
+        llm = get_llm("decision")
+    except Exception:
+        llm = None
 
     extracted = _extract_financials_from_assumptions(state)
 
@@ -467,6 +496,47 @@ def run_financial_analysis(state: StudyState) -> StudyState:
     discount_rate = extracted.get("discount_rate") or 0.12
     extract_notes = list(extracted.get("extract_notes") or [])
     assumption_values = dict(extracted.get("assumption_values") or {})
+
+    # FINANCIAL GATE: block investment-grade analysis when material inputs missing
+    has_revenue = any(r > 0 for r in revenues) if revenues else False
+    capex_zero = (capex is None or float(capex) == 0)
+    has_costs = any(c > 0 for c in costs) if costs else False
+    missing_material = []
+    if capex_zero and has_revenue:
+        missing_material.append("capex")
+    if has_revenue and not has_costs:
+        missing_material.append("opex")
+    if not has_revenue and not capex_zero:
+        missing_material.append("revenue")
+    if missing_material:
+        gate_msg_en = (
+            f"FINANCIAL GATE BLOCK: Cannot produce investment-grade analysis. "
+            f"Material inputs missing: {', '.join(missing_material)}. "
+            f"CAPEX={capex}, Revenue={revenues[0] if revenues else 0}, OPEX={costs[0] if costs else 0}. "
+            f"Status: PARTIAL / NOT INVESTMENT-GRADE. Resolve missing inputs before financial verdict."
+        )
+        gate_msg_ar = (
+            f"بوابة مالية: لا يمكن إنتاج تحليل بدرجة استثمارية. "
+            f"مدخلات جوهرية ناقصة: {', '.join(missing_material)}. "
+            f"الحالة: جزئي / غير بدرجة استثمارية. أكمل المدخلات الناقصة قبل الحكم المالي."
+        )
+        state.financial_results = {
+            "analysis_complete": False,
+            "investment_grade": False,
+            "gate_status": "BLOCKED",
+            "missing_material_inputs": missing_material,
+            "capex": float(capex),
+            "revenue_year1": revenues[0] if revenues else 0,
+            "opex_year1": costs[0] if costs else 0,
+            "warnings": [gate_msg_en if lang != "ar" else gate_msg_ar],
+            "verdict_override": "DEFER",
+        }
+        state.phase = "ANALYZED"
+        state.error = None
+        from langchain_core.messages import AIMessage as _AI
+        state.messages.append(_AI(content=gate_msg_ar if lang == "ar" else gate_msg_en))
+        state.next_action = "review_financials"
+        return state
 
     # Normalize lengths: keep the full provided horizon (do not truncate longer
     # series — silent 3-year cuts produce incorrect NPV/IRR/payback). Pad short

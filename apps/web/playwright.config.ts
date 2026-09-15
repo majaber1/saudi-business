@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import path from "path";
 
 const repoRoot = path.resolve(__dirname, "../..");
+const reuseServers = process.env.PLAYWRIGHT_REUSE_SERVERS === "1";
 const frontendPort = Number(process.env.PLAYWRIGHT_FRONTEND_PORT || 3100);
 const backendPort = Number(process.env.PLAYWRIGHT_BACKEND_PORT || 8100);
 const frontendUrl = `http://127.0.0.1:${frontendPort}`;
@@ -27,7 +28,7 @@ export default defineConfig({
       url: `${backendUrl}/health`,
       cwd: repoRoot,
       timeout: 120000,
-      reuseExistingServer: false,
+      reuseExistingServer: reuseServers,
       env: {
         ...process.env,
         DATABASE_URL: "sqlite:///./playwright_wave65.db",
@@ -40,7 +41,7 @@ export default defineConfig({
       command: `npx next start --port ${frontendPort} --hostname 127.0.0.1`,
       url: frontendUrl,
       timeout: 120000,
-      reuseExistingServer: false,
+      reuseExistingServer: reuseServers,
       env: {
         ...process.env,
         BACKEND_API_URL: backendUrl,
