@@ -135,19 +135,37 @@ def _base_assumption_values(db, models, study_id: int) -> dict[str, dict]:
 def _compute_scenario(values: dict[str, float]) -> dict:
     """Run deterministic financial engine on a set of assumption values."""
     investment, cash_flows, discount_rate = project_cash_flows(values)
-    res = evaluate_feasibility(investment, cash_flows, discount_rate)
-    sens = sensitivity_analysis(investment, cash_flows, discount_rate)
+    try:
+        res = evaluate_feasibility(investment, cash_flows, discount_rate)
+        irr_value = res.irr_value
+        roi_percent = res.roi_percent
+        payback_years = res.payback_years
+        verdict = res.verdict
+        npv_value = res.npv_value
+    except (OverflowError, ValueError):
+        from calculator import npv as _npv, roi
+        npv_value = _npv(discount_rate, [-investment] + cash_flows)
+        irr_value = None
+        total_cf = sum(cash_flows)
+        roi_percent = roi(investment, total_cf) if investment else None
+        avg_cf = total_cf / len(cash_flows) if cash_flows else 0
+        payback_years = (investment / avg_cf) if avg_cf > 0 else None
+        verdict = "not_feasible" if npv_value < 0 else "borderline"
+    try:
+        sens = sensitivity_analysis(investment, cash_flows, discount_rate)
+    except (OverflowError, ValueError):
+        sens = []
     annual_revenue = values.get("revenue_year1", 0)
     annual_opex = values.get("opex_annual", 0)
     return {
         "investment": investment,
         "annual_cash_flows": cash_flows,
         "discount_rate": discount_rate,
-        "roi_percent": res.roi_percent,
-        "npv": res.npv_value,
-        "irr": res.irr_value,
-        "payback_years": res.payback_years,
-        "verdict": res.verdict,
+        "roi_percent": roi_percent,
+        "npv": npv_value,
+        "irr": irr_value,
+        "payback_years": payback_years,
+        "verdict": verdict,
         "sensitivity": sens,
         "annual_revenue": annual_revenue,
         "annual_opex": annual_opex,

@@ -266,51 +266,59 @@ def test_get_nonexistent_scenario_404():
 
 # --- Tabea validation scenarios ---
 
-def test_tabea_scenario_a_price_increase():
-    """Scenario A: revenue +10% — NPV should improve."""
-    headers = _headers("tabea_a")
-    study = _study(headers, archetype="fnb")
-    _setup_baseline(headers, study["id"], capex=850000, revenue=720000, opex=480000)
+def test_tabea_ai_scenario_a_subscription_price_increase():
+    """Scenario A: subscription revenue +10% — NPV should improve. SaaS baseline."""
+    headers = _headers("tabea_ai_a")
+    study = _study(headers, archetype="saas_digital")
+    _setup_baseline(headers, study["id"], capex=350000, revenue=240000, opex=180000)
 
     resp = client.post(
         f"/studies/{study['id']}/scenarios/simulate",
         headers=headers,
-        json={"scenario_name": "Price +10%", "assumption_overrides": {"revenue_year1": 792000}},
+        json={"scenario_name": "Subscription Price +10%", "assumption_overrides": {"revenue_year1": 264000}},
     ).json()
 
     assert resp["delta"]["npv"]["scenario"] > resp["delta"]["npv"]["baseline"]
     assert resp["is_hypothetical"] is True
+    assert resp["scenario"]["source_assumption_values"]["revenue_year1"]["origin"] == "SCENARIO_ASSUMPTION"
 
 
-def test_tabea_scenario_b_demand_decrease():
-    """Scenario B: revenue -20% — NPV should worsen."""
-    headers = _headers("tabea_b")
-    study = _study(headers, archetype="fnb")
-    _setup_baseline(headers, study["id"], capex=850000, revenue=720000, opex=480000)
+def test_tabea_ai_scenario_b_customer_volume_decrease():
+    """Scenario B: customer volume -20% via revenue reduction. SaaS baseline."""
+    headers = _headers("tabea_ai_b")
+    study = _study(headers, archetype="saas_digital")
+    _setup_baseline(headers, study["id"], capex=350000, revenue=240000, opex=180000)
 
     resp = client.post(
         f"/studies/{study['id']}/scenarios/simulate",
         headers=headers,
-        json={"scenario_name": "Demand -20%", "assumption_overrides": {"revenue_year1": 576000}},
+        json={"scenario_name": "Customer Volume -20%", "assumption_overrides": {"revenue_year1": 192000, "growth_rate": 0.0}},
     ).json()
 
     assert resp["delta"]["npv"]["scenario"] < resp["delta"]["npv"]["baseline"]
+    assert resp["scenario"]["source_assumption_values"]["growth_rate"]["origin"] == "SCENARIO_ASSUMPTION"
+    assert resp["scenario"]["source_assumption_values"]["revenue_year1"]["origin"] == "SCENARIO_ASSUMPTION"
 
 
-def test_tabea_scenario_c_cac_and_churn():
-    """Scenario C: opex +25% (CAC+churn proxy) — financial stress test."""
-    headers = _headers("tabea_c")
-    study = _study(headers, archetype="fnb")
-    _setup_baseline(headers, study["id"], capex=850000, revenue=720000, opex=480000)
+def test_tabea_ai_scenario_c_cac_churn_deterioration():
+    """Scenario C: CAC +25% (opex increase) + churn (growth stall). SaaS baseline."""
+    headers = _headers("tabea_ai_c")
+    study = _study(headers, archetype="saas_digital")
+    _setup_baseline(headers, study["id"], capex=350000, revenue=240000, opex=180000)
 
     resp = client.post(
         f"/studies/{study['id']}/scenarios/simulate",
         headers=headers,
-        json={"scenario_name": "CAC +25% + Churn", "assumption_overrides": {"opex_annual": 600000}},
+        json={
+            "scenario_name": "CAC +25% + Churn Deterioration",
+            "assumption_overrides": {"opex_annual": 225000, "growth_rate": 0.0},
+        },
     ).json()
 
     assert resp["delta"]["operating_result"]["scenario"] < resp["delta"]["operating_result"]["baseline"]
     assert resp["trust"]["grade"] in ("INVESTMENT_GRADE", "MODERATE_TRUST", "NOT_INVESTMENT_GRADE")
+    assert resp["scenario"]["source_assumption_values"]["opex_annual"]["origin"] == "SCENARIO_ASSUMPTION"
+    assert resp["scenario"]["source_assumption_values"]["growth_rate"]["origin"] == "SCENARIO_ASSUMPTION"
 
 
 def test_simulate_ownership_isolation():

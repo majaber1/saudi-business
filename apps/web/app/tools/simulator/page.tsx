@@ -28,11 +28,37 @@ const VERDICT_COLORS: Record<string, string> = {
   not_feasible: "bg-red-100 text-red-800",
 };
 
+const VERDICT_LABELS: Record<string, { en: string; ar: string }> = {
+  feasible: { en: "Feasible", ar: "مجدي" },
+  borderline: { en: "Borderline", ar: "حدّي" },
+  not_feasible: { en: "Not Feasible", ar: "غير مجدي" },
+};
+
 const DECISION_COLORS: Record<string, string> = {
   GO: "bg-emerald-100 text-emerald-800",
   CONDITIONAL_GO: "bg-amber-100 text-amber-800",
   NO_GO: "bg-red-100 text-red-800",
   INSUFFICIENT_EVIDENCE: "bg-slate-100 text-slate-800",
+};
+
+const DECISION_LABELS: Record<string, { en: string; ar: string }> = {
+  GO: { en: "Go", ar: "انطلق" },
+  CONDITIONAL_GO: { en: "Conditional Go", ar: "انطلق بشروط" },
+  NO_GO: { en: "No Go", ar: "لا تنطلق" },
+  INSUFFICIENT_EVIDENCE: { en: "Insufficient Evidence", ar: "أدلة غير كافية" },
+};
+
+const TRUST_LABELS: Record<string, { en: string; ar: string }> = {
+  INVESTMENT_GRADE: { en: "Investment Grade", ar: "درجة استثمارية" },
+  MODERATE_TRUST: { en: "Moderate Trust", ar: "ثقة متوسطة" },
+  NOT_INVESTMENT_GRADE: { en: "Not Investment Grade", ar: "غير استثماري" },
+};
+
+const EVIDENCE_LABELS: Record<string, { en: string; ar: string }> = {
+  VERIFIED_FACT: { en: "Verified", ar: "موثق" },
+  SYSTEM_ESTIMATE: { en: "Estimate", ar: "تقدير" },
+  USER_ASSUMPTION: { en: "Assumption", ar: "افتراض" },
+  UNKNOWN: { en: "Unknown", ar: "غير محدد" },
 };
 
 function fmtSAR(v: number | null | undefined, locale: string): string {
@@ -400,7 +426,7 @@ export default function SimulatorPage() {
                       </div>
                       <div className="mt-2 flex items-center gap-2 text-xs">
                         <span className={`rounded px-1.5 py-0.5 font-bold ${VERDICT_COLORS[s.financial_result_snapshot?.verdict] || "bg-slate-100 text-slate-700"}`}>
-                          {s.financial_result_snapshot?.verdict || "—"}
+                          {VERDICT_LABELS[s.financial_result_snapshot?.verdict]?.[ar ? "ar" : "en"] || s.financial_result_snapshot?.verdict || "—"}
                         </span>
                         <span className="text-ink-500">NPV: {fmtSAR(s.financial_result_snapshot?.npv, locale)}</span>
                       </div>
@@ -467,13 +493,13 @@ export default function SimulatorPage() {
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <p className="text-xs font-bold uppercase text-ink-500">{ar ? "الحكم الأساسي" : "Baseline Verdict"}</p>
                 <span className={`mt-2 inline-block rounded px-2 py-1 text-sm font-bold ${VERDICT_COLORS[result.baseline?.verdict] || "bg-slate-100"}`}>
-                  {result.baseline?.verdict || "—"}
+                  {VERDICT_LABELS[result.baseline?.verdict]?.[ar ? "ar" : "en"] || result.baseline?.verdict || "—"}
                 </span>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <p className="text-xs font-bold uppercase text-ink-500">{ar ? "حكم السيناريو" : "Scenario Verdict"}</p>
                 <span className={`mt-2 inline-block rounded px-2 py-1 text-sm font-bold ${VERDICT_COLORS[result.scenario.financial_result_snapshot?.verdict] || "bg-slate-100"}`}>
-                  {result.scenario.financial_result_snapshot?.verdict || "—"}
+                  {VERDICT_LABELS[result.scenario.financial_result_snapshot?.verdict]?.[ar ? "ar" : "en"] || result.scenario.financial_result_snapshot?.verdict || "—"}
                 </span>
               </div>
             </div>
@@ -485,14 +511,14 @@ export default function SimulatorPage() {
                 <div>
                   <p className="text-xs text-ink-500">{ar ? "القرار الأساسي" : "Baseline Decision"}</p>
                   <span className={`mt-1 inline-block rounded px-2 py-1 text-sm font-bold ${DECISION_COLORS[result.decision_impact.baseline_decision] || "bg-slate-100"}`}>
-                    {result.decision_impact.baseline_decision}
+                    {DECISION_LABELS[result.decision_impact.baseline_decision]?.[ar ? "ar" : "en"] || result.decision_impact.baseline_decision}
                   </span>
                 </div>
                 <span className="text-ink-400">→</span>
                 <div>
                   <p className="text-xs text-ink-500">{ar ? "قرار السيناريو" : "Scenario Decision"}</p>
                   <span className={`mt-1 inline-block rounded px-2 py-1 text-sm font-bold ${DECISION_COLORS[result.decision_impact.scenario_decision] || "bg-slate-100"}`}>
-                    {result.decision_impact.scenario_decision}
+                    {DECISION_LABELS[result.decision_impact.scenario_decision]?.[ar ? "ar" : "en"] || result.decision_impact.scenario_decision}
                   </span>
                 </div>
               </div>
@@ -531,7 +557,7 @@ export default function SimulatorPage() {
                 <span className={`rounded px-2 py-1 text-sm font-bold ${
                   result.trust.grade === "INVESTMENT_GRADE" ? "bg-emerald-100 text-emerald-800" : result.trust.grade === "MODERATE_TRUST" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800"
                 }`}>
-                  {result.trust.grade}
+                  {TRUST_LABELS[result.trust.grade]?.[ar ? "ar" : "en"] || result.trust.grade}
                 </span>
                 <span className="text-sm text-ink-500">{result.trust.verified_pct}% {ar ? "تحقق" : "verified"}</span>
               </div>
@@ -539,7 +565,7 @@ export default function SimulatorPage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 {Object.entries(result.trust.counts).map(([cls, count]) => (
                   <span key={cls} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-ink-600">
-                    {cls}: {count}
+                    {EVIDENCE_LABELS[cls]?.[ar ? "ar" : "en"] || cls}: {count}
                   </span>
                 ))}
               </div>
@@ -567,7 +593,7 @@ export default function SimulatorPage() {
                           <td className="px-3 py-2">{row.irr_percent != null ? `${row.irr_percent.toFixed(1)}%` : "—"}</td>
                           <td className="px-3 py-2">
                             <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${VERDICT_COLORS[row.verdict] || "bg-slate-100"}`}>
-                              {row.verdict}
+                              {VERDICT_LABELS[row.verdict]?.[ar ? "ar" : "en"] || row.verdict}
                             </span>
                           </td>
                         </tr>
@@ -635,7 +661,7 @@ export default function SimulatorPage() {
                           return (
                             <td key={s.id} className="px-3 py-2 text-ink-600">
                               {key === "verdict" ? (
-                                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${VERDICT_COLORS[val] || "bg-slate-100"}`}>{val || "—"}</span>
+                                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${VERDICT_COLORS[val] || "bg-slate-100"}`}>{VERDICT_LABELS[val]?.[ar ? "ar" : "en"] || val || "—"}</span>
                               ) : currency ? (
                                 fmtSAR(val, locale)
                               ) : key === "irr" ? (
