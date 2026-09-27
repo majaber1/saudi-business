@@ -1,14 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Inovasys">
   <title>Inovasys mark</title>
-  <defs>
-    <style>
-      .bar { fill: #0F766E; }
-      .tip { fill: #C2673A; }
-    </style>
-  </defs>
-  <!-- Ascending systems ? forward innovation -->
-  <rect class="bar" x="8" y="38" width="11" height="16" rx="3.5"/>
-  <rect class="bar" x="23" y="26" width="11" height="28" rx="3.5"/>
-  <rect class="bar" x="38" y="12" width="11" height="42" rx="3.5"/>
-  <path class="tip" d="M51.5 20 L60 32 L51.5 44 Z"/>
+  <!-- Ascending systems bars -->
+  <path fill="#0F766E" d="M6 44c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4v12c0 2.2-1.8 4-4 4h-4c-2.2 0-4-1.8-4-4V44z"/>
+  <path fill="#0F766E" d="M20 32c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4v24c0 2.2-1.8 4-4 4h-4c-2.2 0-4-1.8-4-4V32z"/>
+  <path fill="#0F766E" d="M34 18c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4v38c0 2.2-1.8 4-4 4h-4c-2.2 0-4-1.8-4-4V18z"/>
+  <!-- Forward innovation chevron -->
+  <path fill="#0F766E" d="M46 20 L54 32 L46 44 V36.5 L50 32 L46 27.5 Z"/>
+  <path fill="#C2673A" d="M52 26 L60 32 L52 38 Z"/>
 </svg>

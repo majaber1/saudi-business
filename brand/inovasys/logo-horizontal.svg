@@ -1,10 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 72" role="img" aria-label="Inovasys">
   <title>Inovasys</title>
-  <g transform="translate(2,4)">
-    <rect x="4" y="34" width="11" height="16" rx="3.5" fill="#0F766E"/>
-    <rect x="19" y="22" width="11" height="28" rx="3.5" fill="#0F766E"/>
-    <rect x="34" y="8" width="11" height="42" rx="3.5" fill="#0F766E"/>
-    <path d="M47.5 16 L56 28 L47.5 40 Z" fill="#C2673A"/>
+  <g transform="translate(2,4) scale(0.95)">
+    <path fill="#0F766E" d="M6 44c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4v12c0 2.2-1.8 4-4 4h-4c-2.2 0-4-1.8-4-4V44z"/>
+    <path fill="#0F766E" d="M20 32c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4v24c0 2.2-1.8 4-4 4h-4c-2.2 0-4-1.8-4-4V32z"/>
+    <path fill="#0F766E" d="M34 18c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4v38c0 2.2-1.8 4-4 4h-4c-2.2 0-4-1.8-4-4V18z"/>
+    <path fill="#0F766E" d="M46 20 L54 32 L46 44 V36.5 L50 32 L46 27.5 Z"/>
+    <path fill="#C2673A" d="M52 26 L60 32 L52 38 Z"/>
   </g>
   <text
     x="74"
