@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inovasys — Logo kit</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --teal: #0F766E;
+      --copper: #C2673A;
+      --ink: #0F172A;
+      --paper: #F4F7F6;
+      --line: #D7E2DF;
+      --teal-bright: #2DD4BF;
+      --copper-soft: #E8A87C;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Source Sans 3", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 80% 50% at 10% -10%, rgba(15, 118, 110, 0.12), transparent 55%),
+        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(194, 103, 58, 0.08), transparent 50%),
+        var(--paper);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    header {
+      padding: 48px 24px 24px;
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .brand-row img, .brand-row object { height: 56px; width: auto; }
+    h1 {
+      font-family: Montserrat, sans-serif;
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+      letter-spacing: -0.03em;
+      font-weight: 700;
+    }
+    h1 span { color: var(--teal); }
+    .lede { color: #475569; max-width: 52ch; font-size: 1.05rem; }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 8px 24px 64px;
+      display: grid;
+      gap: 20px;
+    }
+    section {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .label {
+      font-family: Montserrat, sans-serif;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: #64748B;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      background: #FAFCFB;
+    }
+    .panel {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 180px;
+      padding: 36px 24px;
+    }
+    .panel.dark {
+      background: #0F172A;
+    }
+    .panel.teal {
+      background: linear-gradient(135deg, #0F766E 0%, #115E59 100%);
+    }
+    .panel img, .panel object {
+      max-width: min(420px, 90%);
+      height: auto;
+    }
+    .panel .icon-lg {
+      width: 96px;
+      height: 96px;
+    }
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      padding: 20px;
+    }
+    .swatch {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }
+    .swatch .chip { height: 72px; }
+    .swatch p {
+      padding: 10px 12px;
+      font-size: 0.85rem;
+    }
+    .swatch code {
+      display: block;
+      color: #64748B;
+      font-size: 0.78rem;
+      margin-top: 2px;
+    }
+    footer {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 0 24px 48px;
+      color: #64748B;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand-row">
+      <img src="./logo-icon.svg" width="56" height="56" alt="Inovasys mark" />
+      <h1>Inova<span>sys</span></h1>
+    </div>
+    <p class="lede">
+      Logo kit for Inovasys — innovation + systems. Ascending bars mark growth;
+      the copper tip marks forward motion.
+    </p>
+  </header>
+
+  <main>
+    <section>
+      <div class="label">Primary lockup — light</div>
+      <div class="panel">
+        <img src="./logo-horizontal.svg" alt="Inovasys horizontal logo" />
+      </div>
+    </section>
+
+    <section>
+      <div class="label">Lockup — dark background</div>
+      <div class="panel dark">
+        <img src="./logo-light.svg" alt="Inovasys logo on dark" />
+      </div>
+    </section>
+
+    <section>
+      <div class="label">Icon mark</div>
+      <div class="panel">
+        <img class="icon-lg" src="./logo-icon.svg" alt="Inovasys icon" />
+      </div>
+    </section>
+
+    <section>
+      <div class="label">Icon on brand teal</div>
+      <div class="panel teal">
+        <img class="icon-lg" src="./logo-icon-mono.svg" style="color:#fff; filter: brightness(0) invert(1);" alt="Inovasys mono icon" />
+      </div>
+    </section>
+
+    <section>
+      <div class="label">Raster previews</div>
+      <div class="panel" style="flex-direction:column; gap:28px;">
+        <img src="./inovasys-logo-primary.png" alt="Inovasys primary raster" style="max-height:120px;" />
+        <img src="./inovasys-logo-icon.png" alt="Inovasys icon raster" style="max-height:120px;" />
+        <img src="./inovasys-logo-dark-bg.png" alt="Inovasys dark raster" style="max-height:140px; border-radius:8px;" />
+      </div>
+    </section>
+
+    <section>
+      <div class="label">Color system</div>
+      <div class="swatches">
+        <div class="swatch">
+          <div class="chip" style="background:#0F766E;"></div>
+          <p>Deep teal<code>#0F766E</code></p>
+        </div>
+        <div class="swatch">
+          <div class="chip" style="background:#C2673A;"></div>
+          <p>Copper<code>#C2673A</code></p>
+        </div>
+        <div class="swatch">
+          <div class="chip" style="background:#0F172A;"></div>
+          <p>Ink<code>#0F172A</code></p>
+        </div>
+        <div class="swatch">
+          <div class="chip" style="background:#2DD4BF;"></div>
+          <p>Bright teal<code>#2DD4BF</code></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Assets live in <code>brand/inovasys/</code>. See README for usage rules.
+  </footer>
+</body>
+</html>

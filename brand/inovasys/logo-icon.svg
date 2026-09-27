@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Inovasys">
+  <title>Inovasys mark</title>
+  <defs>
+    <style>
+      .bar { fill: #0F766E; }
+      .tip { fill: #C2673A; }
+    </style>
+  </defs>
+  <!-- Ascending systems ? forward innovation -->
+  <rect class="bar" x="8" y="38" width="11" height="16" rx="3.5"/>
+  <rect class="bar" x="23" y="26" width="11" height="28" rx="3.5"/>
+  <rect class="bar" x="38" y="12" width="11" height="42" rx="3.5"/>
+  <path class="tip" d="M51.5 20 L60 32 L51.5 44 Z"/>
+</svg>
