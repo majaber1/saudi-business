@@ -13,7 +13,7 @@ comma-separated). ``resolve_cors`` enforces the browser/security invariant that
 a wildcard origin ("*") is NEVER combined with credentialed requests, and that
 production never serves a wildcard at all.
 """
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -77,7 +77,9 @@ class Settings(BaseSettings):
     # Raw configured origins. Accepts a JSON list (["https://a"]) or a plain
     # comma-separated string (https://a,https://b). Empty by default so
     # development gets safe localhost defaults and production must be explicit.
-    cors_origins: List[str] = []
+    # Union with str stops pydantic-settings from JSON-decoding the env value
+    # before _split_cors runs (a plain or comma-separated URL would crash).
+    cors_origins: Union[List[str], str] = []
 
     @field_validator("cors_origins", mode="before")
     @classmethod

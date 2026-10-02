@@ -95,7 +95,10 @@ function DeltaCell({ d, locale, isCurrency }: { d: { baseline: any; scenario: an
 export default function SimulatorPage() {
   const { locale } = useLanguage();
   const ar = locale === "ar";
-  const token = getToken();
+  // Read after mount: localStorage is client-only, reading it during render
+  // makes the server HTML (signed-out) mismatch the client (React #418).
+  const [token, setToken] = useState<string | null>(null);
+  useEffect(() => { setToken(getToken()); }, []);
 
   const [phase, setPhase] = useState<Phase>("select");
   const [projects, setProjects] = useState<Project[]>([]);
@@ -117,24 +120,6 @@ export default function SimulatorPage() {
       .then(setProjects)
       .catch((e) => setError(e.message));
   }, [token]);
-
-  const handleSelectProject = useCallback(
-    async (p: Project) => {
-      if (!token) return;
-      setSelectedProject(p);
-      setError("");
-      try {
-        const ss = await listStudies(token, p.id);
-        setStudies(ss);
-        if (ss.length === 1) {
-          handleSelectStudy(ss[0]);
-        }
-      } catch (e: any) {
-        setError(e.message);
-      }
-    },
-    [token],
-  );
 
   const handleSelectStudy = useCallback(
     async (s: Study) => {
@@ -160,6 +145,24 @@ export default function SimulatorPage() {
       }
     },
     [token],
+  );
+
+  const handleSelectProject = useCallback(
+    async (p: Project) => {
+      if (!token) return;
+      setSelectedProject(p);
+      setError("");
+      try {
+        const ss = await listStudies(token, p.id);
+        setStudies(ss);
+        if (ss.length === 1) {
+          handleSelectStudy(ss[0]);
+        }
+      } catch (e: any) {
+        setError(e.message);
+      }
+    },
+    [token, handleSelectStudy],
   );
 
   const handleRunSimulation = useCallback(async () => {

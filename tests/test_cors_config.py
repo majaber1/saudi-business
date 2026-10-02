@@ -74,6 +74,18 @@ def test_settings_parses_json_list_cors_origins():
     assert s.cors_origins == ["https://a.example.com", "https://b.example.com"]
 
 
+
+def test_settings_parses_cors_origins_from_environment(monkeypatch):
+    # The env path is JSON-decoded by pydantic-settings for list fields; plain
+    # and comma-separated values (as documented in .env.example) must not crash.
+    for raw, expected in (
+        ("https://a.example.com", ["https://a.example.com"]),
+        ("https://a.example.com,https://b.example.com", ["https://a.example.com", "https://b.example.com"]),
+        ('["https://a.example.com"]', ["https://a.example.com"]),
+    ):
+        monkeypatch.setenv("CORS_ORIGINS", raw)
+        assert Settings().cors_origins == expected
+
 def test_settings_cors_property_is_safe_in_production():
     s = Settings(cors_origins="*", environment="production")
     origins, creds = s.cors

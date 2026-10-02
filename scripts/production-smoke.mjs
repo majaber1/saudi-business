@@ -7,8 +7,8 @@ async function get(path,{json=false}={}){const c=new AbortController();const tim
 async function check(){
   const home=await get("/");
   if(!home.ok) throw new Error(`home HTTP ${home.status}`);
-  if(!home.body.includes("Decision cockpit")&&!home.body.includes("لوحة القرار")) throw new Error("premium homepage marker not deployed yet");
-  for(const path of ["/tools","/tools/feasibility","/tools/funding","/login"]){const r=await get(path);if(!r.ok)throw new Error(`${path} HTTP ${r.status}`);}
+  if(!home.body.includes("Command Center")&&!home.body.includes("مركز التحكم")) throw new Error("Business OS shell marker not deployed yet");
+  for(const path of ["/tools","/tools/feasibility","/tools/funding","/tools/simulator","/login"]){const r=await get(path);if(!r.ok)throw new Error(`${path} HTTP ${r.status}`);}
   const health=await get("/api/deployment-health",{json:true});
   if(!health.ok) throw new Error(`deployment health HTTP ${health.status}: ${JSON.stringify(health.body)}`);
   if(health.body?.status!=="ready"||health.body?.frontend!=="ready"||health.body?.backend!=="ready") throw new Error(`deployment not ready: ${JSON.stringify(health.body)}`);
