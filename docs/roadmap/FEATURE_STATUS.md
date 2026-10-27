@@ -11,7 +11,7 @@ Measured on `recovery/financial-trust-20261028` against production SHA `56ca05b`
 | GASTAT connector | PARTIAL | Code remains. Homepage probe on 2026-10-28 failed locally with `CERTIFICATE_VERIFY_FAILED` behind a self-signed chain. Certificate checks were not disabled. Live retrieval: NOT VERIFIED. |
 | MISA connector | PARTIAL | Code remains. Homepage returned HTTP 200 on 2026-10-28. A full study retrieval was not re-run. |
 | Monsha'at connector | BLOCKED | Planner reason remains `BLOCKED_EXTERNAL_REACHABILITY`. The same local TLS failure occurred. No connector was added and certificate checks were not disabled. |
-| Allowlisted web search | BLOCKED | No Tavily, Brave, SerpAPI, Bing, or Google CSE credential is configured. `search_saudi_data` returns `BLOCKED` / `NO_ALLOWLISTED_PROVIDER_CONFIGURED` and an empty result list. |
+| Allowlisted web search | BLOCKED | Supported variables are `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY`. Neither is set locally or on the Vercel projects. `search_saudi_data` returns `BLOCKED` / `NO_ALLOWLISTED_PROVIDER_CONFIGURED` and an empty result list. |
 | Competitor identity, URL, and timestamp | VERIFIED | A verified record requires all three. Name-only, missing URL, invalid timestamp, and geographic mismatch stay unverified. Covered by `tests/test_stage2_market_intelligence.py`. |
 | Citation critic for official and document claims | VERIFIED | `ai_engine/research/citation_critic.py` drops those claims when the URL is not http(s) and does not invent a URL. `tests/test_citation_critic.py` plus Phase 8A/8B research tests: 54 passed. |
 | 55% and 45% cost fills cannot authorize GO | VERIFIED | Fills stay labeled `UNVERIFIED_ESTIMATE`. `tests/test_financial_trust_sprint.py` passed. |

@@ -205,6 +205,7 @@ def run_assumptions(state: StudyState) -> StudyState:
             label_en=meta.get("label_en"),
             label_ar=meta.get("label_ar"),
             ai_estimated=False,
+            rate_representation=_explicit_rate_representation(meta),
         )
 
     for a in (assumption_data or {}).get("assumptions") or []:
@@ -394,6 +395,13 @@ def _default_value_for_field(field: dict, archetype: str) -> str:
     if input_type == "percent":
         return "10"
     return "10000"
+
+
+def _explicit_rate_representation(meta: dict) -> str | None:
+    """A schema percent field is an explicit percent. A bare number is not."""
+    if str(meta.get("input_type") or "") == "percent":
+        return "PERCENT"
+    return None
 
 
 def _extract_json(text: str) -> dict | None:

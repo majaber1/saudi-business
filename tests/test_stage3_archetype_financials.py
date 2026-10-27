@@ -145,6 +145,57 @@ def test_saas_lines_and_missing_hosting_are_explicit():
     assert missing["investment_grade"] is False
 
 
+def test_percent_schema_field_is_an_explicit_percent():
+    from ai_engine.agents.assumption import _explicit_rate_representation
+    from ai_engine.tools.archetype_lines import project_archetype_lines
+
+    assert _explicit_rate_representation({"input_type": "percent", "unit": "%"}) == "PERCENT"
+    assert _explicit_rate_representation({"input_type": "currency"}) is None
+    projected = project_archetype_lines(
+        "fnb",
+        {
+            "avg_ticket": {"value": 25, "origin": "user"},
+            "daily_covers": {"value": 80, "origin": "user"},
+            "operating_days_per_month": {"value": 26, "origin": "user"},
+            "rent_monthly": {"value": 15000, "origin": "user"},
+            "labor_monthly": {"value": 18000, "origin": "user"},
+            "food_cost_pct": {"value": 30, "origin": "user", "rate_representation": "PERCENT"},
+        },
+    )
+    assert projected is not None
+    operating = next(line for line in projected["lines"] if line["id"] == "operating_cost")
+    assert operating["monthly"] == 15600
+    assert operating["status"] == "OWNER_SUPPLIED"
+
+
+def test_owner_edit_updates_the_base_case_used_by_the_projection():
+    from backend.app.api.v2.study_engine import apply_owner_assumption_edit
+    from ai_engine.tools.archetype_lines import project_study_archetype
+
+    state = StudyState(
+        study_id="coffee",
+        project_id="p",
+        user_id="u",
+        profile=ProjectProfile(name="Coffee", sector="food", archetype="fnb"),
+        assumptions=[
+            Assumption(key="avg_ticket", value="25", source="user", confidence="confirmed", base="25"),
+            Assumption(key="daily_covers", value="80", source="user", confidence="confirmed", base="80"),
+            Assumption(key="operating_days_per_month", value="26", source="user", confidence="confirmed", base="26"),
+            Assumption(key="rent_monthly", value="15000", source="user", confidence="confirmed", low="15000", base="15000", high="15000"),
+            Assumption(key="labor_monthly", value="18000", source="user", confidence="confirmed", base="18000"),
+            Assumption(key="food_cost_pct", value="0.30", source="user", confidence="confirmed", base="0.30", rate_representation="RATIO"),
+        ],
+    )
+    rent = next(item for item in state.assumptions if item.key == "rent_monthly")
+    apply_owner_assumption_edit(rent, value="20000")
+    projected = project_study_archetype(state)
+    assert projected is not None
+    assert projected["monthly_net"] == 52000 - 20000 - 18000 - 15600
+    assert rent.base == "20000"
+    assert rent.low == "20000"
+    assert rent.high == "20000"
+
+
 def test_edited_assumptions_make_the_previous_projection_stale():
     from ai_engine.tools.archetype_lines import mark_projection_stale, project_study_archetype
 

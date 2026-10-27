@@ -1491,6 +1491,22 @@ async def submit_structured_answers(study_id: str, req: StructuredAnswersRequest
     return _payload_from_state(study_id, state, record_meta=record)
 
 
+def apply_owner_assumption_edit(assumption, *, value: str, low=None, base=None, high=None):
+    """An owner value edit is the new base case. A separate base is kept only when sent."""
+    previous = assumption.value
+    assumption.value = value
+    assumption.base = value if base is None else base
+    if low is not None:
+        assumption.low = low
+    elif assumption.low == previous:
+        assumption.low = value
+    if high is not None:
+        assumption.high = high
+    elif assumption.high == previous:
+        assumption.high = value
+    return assumption
+
+
 @router.post("/{study_id}/assumptions/edit")
 async def edit_assumption(study_id: str, req: AssumptionEditRequest, user=Depends(get_current_user)):
     user_id = str(user.id)
@@ -1509,17 +1525,17 @@ async def edit_assumption(study_id: str, req: AssumptionEditRequest, user=Depend
     updated = False
     for a in state.assumptions or []:
         if a.key == req.key:
-            a.value = req.value
-            if req.low is not None:
-                a.low = req.low
-            if req.base is not None:
-                a.base = req.base
-            if req.high is not None:
-                a.high = req.high
             a.source = "user"
             a.origin = "user"
             a.ai_estimated = False
             a.confidence = "confirmed"
+            apply_owner_assumption_edit(
+                a,
+                value=req.value,
+                low=req.low,
+                base=req.base,
+                high=req.high,
+            )
             if discount_label:
                 a.rate_representation = discount_label  # type: ignore[assignment]
             updated = True

@@ -12,13 +12,13 @@ Updated: 2026-10-28. This file is the resume point for another machine. The remo
 | `origin/main` | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
-| Resume-point commit | `02389aee3a31a6512ebc4783f5c9f28ef975d87d` |
+| Resume-point commit | `987d7ed5f967b1acd0b247e4e40f108a7b176d61` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Remote verification before the workspace integration: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `02389aee3a31a6512ebc4783f5c9f28ef975d87d`. Confirm the tip again after the next push.
+Remote verification before research connectivity: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `987d7ed5f967b1acd0b247e4e40f108a7b176d61`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -36,10 +36,10 @@ The original dirty checkout was not reset, cleaned, or checked out onto this bra
 | --- | --- | --- |
 | 0 Baseline and architecture docs | Complete on this branch | `docs/architecture/CURRENT_ARCHITECTURE.md`, `TARGET_ARCHITECTURE.md`, `FLOWCHARTS.md`, `docs/roadmap/FEATURE_STATUS.md`, `COMPLETION_BACKLOG.md`. |
 | 1 Financial trust | Complete on this branch, not released | Estimated 55% and 45% costs cannot authorize GO. Ambiguous discount rates are not divided by 100. Missing `opex_annual` is not zero. |
-| 2 Real Saudi research | Partial | Competitor verification, citation critic, and research-lineage critic are on this branch. Search is BLOCKED. Monsha'at is BLOCKED. GASTAT live retrieval was not verified. MISA homepage returned HTTP 200. Browser journey NOT TESTED. |
+| 2 Real Saudi research | Partial | GASTAT pages were retrieved with verification on. Competitor and price search stayed NOT_FOUND. No allowlisted search credential exists. Monsha'at has no live connector. |
 | 3 Archetype financials | Partial | Specialty coffee and Saudi SaaS line items are calculated and shown in the study workspace. Tax lines and other archetypes are not included. |
-| 4 One workspace journey | Partial | The workspace renders coffee and SaaS lines, lineage, the pre-tax label, the recommendation ceiling, and an edit that marks the previous recommendation stale. Approve, Reject, and Request Modification are not one completed journey. Browser pass: NOT TESTED. |
-| 5 Integration, security, browser, non-prod Postgres | Not tested | |
+| 4 One workspace journey | Partial | A local Riyadh coffee study showed line items, a stale banner after a rent edit, and a recalculated pre-tax net. The recommendation ceiling stayed INSUFFICIENT_EVIDENCE. Approve, Reject, and Request Modification are not one completed journey. |
+| 5 Integration, security, browser, non-prod Postgres | Partial | One isolated Postgres 16 browser study was run. The security suite and a full acceptance pass were not run. |
 | 6 Release | Not started | Merge, production migration, and deploy need explicit owner approval. |
 
 ## Tests
@@ -78,7 +78,13 @@ Workspace integration command, same worktree:
 
 Result: **72 passed**.
 
-Browser workspace: **NOT TESTED**. No non-production Postgres session was available.
+Research connectivity command, same worktree:
+
+`python -m pytest tests/test_stage3_archetype_financials.py -q --tb=line`
+
+Result: **11 passed**. That file now covers the percent-field label and the owner rent edit updating the base case.
+
+Local isolated Postgres browser study: the coffee workspace showed GASTAT source URLs, a pre-tax monthly net, a stale banner after editing rent, and a recalculated net of -1,600 SAR after the base case was updated. This is not a production acceptance pass.
 
 Known local-environment failure, not re-run and not a trust regression: `tests/test_phase7b_gastat_live_source.py::test_l_mcp_source_tool_boundary` failed earlier because the `mcp` package is not installed.
 
@@ -86,11 +92,12 @@ Known local-environment failure, not re-run and not a trust regression: `tests/t
 
 Stage 2 is not complete. These items stay open:
 
-- General Saudi search provider is not configured. Status BLOCKED, reason `NO_ALLOWLISTED_PROVIDER_CONFIGURED`.
-- Monsha'at TLS/reachability is BLOCKED. Planner reason remains `BLOCKED_EXTERNAL_REACHABILITY`. A verified request failed with `CERTIFICATE_VERIFY_FAILED` (`self-signed certificate in certificate chain`). Certificate verification was not disabled.
-- GASTAT TLS verification failed the same way on `www.stats.gov.sa`. The connector code remains. Live retrieval is NOT VERIFIED.
-- Live research integration is unverified. MISA's homepage returned HTTP 200 on this machine, and a full study retrieval was not re-run. No proxy variables were set. Python's default CA file was unset, and the same interpreter trusted MISA, so the GASTAT and Monsha'at failures are the chains those hosts presented rather than a global trust-store outage. `openssl` is not installed here, so the issuer name was not printed.
-- Browser end-to-end and non-production Postgres are NOT TESTED.
+- General Saudi search stays BLOCKED. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and are not set on the Vercel projects. No results were invented.
+- Monsha'at has no live connector. The planner reason remains `BLOCKED_EXTERNAL_REACHABILITY`. The homepage returned HTTP 200 with certificate verification on when Python used the certifi bundle. The default Windows OpenSSL CA file failed the same hosts with `CERTIFICATE_VERIFY_FAILED`. Verification was not disabled.
+- GASTAT live retrieval succeeded through the existing connector, which uses httpx and certifi with verification on. The default OpenSSL CA file on this machine does not trust that chain.
+- MISA activity pages were fetched with verification on. The homepage connection was reset once and returned HTTP 200 on an earlier request.
+- `GROQ_API_KEY` is not in the local environment. Classification used the deterministic fallback and told the owner the model was unavailable.
+- Competitor and price evidence for the coffee study were NOT_FOUND.
 - Production and `main` stay at `56ca05b` until the owner approves a release.
 
 ## Safety
