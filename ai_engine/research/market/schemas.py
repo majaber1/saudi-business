@@ -40,6 +40,13 @@ class CompetitorEvidence:
     source_key: str | None = None
     document_id: str | None = None
     chunk_id: str | None = None
+    # Stage 2 provenance. None means the source did not supply the field.
+    publisher: str | None = None
+    location: str | None = None
+    retrieved_at: str | None = None
+    supporting_claim: str | None = None
+    record_kind: str = "unverified_mention"
+    rejection_reason: str | None = None
 
     def to_public_dict(self) -> dict[str, Any]:
         return asdict(self)

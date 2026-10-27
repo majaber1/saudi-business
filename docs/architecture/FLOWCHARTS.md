@@ -1,6 +1,6 @@
 # Flowcharts
 
-Implemented diagrams describe `recovery/financial-trust-20261028`. Proposed diagrams are not built.
+Implemented diagrams describe `saudi-business-completion`. The financial ceiling shipped on `8f9eac6`. The research ceiling below is the Stage 2 behavior.
 
 ## Implemented study graph
 
@@ -55,6 +55,50 @@ flowchart TD
 ```
 
 `NO_GO` is not replaced. `INSUFFICIENT_EVIDENCE` replaces `DEFER` when the discount rate is ambiguous.
+
+## Implemented research and competitor contract
+
+```mermaid
+flowchart TD
+  gaps[Archetype research questions] --> plan[Research plan]
+  plan --> live[GASTAT and MISA connectors]
+  plan --> blockedMonshaat[Monshaat stays BLOCKED]
+  plan --> searchNode[Allowlisted search]
+  searchNode --> noKey{Provider credential}
+  noKey -->|absent| searchBlocked[BLOCKED and empty results]
+  noKey -->|present but client disabled| searchBlocked
+  live --> claims[Claims with provenance]
+  claims --> cite[Citation critic]
+  cite --> lineage[Research critic]
+  lineage --> competitors[Competitor verification]
+  competitors --> verified{Name and http URL and real timestamp}
+  verified -->|yes and geography matches| record[Verified competitor record]
+  verified -->|no| mention[Unverified mention]
+  lineage --> failed{Research status failed or no source-backed claim}
+  failed -->|yes| insufficient[INSUFFICIENT_EVIDENCE]
+  failed -->|no| financialGate[Stage 1 financial ceiling]
+```
+
+A verified competitor record stores publisher, identity, stated location, retrieval time, and the supporting claim separately. Missing URL and timestamp fields are left empty.
+
+## Implemented evidence provenance
+
+```mermaid
+flowchart TD
+  source[Source payload] --> kind{Claim kind}
+  kind -->|official or document| url{http source URL}
+  kind -->|ai assumption| estimate[Kept as an estimate]
+  kind -->|owner input| owner[Kept as an owner assumption]
+  url -->|missing| reject[Rejected with a reason]
+  url -->|present| geo{Country city currency}
+  geo -->|conflict| reject
+  geo -->|consistent| keep[Source-backed evidence]
+  reject --> noFill[No replacement citation is written]
+  keep --> persist[Research result carries plan gaps and attempts]
+  estimate --> persist
+```
+
+Provider errors append to the research error list and keep the run out of `complete`.
 
 ## Proposed owner journey
 

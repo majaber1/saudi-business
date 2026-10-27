@@ -182,4 +182,36 @@ def extract_gaps_from_state(state: Any) -> list[str]:
             "Replace provisional ai_assumption with official source evidence where available"
         )
 
+    for question in archetype_research_questions(archetype, city):
+        if question not in gaps:
+            gaps.append(question)
+
     return gaps
+
+
+def archetype_research_questions(archetype: str, city: str = "") -> list[str]:
+    """Questions for a business type. They do not invent source answers."""
+    kind = (archetype or "").lower().strip()
+    place = city or "Saudi Arabia"
+    if kind in {"fnb", "cafe", "coffee", "specialty_coffee", "food", "restaurant"}:
+        subject = f"specialty coffee in {place}"
+        return [
+            f"Demand and customer traffic for {subject}",
+            f"Competitor set for {subject}",
+            f"Pricing of {subject}",
+            f"Location economics and rent for {subject}",
+            f"Operating costs for a cafe in {place}",
+            "Licensing requirements for a food and beverage business in Saudi Arabia",
+            "Funding sources for an SME cafe in Saudi Arabia",
+        ]
+    if kind in {"saas", "saas_digital", "software"}:
+        subject = f"B2B software in {place}"
+        return [
+            f"Demand and customer acquisition for {subject}",
+            f"Competitor set for {subject}",
+            f"Pricing and subscription fees for {subject}",
+            f"Retention and churn evidence for {subject}",
+            "Licensing requirements for a software business in Saudi Arabia",
+            "Funding sources for an SME software business in Saudi Arabia",
+        ]
+    return []

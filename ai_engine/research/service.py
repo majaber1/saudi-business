@@ -503,6 +503,9 @@ def execute_research(
         logger.info("research quality evaluation skipped: %s", exc)
         errors.append(f"research_quality: {exc}")
 
+    if status == "complete" and errors:
+        status = "partial"
+
     result = ResearchResult(
         plan=plan,
         status=status,  # type: ignore[arg-type]

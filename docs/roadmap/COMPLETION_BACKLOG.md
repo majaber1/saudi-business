@@ -10,13 +10,13 @@ Ordered. Do not start a later stage by faking a blocked dependency. Do not merge
 
 ## Stage 2 — real Saudi research
 
-Blocked until a real source is available. Do not stub success.
+Partial. Do not stub the blocked connectors.
 
-- Keep GASTAT and MISA. Re-measure live reachability before calling them verified.
-- Monsha'at stays `BLOCKED_EXTERNAL_REACHABILITY`.
-- Web search stays `not_implemented` until an allowlisted provider is configured.
-- Citation critic for official and document claims is on this branch. It does not invent a URL.
-- Competitor records still need identity, URL, and timestamp before they count as evidence.
+- Citation critic and research-lineage critic are on this branch. They do not invent citations.
+- Verified competitor records require identity, an http(s) URL, and a real retrieval timestamp.
+- Allowlisted search is `BLOCKED` until a provider credential exists. No results are fabricated.
+- GASTAT live retrieval was not verified from this machine. MISA homepage returned HTTP 200. Monsha'at stays `BLOCKED_EXTERNAL_REACHABILITY`.
+- Browser end-to-end for the coffee and SaaS studies is NOT TESTED.
 
 ## Stage 3 — archetype financials
 

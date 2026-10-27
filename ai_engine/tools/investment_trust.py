@@ -35,8 +35,12 @@ def trust_override(financial_results: dict | None) -> str | None:
 
 def apply_investment_trust(state):
     """Downgrade a favorable verdict. Leave NO_GO and DEFER in place."""
+    from ai_engine.research.research_critic import research_investment_ceiling
+
     results = dict(state.financial_results or {})
     override = trust_override(results)
+    if research_investment_ceiling(state) == "INSUFFICIENT_EVIDENCE":
+        override = "INSUFFICIENT_EVIDENCE"
     if override is None:
         return state
     if override == "INSUFFICIENT_EVIDENCE" or state.verdict in FAVORABLE_VERDICTS or not state.verdict:

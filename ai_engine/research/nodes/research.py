@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage
 from ai_engine.models.study_state import Claim, StudyState
 from ai_engine.research.citation_critic import screen_research_citations
 from ai_engine.research.planner import extract_gaps_from_state
+from ai_engine.research.research_critic import review_claim_lineage
 from ai_engine.research.schemas import ResearchClaim, ResearchResult
 from ai_engine.research.service import research_gaps
 
@@ -151,7 +152,19 @@ def run_research(state: StudyState) -> StudyState:
     except Exception as exc:  # noqa: BLE001
         logger.exception("research node failed: %s", exc)
         state.research_status = "failed"
-        state.research_context = {"error": str(exc), "gaps": gaps}
+        state.research_context = {
+            "error": str(exc),
+            "gaps": gaps,
+            "status": "failed",
+            "evidence_created": False,
+            "research_critic": {
+                "blocks_investment": True,
+                "rejected": [],
+                "ai_estimates": [],
+                "unresolved_gaps": list(gaps),
+                "reason": "research_failed",
+            },
+        }
         state.research_attempts = [{"outcome": "error", "error": str(exc)}]
         state.messages.append(
             AIMessage(
@@ -168,16 +181,25 @@ def run_research(state: StudyState) -> StudyState:
                 pass
 
     accepted_claims, critic_notes = screen_research_citations(list(result.claims))
+    geography = "Saudi Arabia"
+    answers = getattr(state, "structured_answers", None) or {}
+    if isinstance(answers, dict):
+        city = str(answers.get("city") or answers.get("location") or "").strip()
+        if city:
+            geography = f"{city}, Saudi Arabia"
+    lineage = review_claim_lineage(result.claims, geography=geography)
+    if result.status == "failed":
+        lineage = {**lineage, "blocks_investment": True, "reason": "research_failed"}
     state.claims = merge_evidence_claims(state.claims, accepted_claims)
     state.research_status = result.status
-    state.research_context = result.to_public_dict()
+    state.research_context = {
+        **result.to_public_dict(),
+        "research_critic": lineage,
+    }
     if critic_notes:
-        state.research_context = {
-            **state.research_context,
-            "citation_critic": {
-                "rejected_count": len(critic_notes),
-                "rejected": critic_notes[:20],
-            },
+        state.research_context["citation_critic"] = {
+            "rejected_count": len(critic_notes),
+            "rejected": critic_notes[:20],
         }
     state.research_attempts = list(result.attempts)
     state.market_research_context = getattr(result, "market_research", None)

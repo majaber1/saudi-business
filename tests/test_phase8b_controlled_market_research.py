@@ -86,6 +86,9 @@ class TestCompetitorIntelligence:
                     "source_key": "gastat",
                     "document_id": "d1",
                     "source_type": "document",
+                    "retrieved_at": "2026-08-15",
+                    "publisher": "GASTAT",
+                    "location": "Riyadh",
                 }
             ],
         )
