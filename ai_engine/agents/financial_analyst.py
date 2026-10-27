@@ -7,7 +7,16 @@ from langchain_core.messages import AIMessage, SystemMessage
 
 from ..config import get_llm
 from ..models.study_state import StudyState
+import sys
+from pathlib import Path
+
+_ENGINE = Path(__file__).resolve().parents[2] / "financial-engine"
+if str(_ENGINE) not in sys.path:
+    sys.path.insert(0, str(_ENGINE))
+from rate_contract import AmbiguousRateError, normalize_explicit_rate  # noqa: E402
+
 from ..tools.calculator import calculate_npv, calculate_irr, calculate_payback_period
+from ..tools.investment_trust import ESTIMATED_COST_NOTES
 from ..tools.financial_trust import (
     attach_financial_display_fields,
     irr_metric_state,
@@ -122,6 +131,40 @@ Required extraction (output JSON inside ```json ... ```):
 If a specific number is not found, put null. Do NOT invent numbers.
 """
 
+_DISCOUNT_NEEDLES = ("discount_rate", "discount rate", "معدل الخصم")
+
+
+def _is_discount_key(key: str) -> bool:
+    lowered = (key or "").strip().lower()
+    return any(needle in lowered for needle in _DISCOUNT_NEEDLES)
+
+
+def _discount_from_state(state: StudyState) -> dict:
+    """Read discount rate only when its unit is explicit. Never divide a bare number by 100."""
+    chosen = None
+    for assumption in state.assumptions or []:
+        if _is_discount_key(assumption.key or ""):
+            chosen = assumption
+            break
+    if chosen is None:
+        return {"status": "ABSENT"}
+    raw = chosen.value if chosen.value not in (None, "") else chosen.base
+    text = "" if raw is None else str(raw).strip()
+    representation = getattr(chosen, "rate_representation", None)
+    if representation is not None:
+        representation = str(representation).strip().upper()
+    if representation not in {"PERCENT", "RATIO"}:
+        if text.endswith("%") or text.endswith("٪"):
+            representation = "PERCENT"
+        else:
+            return {"status": "AMBIGUOUS", "raw": text}
+    try:
+        ratio = normalize_explicit_rate(text, representation)
+    except (AmbiguousRateError, ValueError, TypeError):
+        return {"status": "AMBIGUOUS", "raw": text}
+    return {"status": "EXPLICIT", "ratio": ratio, "representation": representation}
+
+
 _NUMBER_RE = re.compile(
     r"(-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?)",
 )
@@ -197,7 +240,7 @@ def _deterministic_extract(state: StudyState) -> dict | None:
     rides = first("monthly_trips", "monthly rides", "rides/mo", "rides per month", "رحلات")
     fixed_opex = first("monthly_fixed_opex", "fixed opex", "monthly fixed", "opex", "تشغيل", "opex_year1")
     variable = first("variable cost", "per ride", "تكلفة متغيرة")
-    discount = first("discount_rate", "discount rate", "معدل الخصم") or 0.12
+    discount_info = _discount_from_state(state)
 
     # Professional / managed services model
     mrc = first("monthly_recurring_contracts", "monthly recurring", "mrc", "monthly_retainer")
@@ -259,8 +302,13 @@ def _deterministic_extract(state: StudyState) -> dict | None:
         occupancy = occupancy / 100.0
     if gross_margin is not None and gross_margin > 1:
         gross_margin = gross_margin / 100.0
-    if discount is not None and discount > 1:
-        discount = discount / 100.0
+    if discount_info["status"] == "EXPLICIT":
+        discount = discount_info["ratio"]
+    elif discount_info["status"] == "AMBIGUOUS":
+        discount = None
+        extract_notes.append("discount_rate_ambiguous")
+    else:
+        discount = None
 
     annual_revenues = None
     annual_costs = None
@@ -402,27 +450,44 @@ def _deterministic_extract(state: StudyState) -> dict | None:
         "capex": capex,
         "annual_revenues": annual_revenues,
         "annual_costs": annual_costs,
-        "discount_rate": discount if discount is not None else 0.12,
+        "discount_rate": discount,
+        "discount_rate_status": discount_info["status"],
         "extract_notes": extract_notes,
         "assumption_values": assumption_values,
+        "cost_verification": (
+            "UNVERIFIED_ESTIMATE"
+            if any(note in ESTIMATED_COST_NOTES for note in extract_notes)
+            else "MISSING"
+            if annual_costs is None
+            else "OWNER_SUPPLIED"
+        ),
     }
 
 
 def _merge_extract(primary: dict | None, fallback: dict | None) -> dict | None:
+    """Deterministic extract wins for costs and discount. LLM numbers cannot authorize a rate or a cost."""
     if not primary and not fallback:
         return None
     primary = primary or {}
     fallback = fallback or {}
+    notes = list(fallback.get("extract_notes") or [])
+    costs = fallback.get("annual_costs")
+    cost_verification = fallback.get("cost_verification")
+    if costs is None and primary.get("annual_costs"):
+        costs = primary.get("annual_costs")
+        notes.append("llm_costs_unconfirmed_estimate")
+        cost_verification = "UNVERIFIED_ESTIMATE"
+    capex = fallback.get("capex") if fallback.get("capex") is not None else primary.get("capex")
+    revenues = fallback.get("annual_revenues") or primary.get("annual_revenues")
     merged = {
-        "capex": primary.get("capex") if primary.get("capex") is not None else fallback.get("capex"),
-        "annual_revenues": primary.get("annual_revenues") or fallback.get("annual_revenues"),
-        "annual_costs": primary.get("annual_costs") or fallback.get("annual_costs"),
-        "discount_rate": primary.get("discount_rate") if primary.get("discount_rate") is not None else fallback.get("discount_rate", 0.12),
-        "extract_notes": list(fallback.get("extract_notes") or []) + list(primary.get("extract_notes") or []),
-        "assumption_values": {
-            **(fallback.get("assumption_values") or {}),
-            **(primary.get("assumption_values") or {}),
-        },
+        "capex": capex,
+        "annual_revenues": revenues,
+        "annual_costs": costs,
+        "discount_rate": fallback.get("discount_rate"),
+        "discount_rate_status": fallback.get("discount_rate_status") or "ABSENT",
+        "extract_notes": notes,
+        "assumption_values": dict(fallback.get("assumption_values") or {}),
+        "cost_verification": cost_verification,
     }
     if merged["capex"] is None and not merged["annual_revenues"] and not merged["annual_costs"]:
         return None
@@ -492,10 +557,36 @@ def run_financial_analysis(state: StudyState) -> StudyState:
 
     capex = extracted.get("capex") or 0
     revenues = extracted.get("annual_revenues") or [0, 0, 0]
-    costs = extracted.get("annual_costs") or [0, 0, 0]
-    discount_rate = extracted.get("discount_rate") or 0.12
+    costs = list(extracted.get("annual_costs") or [])
     extract_notes = list(extracted.get("extract_notes") or [])
     assumption_values = dict(extracted.get("assumption_values") or {})
+    if extracted.get("discount_rate_status") == "AMBIGUOUS" or "discount_rate_ambiguous" in extract_notes:
+        state.financial_results = {
+            "analysis_complete": False,
+            "investment_grade": False,
+            "gate_status": "BLOCKED",
+            "discount_rate_status": "AMBIGUOUS",
+            "verdict_override": "INSUFFICIENT_EVIDENCE",
+            "npv": None,
+            "irr": None,
+            "warnings": [
+                "Discount rate has no PERCENT or RATIO representation and was not rescaled."
+                if lang != "ar"
+                else "معدل الخصم بلا تمثيل PERCENT أو RATIO ولم تتم إعادة تفسيره."
+            ],
+            "extract_notes": extract_notes,
+        }
+        state.phase = "ANALYZED"
+        state.error = None
+        state.next_action = "review_financials"
+        state.messages.append(AIMessage(content=state.financial_results["warnings"][0]))
+        return state
+    if extracted.get("discount_rate") is None:
+        discount_rate = 0.12
+        discount_source = "SYSTEM_DEFAULT_RATIO"
+    else:
+        discount_rate = float(extracted["discount_rate"])
+        discount_source = "EXPLICIT"
 
     # FINANCIAL GATE: block investment-grade analysis when material inputs missing
     has_revenue = any(r > 0 for r in revenues) if revenues else False
@@ -529,7 +620,8 @@ def run_financial_analysis(state: StudyState) -> StudyState:
             "revenue_year1": revenues[0] if revenues else 0,
             "opex_year1": costs[0] if costs else 0,
             "warnings": [gate_msg_en if lang != "ar" else gate_msg_ar],
-            "verdict_override": "DEFER",
+            "verdict_override": "INSUFFICIENT_EVIDENCE" if "opex" in missing_material else "DEFER",
+            "cost_verification": "MISSING" if "opex" in missing_material else extracted.get("cost_verification"),
         }
         state.phase = "ANALYZED"
         state.error = None
@@ -548,14 +640,29 @@ def run_financial_analysis(state: StudyState) -> StudyState:
         revenues.append(revenues[-1] if revenues else 0.0)
     while len(costs) < horizon:
         costs.append(costs[-1] if costs else 0.0)
-    # Trust hardening: never silently treat missing costs as zero when revenue exists.
-    if any(r > 0 for r in revenues) and all(c == 0 for c in costs):
-        costs = [r * 0.45 for r in revenues]
-        extract_notes.append("opex_defaulted_from_45pct_of_revenue_zero_cost_vector")
+    if any(r > 0 for r in revenues) and costs and all(c == 0 for c in costs):
+        state.financial_results = {
+            "analysis_complete": False,
+            "investment_grade": False,
+            "gate_status": "BLOCKED",
+            "missing_material_inputs": ["opex"],
+            "cost_verification": "MISSING",
+            "verdict_override": "INSUFFICIENT_EVIDENCE",
+            "npv": None,
+            "warnings": [
+                "Operating costs are zero while revenue is positive. They were not replaced with a 45% estimate."
+                if lang != "ar"
+                else "تكاليف التشغيل صفر مع وجود إيراد. لم يتم استبدالها بتقدير 45%."
+            ],
+            "extract_notes": extract_notes,
+        }
+        state.phase = "ANALYZED"
+        state.error = None
+        state.next_action = "review_financials"
+        state.messages.append(AIMessage(content=state.financial_results["warnings"][0]))
+        return state
     capex = float(capex)
     discount_rate = float(discount_rate)
-    if discount_rate > 1:
-        discount_rate = discount_rate / 100.0
 
     base = _compute_scenario(capex, revenues, costs, discount_rate, 1.0)
     optimistic = _compute_scenario(capex, revenues, costs, discount_rate, 1.2)
@@ -603,6 +710,13 @@ def run_financial_analysis(state: StudyState) -> StudyState:
         "payback_state": payback_metric_state(base["payback_months"], language=lang or "en"),
         "warnings": trust_warnings,
         "extract_notes": extract_notes,
+        "discount_rate_source": discount_source,
+        "discount_rate_representation": "RATIO",
+        "cost_verification": extracted.get("cost_verification") or "OWNER_SUPPLIED",
+        "investment_grade": extracted.get("cost_verification") != "UNVERIFIED_ESTIMATE",
+        "verdict_override": "DEFER" if extracted.get("cost_verification") == "UNVERIFIED_ESTIMATE" else None,
+        "calculation_version": "v2_financial_analyst.trust1",
+        "cash_flow_basis": "PRE_TAX_OPERATING_PROXY",
         "scenarios": {
             "optimistic": {
                 "npv": optimistic["npv"],
@@ -662,7 +776,7 @@ def run_financial_analysis(state: StudyState) -> StudyState:
         sanitize_error_for_user(e, language=lang, context="financial.explain")
         state.error = None
         state.financial_results = computed
-        state.financial_results["analysis_complete"] = True
+        state.financial_results["analysis_complete"] = computed.get("investment_grade") is not False
         state.financial_results["warnings"] = list(trust_warnings) + ["explain_model_unavailable"]
         state.phase = "ANALYZED"
         state.messages.append(AIMessage(content=_financial_chat_summary(computed, lang)))
@@ -693,7 +807,18 @@ def run_financial_analysis(state: StudyState) -> StudyState:
             existing_warnings = [existing_warnings]
         financial_data["warnings"] = list(dict.fromkeys([*trust_warnings, *existing_warnings]))
         financial_data["extract_notes"] = extract_notes
-        financial_data["analysis_complete"] = True
+        financial_data["discount_rate_source"] = computed.get("discount_rate_source")
+        financial_data["discount_rate_representation"] = computed.get("discount_rate_representation")
+        financial_data["discount_rate_status"] = extracted.get("discount_rate_status")
+        financial_data["cost_verification"] = computed.get("cost_verification")
+        financial_data["investment_grade"] = computed.get("investment_grade")
+        financial_data["calculation_version"] = computed.get("calculation_version")
+        financial_data["cash_flow_basis"] = computed.get("cash_flow_basis")
+        if computed.get("investment_grade") is False:
+            financial_data["verdict_override"] = "DEFER"
+            financial_data["analysis_complete"] = False
+        else:
+            financial_data["analysis_complete"] = True
         state.financial_results = financial_data
     else:
         computed["analysis_complete"] = True

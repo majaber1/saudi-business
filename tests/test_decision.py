@@ -155,6 +155,7 @@ def test_decision_history_preserves_prior_decisions():
     first = client.post(f"/studies/{study['id']}/decision/", headers=headers).json()
     _set_assumption(headers, study["id"], "capex", 500000)
     _set_assumption(headers, study["id"], "revenue_year1", 800000)
+    _set_assumption(headers, study["id"], "opex_annual", 200000)
     _add_evidence(headers, study["id"])
     _run_scenario(headers, study["id"], "BASE")
     second = client.post(f"/studies/{study['id']}/decision/", headers=headers).json()

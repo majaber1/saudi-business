@@ -107,6 +107,8 @@ def create_scenario(study_id: int, data: ScenarioCreate, user: UserOut = Depends
         values.update(data.assumption_overrides)
 
         missing = missing_required_keys(values)
+        if values.get("opex_annual") is None:
+            missing.append("opex_annual")
         if missing:
             raise HTTPException(
                 status_code=422,
@@ -117,7 +119,10 @@ def create_scenario(study_id: int, data: ScenarioCreate, user: UserOut = Depends
                 },
             )
 
-        investment, cash_flows, discount_rate = project_cash_flows(values)
+        try:
+            investment, cash_flows, discount_rate = project_cash_flows(values)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         res = evaluate_feasibility(investment, cash_flows, discount_rate)
         sens = sensitivity_analysis(investment, cash_flows, discount_rate)

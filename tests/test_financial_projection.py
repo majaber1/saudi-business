@@ -72,7 +72,7 @@ def test_compute_from_assumptions_requires_capex_and_revenue():
     resp = client.post(f"/feasibility/{study['id']}/compute-from-assumptions", headers=headers)
     assert resp.status_code == 422, resp.text
     detail = resp.json()["detail"]
-    assert set(detail["missing"]) == {"capex", "revenue_year1"}
+    assert set(detail["missing"]) == {"capex", "revenue_year1", "opex_annual"}
 
 
 def test_compute_from_assumptions_uses_recorded_values_and_is_reproducible():
@@ -102,12 +102,23 @@ def test_updating_an_assumption_changes_the_next_computed_result():
     study = _study(headers)
     _set_assumption(headers, study["id"], "capex", 500000)
     _set_assumption(headers, study["id"], "revenue_year1", 100000)
+    _set_assumption(headers, study["id"], "opex_annual", 40000)
     before = client.post(f"/feasibility/{study['id']}/compute-from-assumptions", headers=headers).json()["result"]
 
     _set_assumption(headers, study["id"], "revenue_year1", 900000)  # retires v1, creates v2
     after = client.post(f"/feasibility/{study['id']}/compute-from-assumptions", headers=headers).json()["result"]
 
     assert before["npv"] != after["npv"]
+
+
+def test_missing_opex_is_not_treated_as_zero():
+    headers = _headers("proj_opex_missing")
+    study = _study(headers)
+    _set_assumption(headers, study["id"], "capex", 500000)
+    _set_assumption(headers, study["id"], "revenue_year1", 300000)
+    resp = client.post(f"/feasibility/{study['id']}/compute-from-assumptions", headers=headers)
+    assert resp.status_code == 422, resp.text
+    assert "opex_annual" in resp.text
 
 
 def test_compute_from_assumptions_ownership_isolation():

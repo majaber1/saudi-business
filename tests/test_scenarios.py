@@ -68,7 +68,7 @@ def test_scenario_requires_required_assumptions_present_or_overridden():
     study = _study(headers)
     resp = client.post(f"/studies/{study['id']}/scenarios/", headers=headers, json={"scenario_type": "BASE"})
     assert resp.status_code == 422, resp.text
-    assert set(resp.json()["detail"]["missing"]) == {"capex", "revenue_year1"}
+    assert set(resp.json()["detail"]["missing"]) == {"capex", "revenue_year1", "opex_annual"}
 
 
 def test_base_conservative_optimistic_use_explicit_overrides_not_blanket_percent():
@@ -110,6 +110,7 @@ def test_scenario_never_mutates_the_studys_base_assumptions():
     study = _study(headers)
     _set_assumption(headers, study["id"], "capex", 500000)
     _set_assumption(headers, study["id"], "revenue_year1", 300000)
+    _set_assumption(headers, study["id"], "opex_annual", 120000)
 
     client.post(
         f"/studies/{study['id']}/scenarios/",
@@ -127,6 +128,7 @@ def test_scenario_computation_is_deterministic_and_reproducible():
     study = _study(headers)
     _set_assumption(headers, study["id"], "capex", 500000)
     _set_assumption(headers, study["id"], "revenue_year1", 300000)
+    _set_assumption(headers, study["id"], "opex_annual", 120000)
 
     first = client.post(
         f"/studies/{study['id']}/scenarios/",
@@ -148,6 +150,7 @@ def test_compare_returns_latest_run_per_scenario_type():
     study = _study(headers)
     _set_assumption(headers, study["id"], "capex", 500000)
     _set_assumption(headers, study["id"], "revenue_year1", 300000)
+    _set_assumption(headers, study["id"], "opex_annual", 120000)
 
     client.post(f"/studies/{study['id']}/scenarios/", headers=headers, json={"scenario_type": "BASE"})
     client.post(

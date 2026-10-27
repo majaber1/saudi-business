@@ -70,9 +70,19 @@ def project_cash_flows(values: dict[str, Optional[float]]) -> tuple[float, list[
 
     capex = float(values["capex"])
     revenue_year1 = float(values["revenue_year1"])
-    opex_annual = float(values.get("opex_annual") if values.get("opex_annual") is not None else OPTIONAL_ASSUMPTION_DEFAULTS["opex_annual"])
+    if values.get("opex_annual") is None:
+        raise ValueError("opex_annual is missing and was not treated as zero")
+    opex_annual = float(values["opex_annual"])
     growth_rate = float(values.get("growth_rate") if values.get("growth_rate") is not None else OPTIONAL_ASSUMPTION_DEFAULTS["growth_rate"])
-    discount_rate = float(values.get("discount_rate") if values.get("discount_rate") is not None else OPTIONAL_ASSUMPTION_DEFAULTS["discount_rate"])
+    if values.get("discount_rate") is None:
+        discount_rate = float(OPTIONAL_ASSUMPTION_DEFAULTS["discount_rate"])
+    else:
+        discount_rate = float(values["discount_rate"])
+        if discount_rate < 0 or discount_rate > 1:
+            raise ValueError(
+                "Stored discount_rate is outside the ratio range 0..1 and was not rescaled. "
+                "Historical results are unchanged."
+            )
     horizon_years = int(values.get("horizon_years") if values.get("horizon_years") is not None else OPTIONAL_ASSUMPTION_DEFAULTS["horizon_years"])
     if horizon_years < 1:
         raise ValueError("horizon_years must be at least 1")

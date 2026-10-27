@@ -17,7 +17,7 @@ app.services.study_access). Requires persistence (DATABASE_URL).
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
@@ -49,6 +49,7 @@ class AssumptionCreate(BaseModel):
     reason: Optional[str] = None
     confidence: str = Field(default="medium")
     evidence_id: Optional[int] = None
+    rate_representation: Optional[Literal["PERCENT", "RATIO"]] = None
 
     @model_validator(mode="after")
     def _validate(self):
@@ -62,6 +63,22 @@ class AssumptionCreate(BaseModel):
             raise ValueError("evidence_id may only be set when origin=EVIDENCE_DERIVED")
         if self.origin == "EVIDENCE_DERIVED" and self.evidence_id is None:
             raise ValueError("origin=EVIDENCE_DERIVED requires evidence_id")
+        if self.key == "discount_rate":
+            if self.value_number is None:
+                raise ValueError("discount_rate requires value_number")
+            import sys
+            from pathlib import Path
+            engine = Path(__file__).resolve().parents[3] / "financial-engine"
+            if str(engine) not in sys.path:
+                sys.path.insert(0, str(engine))
+            from rate_contract import AmbiguousRateError, resolve_api_discount_rate
+
+            try:
+                ratio, label = resolve_api_discount_rate(self.value_number, self.rate_representation)
+            except AmbiguousRateError as exc:
+                raise ValueError(str(exc)) from exc
+            self.value_number = ratio
+            self.rate_representation = label  # type: ignore[assignment]
         return self
 
 
@@ -117,7 +134,7 @@ def create_assumption(study_id: int, data: AssumptionCreate, user: UserOut = Dep
             created_by=user.id,
             version=next_version,
             is_active=True,
-            **data.model_dump(),
+            **data.model_dump(exclude={"rate_representation"}),
         )
         db.add(row)
         db.commit()

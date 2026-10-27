@@ -1,13 +1,14 @@
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # financial-engine/ lives at the repo root, one level above backend/
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "financial-engine"))
 from calculator import evaluate_feasibility, sensitivity_analysis  # noqa: E402
+from rate_contract import AmbiguousRateError, resolve_api_discount_rate  # noqa: E402
 
 router = APIRouter(prefix="/financial", tags=["financial"])
 
@@ -15,7 +16,18 @@ router = APIRouter(prefix="/financial", tags=["financial"])
 class FeasibilityRequest(BaseModel):
     investment: float = Field(..., gt=0)
     annual_cash_flows: List[float] = Field(..., min_length=1)
-    discount_rate: float = Field(default=0.10, ge=0, le=1)
+    discount_rate: float = Field(default=0.10, ge=0)
+    discount_rate_representation: Optional[Literal["PERCENT", "RATIO"]] = None
+
+    @model_validator(mode="after")
+    def _explicit_discount(self):
+        try:
+            ratio, label = resolve_api_discount_rate(self.discount_rate, self.discount_rate_representation)
+        except AmbiguousRateError as exc:
+            raise ValueError(str(exc)) from exc
+        self.discount_rate = ratio
+        self.discount_rate_representation = label  # type: ignore[assignment]
+        return self
 
 
 _IRR_UNAVAILABLE = (

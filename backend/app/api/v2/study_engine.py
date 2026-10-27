@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -365,6 +365,7 @@ class AssumptionEditRequest(BaseModel):
     base: Optional[str] = None
     high: Optional[str] = None
     explanation: Optional[str] = None
+    rate_representation: Optional[Literal["PERCENT", "RATIO"]] = None
 
 
 class AssumptionActionRequest(BaseModel):
@@ -373,6 +374,24 @@ class AssumptionActionRequest(BaseModel):
     action: str  # approve | reject | regenerate
     value: Optional[str] = None
     explanation: Optional[str] = None
+    rate_representation: Optional[Literal["PERCENT", "RATIO"]] = None
+
+
+def _discount_representation_or_error(key: str, value: Optional[str], representation: Optional[str]) -> Optional[str]:
+    """Reject a bare discount number. A percent sign is an explicit PERCENT label."""
+    lowered = (key or "").strip().lower()
+    if not any(needle in lowered for needle in ("discount_rate", "discount rate", "معدل الخصم")):
+        return representation
+    text = str(value or "").strip()
+    label = (representation or "").strip().upper() or None
+    if label in {"PERCENT", "RATIO"}:
+        return label
+    if text.endswith("%") or text.endswith("٪"):
+        return "PERCENT"
+    raise HTTPException(
+        status_code=422,
+        detail="discount_rate requires rate_representation PERCENT or RATIO. The number was not rescaled.",
+    )
 
 
 
@@ -1485,6 +1504,7 @@ async def edit_assumption(study_id: str, req: AssumptionEditRequest, user=Depend
     leaked = assert_no_saas_leakage(arch, [req.key])
     if leaked:
         raise HTTPException(status_code=400, detail=f"SaaS assumption key not allowed for {arch}: {leaked}")
+    discount_label = _discount_representation_or_error(req.key, req.value, req.rate_representation)
 
     updated = False
     for a in state.assumptions or []:
@@ -1500,6 +1520,8 @@ async def edit_assumption(study_id: str, req: AssumptionEditRequest, user=Depend
             a.origin = "user"
             a.ai_estimated = False
             a.confidence = "confirmed"
+            if discount_label:
+                a.rate_representation = discount_label  # type: ignore[assignment]
             updated = True
             break
     if not updated:
@@ -1516,6 +1538,7 @@ async def edit_assumption(study_id: str, req: AssumptionEditRequest, user=Depend
                 high=req.high,
                 origin="user",
                 ai_estimated=False,
+                rate_representation=discount_label,  # type: ignore[arg-type]
             )
         )
     state.assumptions_version = int(state.assumptions_version or 0) + 1
@@ -1586,6 +1609,13 @@ async def assumption_action(study_id: str, req: AssumptionActionRequest, user=De
         if req.value is not None:
             a.value = req.value
             a.base = req.value
+        label = _discount_representation_or_error(
+            a.key,
+            a.value,
+            req.rate_representation or getattr(a, "rate_representation", None),
+        )
+        if label:
+            a.rate_representation = label  # type: ignore[assignment]
         a.source = "user"
         a.origin = "user"
         a.ai_estimated = False

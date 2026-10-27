@@ -149,6 +149,7 @@ def _run_lifecycle(headers, spec: dict):
 
     _assumption(headers, sid, "capex", spec["investment"], "CAPEX", "النفقات الرأسمالية")
     _assumption(headers, sid, "revenue_year1", max(spec["investment"] * 0.35, 50000), "Year-1 revenue", "إيراد السنة الأولى")
+    _assumption(headers, sid, "opex_annual", max(spec["investment"] * 0.12, 10000), "Annual operating cost", "تكلفة التشغيل السنوية")
 
     computed = client.post(f"/feasibility/{sid}/compute-from-assumptions", headers=headers)
     assert computed.status_code == 200, computed.text

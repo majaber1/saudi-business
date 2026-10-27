@@ -22,7 +22,9 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 from app.db import DB_ENABLED, SessionLocal
 from app.api.auth import UserOut, get_current_user
@@ -57,7 +59,24 @@ class StepIn(BaseModel):
 
 class ComputeIn(BaseModel):
     annual_cash_flows: List[float] = Field(..., min_length=1)
-    discount_rate: float = Field(default=0.10, ge=0, le=1)
+    discount_rate: float = Field(default=0.10, ge=0)
+    discount_rate_representation: Optional[Literal["PERCENT", "RATIO"]] = None
+
+    @model_validator(mode="after")
+    def _explicit_discount(self):
+        import sys
+        engine = Path(__file__).resolve().parents[3] / "financial-engine"
+        if str(engine) not in sys.path:
+            sys.path.insert(0, str(engine))
+        from rate_contract import AmbiguousRateError, resolve_api_discount_rate
+
+        try:
+            ratio, label = resolve_api_discount_rate(self.discount_rate, self.discount_rate_representation)
+        except AmbiguousRateError as exc:
+            raise ValueError(str(exc)) from exc
+        self.discount_rate = ratio
+        self.discount_rate_representation = label  # type: ignore[assignment]
+        return self
 
 
 class StudyOut(BaseModel):
@@ -324,6 +343,8 @@ def compute_from_assumptions(study_id: int, user: UserOut = Depends(get_current_
         )
         values = {row.key: row.value_number for row in active}
         missing = missing_required_keys(values)
+        if values.get("opex_annual") is None:
+            missing.append("opex_annual")
         if missing:
             raise HTTPException(
                 status_code=422,
@@ -334,7 +355,10 @@ def compute_from_assumptions(study_id: int, user: UserOut = Depends(get_current_
                 },
             )
         trust_warnings = soft_input_warnings(values)
-        investment, cash_flows, discount_rate = project_cash_flows(values)
+        try:
+            investment, cash_flows, discount_rate = project_cash_flows(values)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         res = evaluate_feasibility(investment, cash_flows, discount_rate)
         sens = sensitivity_analysis(investment, cash_flows, discount_rate)

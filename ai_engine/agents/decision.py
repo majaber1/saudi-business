@@ -156,7 +156,8 @@ def run_decision(state: StudyState) -> StudyState:
         msg = state.decision_rationale
         state.messages.append(_AI(content=msg))
         state.next_action = "present_decision"
-        return state
+        from ..tools.investment_trust import apply_investment_trust
+        return apply_investment_trust(state)
 
     if decision_data:
         provisional_verdict = decision_data.get("verdict", "INSUFFICIENT_EVIDENCE")
@@ -249,7 +250,8 @@ def run_decision(state: StudyState) -> StudyState:
     if public:
         state.messages.append(AIMessage(content=public))
     state.next_action = "present_decision"
-    return state
+    from ..tools.investment_trust import apply_investment_trust
+    return apply_investment_trust(state)
 
 
 def _fallback_decision(state: StudyState) -> dict:
@@ -257,7 +259,11 @@ def _fallback_decision(state: StudyState) -> dict:
     npv = fr.get("npv")
     irr = fr.get("irr")
     risks = list(state.decision_risks or [])[:3] or ["Execution risk", "Market risk"]
-    if isinstance(npv, (int, float)) and npv > 0:
+    if (state.financial_results or {}).get("investment_grade") is False:
+        verdict = (state.financial_results or {}).get("verdict_override") or "DEFER"
+        rationale = "Financial inputs are not investment-grade, so no favorable recommendation is issued."
+        conditions = ["Confirm operating costs and the discount-rate unit before requesting a recommendation."]
+    elif isinstance(npv, (int, float)) and npv > 0:
         verdict = "GO_WITH_CONDITIONS"
         rationale = (
             f"Base-case NPV is positive ({npv}) with IRR={irr}. "

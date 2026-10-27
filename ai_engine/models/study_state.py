@@ -63,6 +63,9 @@ class Assumption(BaseModel):
     label_en: Optional[str] = None
     label_ar: Optional[str] = None
     ai_estimated: bool = False
+    # Optional. Absent on historical rows. PERCENT or RATIO is required before
+    # a new discount rate can be used. Old stored JSON still loads.
+    rate_representation: Optional[Literal["PERCENT", "RATIO"]] = None
     knowledge_refs: List[Dict[str, Any]] = Field(default_factory=list)
     knowledge_confidence: Optional[float] = None
     knowledge_influence: Optional[Dict[str, Any]] = None
