@@ -15,8 +15,8 @@ Blocked until a real source is available. Do not stub success.
 - Keep GASTAT and MISA. Re-measure live reachability before calling them verified.
 - Monsha'at stays `BLOCKED_EXTERNAL_REACHABILITY`.
 - Web search stays `not_implemented` until an allowlisted provider is configured.
-- Add competitor records only with identity, URL, and timestamp.
-- Add a critic that drops claims with no source. It must not invent citations.
+- Citation critic for official and document claims is on this branch. It does not invent a URL.
+- Competitor records still need identity, URL, and timestamp before they count as evidence.
 
 ## Stage 3 — archetype financials
 

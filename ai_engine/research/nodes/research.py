@@ -8,6 +8,7 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from ai_engine.models.study_state import Claim, StudyState
+from ai_engine.research.citation_critic import screen_research_citations
 from ai_engine.research.planner import extract_gaps_from_state
 from ai_engine.research.schemas import ResearchClaim, ResearchResult
 from ai_engine.research.service import research_gaps
@@ -166,9 +167,18 @@ def run_research(state: StudyState) -> StudyState:
             except Exception:  # noqa: BLE001
                 pass
 
-    state.claims = merge_evidence_claims(state.claims, result.claims)
+    accepted_claims, critic_notes = screen_research_citations(list(result.claims))
+    state.claims = merge_evidence_claims(state.claims, accepted_claims)
     state.research_status = result.status
     state.research_context = result.to_public_dict()
+    if critic_notes:
+        state.research_context = {
+            **state.research_context,
+            "citation_critic": {
+                "rejected_count": len(critic_notes),
+                "rejected": critic_notes[:20],
+            },
+        }
     state.research_attempts = list(result.attempts)
     state.market_research_context = getattr(result, "market_research", None)
     state.phase = "EVIDENCE_REVIEW"

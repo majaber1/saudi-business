@@ -12,7 +12,7 @@ Measured on `recovery/financial-trust-20261028` against production SHA `56ca05b`
 | Monsha'at connector | BLOCKED | `BLOCKED_EXTERNAL_REACHABILITY` in `ai_engine/research/planner.py`. Not faked. |
 | Allowlisted web search | NOT STARTED | `ai_engine/tools/search.py` returns `not_implemented`. |
 | Competitor identity, URL, and timestamp | NOT STARTED | Current competitor handling extracts names. It is not a sourced competitor record. |
-| Critic node | NOT STARTED | No critic step rejects unsourced claims before they enter the decision. |
+| Citation critic for official and document claims | VERIFIED | `ai_engine/research/citation_critic.py` drops those claims when the URL is not http(s) and does not invent a URL. `tests/test_citation_critic.py` plus Phase 8A/8B research tests: 54 passed. |
 | 55% and 45% cost fills cannot authorize GO | VERIFIED | Fills stay labeled `UNVERIFIED_ESTIMATE`. `tests/test_financial_trust_sprint.py` passed. |
 | Missing `opex_annual` is not treated as zero | VERIFIED | `project_cash_flows` raises. Compute and scenario APIs return 422. Covered by projection, scenario, and decision tests. |
 | Ambiguous discount rate is not divided by 100 | VERIFIED | `financial-engine/rate_contract.py`. Bare `12` is rejected. Historical `0.10` stays a ratio. |
