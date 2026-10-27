@@ -1,6 +1,7 @@
 "use client";
 
 import { formatIrrMetric, formatPaybackMetric } from "@/lib/financialDisplay";
+import { ArchetypeLineItems } from "@/components/study/ArchetypeLineItems";
 
 type FinancialResults = Record<string, unknown> | null | undefined;
 
@@ -14,6 +15,7 @@ type Props = {
   rationale?: string | null;
   conditions?: string[];
   onContinue: () => void;
+  onEditAssumption?: (key: string, value: string) => Promise<void>;
 };
 
 const STEPS = [
@@ -116,6 +118,7 @@ export function StudyLateStagePanels({
   rationale,
   conditions = [],
   onContinue,
+  onEditAssumption,
 }: Props) {
   const showFinancial = phase === "READY_FOR_ANALYSIS" || phase === "ANALYZED";
   const showRisks = phase === "DECISION_READY";
@@ -191,6 +194,7 @@ export function StudyLateStagePanels({
                   ))}
                 </ul>
               ) : null}
+              <ArchetypeLineItems ar={ar} financial={financial} onEdit={onEditAssumption} loading={loading} />
             </>
           )}
           <button
@@ -291,6 +295,7 @@ export function StudyLateStagePanels({
               </div>
             </div>
           )}
+          <ArchetypeLineItems ar={ar} financial={financial} onEdit={onEditAssumption} loading={loading} />
           <button
             type="button"
             data-testid="print-report-btn"

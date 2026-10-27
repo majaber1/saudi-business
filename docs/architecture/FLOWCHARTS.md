@@ -122,7 +122,7 @@ flowchart TD
   bare -->|no| same[Same inputs same cash flows]
 ```
 
-The cash-flow basis is `PRE_TAX_OPERATING_PROJECTION`. VAT and Zakat are not in the series.
+The cash-flow basis is `PRE_TAX_OPERATING_PROJECTION`. VAT and Zakat are not in the series. The study workspace renders these lines, their lineage, and a stale banner after an assumption edit. A favorable verdict does not survive that edit.
 
 ## Proposed owner journey
 

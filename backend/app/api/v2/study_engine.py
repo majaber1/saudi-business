@@ -1545,6 +1545,16 @@ async def edit_assumption(study_id: str, req: AssumptionEditRequest, user=Depend
     state.assumptions_approved = False
     state.phase = "ASSUMPTIONS_REVIEW"
     state.next_action = "review_assumptions"
+    from ai_engine.tools.archetype_lines import mark_projection_stale
+
+    state.financial_results = mark_projection_stale(state.financial_results)
+    if state.verdict in {"GO", "GO_WITH_CONDITIONS", "CONDITIONAL_GO"}:
+        state.verdict = "INSUFFICIENT_EVIDENCE"
+        state.decision_rationale = (
+            "تم تغيير الافتراضات. التوصية السابقة لم تعد سارية."
+            if (getattr(state, "language", None) == "ar")
+            else "Assumptions changed. The previous recommendation is no longer current."
+        )
     _save_study(study_id, state.model_dump(), user_id); _remember_study_if_ready(state, user_id)
     return _payload_from_state(study_id, state, record_meta=record)
 

@@ -32,12 +32,13 @@ Partial for two archetypes only.
 
 ## Stage 4 — one workspace journey
 
-Not started as a single flow.
+Partial.
 
-- Collapse the tabbed study page and `/workspace` into one path.
-- Owner actions: Approve, Reject, Request Modification.
-- Bilingual report with RTL Arabic.
-- Browser verification of the journey, desktop and a narrow viewport.
+- The study workspace shows specialty-coffee and Saudi SaaS line items, monthly and annual totals, assumption lineage, and the recommendation ceiling.
+- The projection is labeled pre-tax, not investment-ready.
+- Editing an assumption marks the previous figures stale and withdraws a favorable verdict until analysis is run again.
+- Browser verification and a non-production Postgres run are NOT TESTED.
+- Approve, Reject, and Request Modification are not yet one completed owner journey.
 
 ## Stage 5 — integration and security
 

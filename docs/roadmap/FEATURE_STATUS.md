@@ -21,7 +21,7 @@ Measured on `recovery/financial-trust-20261028` against production SHA `56ca05b`
 | Deterministic policy is the recommendation ceiling | VERIFIED | `apply_investment_trust` runs after `apply_decision_safety` and after the blocked-financial early return. |
 | Negative NPV, contradictory evidence, impossible margins, invalid units, provider failure | PARTIAL | Existing financial and evidence gates cover several of these. A single Stage 1 case for every failure mode is not claimed. |
 | Archetype line-item model, monthly cash flow, real what-if | PARTIAL | Specialty coffee and Saudi SaaS only, in `ai_engine/tools/archetype_lines.py`. `tests/test_stage3_archetype_financials.py` passed with the trust and archetype regressions (42 passed). Other archetypes and tax lines are not in this model. |
-| One workspace journey with Approve / Reject / Request Modification | PARTIAL | Two surfaces exist. The owner action set is not one completed journey. |
+| One workspace journey with Approve / Reject / Request Modification | PARTIAL | Coffee and SaaS line items render in the study workspace with lineage and a stale-projection warning. Owner approve/reject/modify is not one completed journey. Browser: NOT TESTED. |
 | Bilingual RTL report as the single artifact | PARTIAL | Arabic and English strings exist. A unified report journey was not browser-tested. |
 | Integration, security, and browser end-to-end | NOT TESTED | No browser session was run against the trust changes. SSO protects the Vercel domains. |
 | Non-production Postgres migration of this branch | NOT TESTED | No migration was added. No database write was run. |

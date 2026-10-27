@@ -145,6 +145,33 @@ def test_saas_lines_and_missing_hosting_are_explicit():
     assert missing["investment_grade"] is False
 
 
+def test_edited_assumptions_make_the_previous_projection_stale():
+    from ai_engine.tools.archetype_lines import mark_projection_stale, project_study_archetype
+
+    state = StudyState(
+        study_id="coffee",
+        project_id="p",
+        user_id="u",
+        assumptions_version=2,
+        profile=ProjectProfile(name="Coffee", sector="food", archetype="fnb"),
+        assumptions=[
+            Assumption(key="coffee_revenue_monthly", value="52000", source="user", confidence="confirmed", base="52000"),
+            Assumption(key="rent_monthly", value="15000", source="user", confidence="confirmed", base="15000"),
+            Assumption(key="labor_monthly", value="18000", source="user", confidence="confirmed", base="18000"),
+            Assumption(key="other_operating_cost_monthly", value="15600", source="user", confidence="confirmed", base="15600"),
+        ],
+    )
+    current = project_study_archetype(state)
+    assert current is not None
+    assert current["assumptions_version"] == 2
+    assert current["monthly_net"] == 52000 - 15000 - 18000 - 15600
+    stale = mark_projection_stale(current)
+    assert stale["stale"] is True
+    assert stale["monthly_net"] == current["monthly_net"]
+    assert stale["investment_grade"] is False
+    assert stale["verdict_override"] == "INSUFFICIENT_EVIDENCE"
+
+
 def test_financial_analyst_uses_the_archetype_model_for_fnb():
     from ai_engine.agents.financial_analyst import run_financial_analysis
 

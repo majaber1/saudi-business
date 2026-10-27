@@ -404,4 +404,22 @@ def project_study_archetype(state: Any) -> dict[str, Any] | None:
         }
     horizon = rows.get("horizon_months", {}).get("value")
     months = int(_number(horizon) or 12)
-    return project_archetype_lines(archetype, rows, horizon_months=months)
+    projected = project_archetype_lines(archetype, rows, horizon_months=months)
+    if projected is not None:
+        projected["assumptions_version"] = int(getattr(state, "assumptions_version", 0) or 0)
+    return projected
+
+
+def mark_projection_stale(results: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Keep the previous figures visible, but they are no longer the current recommendation."""
+    if not isinstance(results, dict):
+        return results
+    return {
+        **results,
+        "stale": True,
+        "stale_reason": "assumptions_changed",
+        "investment_grade": False,
+        "analysis_complete": False,
+        "verdict_override": "INSUFFICIENT_EVIDENCE",
+        "gate_status": "BLOCKED",
+    }

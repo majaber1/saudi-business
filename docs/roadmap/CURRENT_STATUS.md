@@ -12,13 +12,13 @@ Updated: 2026-10-28. This file is the resume point for another machine. The remo
 | `origin/main` | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
-| Resume-point commit | `a49357216dd7e6dd40f6a2edb59f74c5c97cc7e8` |
+| Resume-point commit | `02389aee3a31a6512ebc4783f5c9f28ef975d87d` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Remote verification before Stage 3: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `a49357216dd7e6dd40f6a2edb59f74c5c97cc7e8`. Confirm the tip again after the Stage 3 push.
+Remote verification before the workspace integration: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `02389aee3a31a6512ebc4783f5c9f28ef975d87d`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -37,8 +37,8 @@ The original dirty checkout was not reset, cleaned, or checked out onto this bra
 | 0 Baseline and architecture docs | Complete on this branch | `docs/architecture/CURRENT_ARCHITECTURE.md`, `TARGET_ARCHITECTURE.md`, `FLOWCHARTS.md`, `docs/roadmap/FEATURE_STATUS.md`, `COMPLETION_BACKLOG.md`. |
 | 1 Financial trust | Complete on this branch, not released | Estimated 55% and 45% costs cannot authorize GO. Ambiguous discount rates are not divided by 100. Missing `opex_annual` is not zero. |
 | 2 Real Saudi research | Partial | Competitor verification, citation critic, and research-lineage critic are on this branch. Search is BLOCKED. Monsha'at is BLOCKED. GASTAT live retrieval was not verified. MISA homepage returned HTTP 200. Browser journey NOT TESTED. |
-| 3 Archetype financials | Partial | Specialty coffee and Saudi SaaS have explicit line items, monthly and annual pre-tax totals, assumption lineage, and driver scenarios. Other archetypes still use the legacy proxy. Tax lines are not included. |
-| 4 One workspace journey | Not started | |
+| 3 Archetype financials | Partial | Specialty coffee and Saudi SaaS line items are calculated and shown in the study workspace. Tax lines and other archetypes are not included. |
+| 4 One workspace journey | Partial | The workspace renders coffee and SaaS lines, lineage, the pre-tax label, the recommendation ceiling, and an edit that marks the previous recommendation stale. Approve, Reject, and Request Modification are not one completed journey. Browser pass: NOT TESTED. |
 | 5 Integration, security, browser, non-prod Postgres | Not tested | |
 | 6 Release | Not started | Merge, production migration, and deploy need explicit owner approval. |
 
@@ -72,7 +72,13 @@ Stage 3 command, same worktree:
 
 Result: **42 passed**.
 
-Browser: **NOT TESTED**. No database migration was run.
+Workspace integration command, same worktree:
+
+`python -m pytest tests/test_stage3_archetype_financials.py tests/test_financial_trust_sprint.py tests/test_v2_study_engine.py -q --tb=line`
+
+Result: **72 passed**.
+
+Browser workspace: **NOT TESTED**. No non-production Postgres session was available.
 
 Known local-environment failure, not re-run and not a trust regression: `tests/test_phase7b_gastat_live_source.py::test_l_mcp_source_tool_boundary` failed earlier because the `mcp` package is not installed.
 

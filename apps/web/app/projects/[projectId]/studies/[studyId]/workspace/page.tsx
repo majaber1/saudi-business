@@ -10,6 +10,7 @@ import { DiscoveryQuestionsPanel } from "@/components/study/DiscoveryQuestionsPa
 import { AssumptionReviewPanel } from "@/components/study/AssumptionReviewPanel";
 import { KnowledgePanel } from "@/components/study/KnowledgePanel";
 import { StudyJourneyNav, StudyLateStagePanels } from "@/components/study/StudyJourneyPanels";
+import { ArchetypeLineItems } from "@/components/study/ArchetypeLineItems";
 import {
   ResearchQualityClaimsList,
   ResearchQualitySummary,
@@ -784,6 +785,7 @@ export default function StudyWorkspacePage() {
           rationale={study.decision_rationale}
           conditions={study.decision_conditions || []}
           onContinue={() => void continueStudy()}
+          onEditAssumption={editAssumption}
         />
       ) : null}
 
@@ -955,6 +957,7 @@ export default function StudyWorkspacePage() {
                     );
                   })()}
                   {"capex" in financial && financial.capex != null && <p>CAPEX: {String(financial.capex)}</p>}
+                  <ArchetypeLineItems ar={ar} financial={financial} onEdit={editAssumption} loading={loading} />
                   {Array.isArray((financial as { warnings?: string[] }).warnings) &&
                     ((financial as { warnings?: string[] }).warnings || []).length > 0 && (
                       <ul data-testid="workspace-financial-warnings" className="mt-2 space-y-1 text-amber-800">
