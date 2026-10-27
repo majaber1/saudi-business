@@ -20,7 +20,7 @@ Measured on `recovery/financial-trust-20261028` against production SHA `56ca05b`
 | LLM cannot override deterministic cost or discount | VERIFIED | `_merge_extract` keeps deterministic discount and does not hide an estimated cost behind an LLM cost. |
 | Deterministic policy is the recommendation ceiling | VERIFIED | `apply_investment_trust` runs after `apply_decision_safety` and after the blocked-financial early return. |
 | Negative NPV, contradictory evidence, impossible margins, invalid units, provider failure | PARTIAL | Existing financial and evidence gates cover several of these. A single Stage 1 case for every failure mode is not claimed. |
-| Archetype line-item model, monthly cash flow, real what-if | NOT STARTED | Production math is a pre-tax annual proxy with ±20% scenario multipliers. |
+| Archetype line-item model, monthly cash flow, real what-if | PARTIAL | Specialty coffee and Saudi SaaS only, in `ai_engine/tools/archetype_lines.py`. `tests/test_stage3_archetype_financials.py` passed with the trust and archetype regressions (42 passed). Other archetypes and tax lines are not in this model. |
 | One workspace journey with Approve / Reject / Request Modification | PARTIAL | Two surfaces exist. The owner action set is not one completed journey. |
 | Bilingual RTL report as the single artifact | PARTIAL | Arabic and English strings exist. A unified report journey was not browser-tested. |
 | Integration, security, and browser end-to-end | NOT TESTED | No browser session was run against the trust changes. SSO protects the Vercel domains. |

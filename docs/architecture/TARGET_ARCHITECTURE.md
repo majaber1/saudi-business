@@ -30,7 +30,9 @@ The tabbed study page and `/workspace` converge on that journey. They do not gai
 
 ## Financial model
 
-- Archetype line items replace the single pre-tax operating proxy for investment-ready output.
+The completion branch now calculates specialty coffee and Saudi SaaS from explicit lines. That projection is pre-tax and is not yet the full investment-ready model.
+
+- Archetype line items replace the single pre-tax operating proxy for investment-ready output. Coffee and SaaS are the first two. Other archetypes still use the legacy proxy.
 - Missing material cost stays missing. It never becomes zero and never becomes a sourced fact.
 - Estimated fills stay labeled `ESTIMATED` until the owner confirms them.
 - Discount rates enter as `PERCENT` or `RATIO`. Stored historical ratios in `[0, 1]` are not rewritten.

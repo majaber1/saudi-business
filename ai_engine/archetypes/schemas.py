@@ -25,6 +25,7 @@ SAAS_LEAKAGE_KEYS = frozenset(
         "monthly_recurring_revenue",
         "churn_rate",
         "saas_customers",
+        "hosting_monthly",
     }
 )
 
@@ -73,6 +74,7 @@ SAAS_SCHEMA = [
     _f("arr", label_en="ARR", label_ar="الإيراد السنوي المتكرر (ARR)", input_type="currency", unit="SAR"),
     _f("mrr", label_en="MRR", label_ar="الإيراد الشهري المتكرر (MRR)", input_type="currency", unit="SAR", required=False),
     _f("cac", label_en="CAC", label_ar="تكلفة اكتساب العميل (CAC)", input_type="currency", unit="SAR"),
+    _f("hosting_monthly", label_en="Monthly hosting / infrastructure", label_ar="الاستضافة / البنية التحتية الشهرية", input_type="currency", unit="SAR", required=False),
     _f("churn", label_en="Monthly churn", label_ar="نسبة التسرب الشهرية", input_type="percent", unit="%"),
     _f("ltv", label_en="LTV", label_ar="قيمة العميل مدى الحياة (LTV)", input_type="currency", unit="SAR", required=False),
     _f("capex", label_en="CAPEX", label_ar="النفقات الرأسمالية (CAPEX)", input_type="currency", unit="SAR", required=False),
@@ -166,6 +168,7 @@ FNB_SCHEMA = [
     _f("operating_hours_day", label_en="Operating hours / day", label_ar="ساعات التشغيل يومياً", input_type="number", unit="hours"),
     _f("avg_ticket", label_en="Average ticket size", label_ar="متوسط قيمة الفاتورة", input_type="currency", unit="SAR"),
     _f("daily_covers", label_en="Expected daily covers / transactions", label_ar="الزبائن / المعاملات اليومية المتوقعة", input_type="number"),
+    _f("operating_days_per_month", label_en="Operating days / month", label_ar="أيام التشغيل في الشهر", input_type="number", unit="days", required=False),
     _f("rent_monthly", label_en="Monthly rent", label_ar="الإيجار الشهري", input_type="currency", unit="SAR"),
     _f("labor_monthly", label_en="Monthly labor cost", label_ar="تكلفة العمالة الشهرية", input_type="currency", unit="SAR"),
     _f("food_cost_pct", label_en="Food / beverage cost %", label_ar="نسبة تكلفة الطعام / المشروبات", input_type="percent", unit="%"),

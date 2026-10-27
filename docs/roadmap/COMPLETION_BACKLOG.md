@@ -20,13 +20,15 @@ Partial. Do not stub the blocked connectors.
 
 ## Stage 3 — archetype financials
 
-Not started.
+Partial for two archetypes only.
 
-- Line items by archetype, including VAT, Zakat, payroll, rent, and working capital where the archetype needs them.
-- Monthly and annual cash flow.
-- Scenarios that change drivers, not only a ±20% multiplier.
-- Keep the pre-tax proxy labeled until an investment-ready model exists.
-- Keep the Stage 1 trust ceiling on every new calculator.
+- Specialty coffee (`fnb`) projects revenue, rent, payroll, and operating cost from explicit assumptions.
+- Saudi SaaS (`saas_digital`) projects subscription revenue, acquisition cost, and hosting.
+- Monthly totals sum to the annual pre-tax projection. Tax lines are not included.
+- A missing or ambiguous line stays missing and blocks an investment-ready GO.
+- An estimated material line stays `UNVERIFIED_ESTIMATE` and forces DEFER.
+- Driver scenarios replace a named input. A bare multiplier is rejected.
+- Other archetypes still use the existing pre-tax proxy.
 
 ## Stage 4 — one workspace journey
 

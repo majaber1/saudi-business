@@ -542,6 +542,19 @@ def _compute_scenario(capex: float, revenues: list, costs: list, discount_rate: 
 
 
 def run_financial_analysis(state: StudyState) -> StudyState:
+    from ..tools.archetype_lines import project_study_archetype
+
+    archetype_result = project_study_archetype(state)
+    if archetype_result is not None:
+        lang = state.language
+        state.financial_results = archetype_result
+        state.phase = "ANALYZED"
+        state.error = None
+        state.next_action = "review_financials"
+        summary = archetype_result.get("summary_en") if lang != "ar" else archetype_result.get("summary_ar")
+        state.messages.append(AIMessage(content=summary or "Archetype projection ready for review."))
+        return state
+
     lang = state.language
     try:
         llm = get_llm("decision")

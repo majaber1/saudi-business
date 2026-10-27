@@ -100,6 +100,30 @@ flowchart TD
 
 Provider errors append to the research error list and keep the run out of `complete`.
 
+## Implemented coffee and SaaS projection
+
+```mermaid
+flowchart TD
+  archetype{Archetype} -->|fnb| coffee[Revenue rent payroll operating cost]
+  archetype -->|saas_digital| saas[Subscription acquisition hosting]
+  archetype -->|other| legacy[Existing pre-tax proxy]
+  coffee --> lines[Explicit lines with assumption lineage]
+  saas --> lines
+  lines --> missing{Any material line missing or ambiguous}
+  missing -->|yes| insufficient[INSUFFICIENT_EVIDENCE and no zero fill]
+  missing -->|no| estimated{Any material line estimated}
+  estimated -->|yes| defer[DEFER and NPV withheld]
+  estimated -->|no| sign{Monthly net}
+  sign -->|negative| nogo[NO_GO]
+  sign -->|non-negative| annual[Annual sum of monthly pre-tax flows]
+  annual --> scenario[Named driver scenario]
+  scenario --> bare{Bare multiplier}
+  bare -->|yes| rejected[Scenario rejected]
+  bare -->|no| same[Same inputs same cash flows]
+```
+
+The cash-flow basis is `PRE_TAX_OPERATING_PROJECTION`. VAT and Zakat are not in the series.
+
 ## Proposed owner journey
 
 ```mermaid
