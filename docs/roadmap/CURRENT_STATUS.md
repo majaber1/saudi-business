@@ -12,13 +12,13 @@ Updated: 2026-10-29. This file is the resume point for another machine. The remo
 | `origin/main` | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
-| Resume-point commit | `40ae62083b746035733b2f6fd76de7567f3b7827` |
+| Owner-decision commit | `c945ac498f883c357c8efb3a7d1b158a6b955393` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Remote verification before the owner-decision milestone: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `40ae62083b746035733b2f6fd76de7567f3b7827`. Confirm the tip again after the next push.
+The owner-decision commit `c945ac498f883c357c8efb3a7d1b158a6b955393` matched `git ls-remote` for `refs/heads/saudi-business-completion`. `origin/main` remained `56ca05b43dee3cc097e4c04e7b096d13df4b98f3`. Confirm the tip again after the status-note push.
 
 ## Preserved checkouts
 
