@@ -360,6 +360,16 @@ def test_h_refuses_bad_hash_and_preserves_unknown_year():
     payload = source_document_to_ingest_payload(good)
     assert payload["assumptions"]["external_source"]["provenance"]["connector_id"]
     assert payload["year"] is None
+    assert any("Document date unknown" in reason for reason in payload["quality_breakdown"]["reasons"])
+
+
+def test_published_source_date_is_not_labeled_unknown():
+    published = datetime(2026, 10, 14, tzinfo=timezone.utc)
+    payload = source_document_to_ingest_payload(_valid_doc(published_at=published))
+    reasons = payload["quality_breakdown"]["reasons"]
+    assert payload["year"] == 2026
+    assert any("2026" in reason for reason in reasons)
+    assert not any("Document date unknown" in reason for reason in reasons)
 
 
 def test_i_mcp_boundary_smoke():

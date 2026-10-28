@@ -79,7 +79,7 @@ flowchart TD
   failed -->|no| financialGate[Stage 1 financial ceiling]
 ```
 
-A verified competitor record stores publisher, identity, stated location, retrieval time, and the supporting claim separately. Missing URL and timestamp fields are left empty.
+A verified competitor record stores publisher, identity, stated location, retrieval time, and the supporting claim separately. Missing URL and timestamp fields are left empty. A connector document with `published_at` keeps that year in the knowledge quality label. A missing publication date stays "Document date unknown" and is not filled from the page body.
 
 ## Implemented evidence provenance
 

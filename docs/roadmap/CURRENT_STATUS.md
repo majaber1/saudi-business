@@ -12,13 +12,13 @@ Updated: 2026-10-28. This file is the resume point for another machine. The remo
 | `origin/main` | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
-| Resume-point commit | `5e38de767eb7f50fce2587ad47028b41783d616f` |
+| Resume-point commit | `01bf0becc887c0efc5d3c08f6bfe17701f1a22f2` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Remote verification before research activation: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `5e38de767eb7f50fce2587ad47028b41783d616f`. Confirm the tip again after the next push.
+Remote verification before this acceptance attempt: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `01bf0becc887c0efc5d3c08f6bfe17701f1a22f2`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -98,7 +98,31 @@ Result: **201 passed**.
 
 Local isolated Postgres browser study: the coffee workspace showed GASTAT source URLs, a pre-tax monthly net, a stale banner after editing rent, and a recalculated net of -1,600 SAR after the base case was updated. A second study, `study_736acb38212a`, labeled the missing model as a deterministic fallback in Arabic and English. This is not a production acceptance pass. Search and Groq were not available to that process.
 
-Known local-environment failure, not re-run and not a trust regression: `tests/test_phase7b_gastat_live_source.py::test_l_mcp_source_tool_boundary` failed earlier because the `mcp` package is not installed.
+Published-date command, same worktree:
+
+`python -m pytest tests/test_phase7a_source_foundation.py tests/test_knowledge_intelligence_learning.py tests/test_stage2_market_intelligence.py -q --tb=short`
+
+Result: **28 passed**, 1 failed. The failure is `test_i_mcp_boundary_smoke` because the `mcp` package is not installed. The new published-date test passed. This is the same local-environment gap as `tests/test_phase7b_gastat_live_source.py::test_l_mcp_source_tool_boundary`.
+
+## Acceptance score
+
+This is not a full acceptance pass. Checked again on 2026-10-28. `GROQ_API_KEY` remains on Vercel only and was not decrypted. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and on both Vercel projects. Search stays `BLOCKED`. No search client was enabled.
+
+| Stage | Status |
+| --- | --- |
+| Idea captured | Partial — earlier local coffee studies exist |
+| Real model classification, risks, and explanation | BLOCKED — no local Groq credential |
+| Official research | Partial — GASTAT and MISA pages were retrieved with verification on |
+| Competitors and prices | BLOCKED — no allowlisted search credential |
+| Evidence | Partial — official claims only; competitor and price are `NOT_FOUND` |
+| Owner assumptions | Partial — owner-confirmed on the earlier coffee study, not model-drafted |
+| Financial projection | Partial — pre-tax coffee lines only; not investment-grade |
+| Scenario modification and stale recommendation | Partial — rent edit on the earlier study |
+| Decision | NOT TESTED as a completed Approve, Reject, or Request Modification |
+| Owner action on the decision | NOT TESTED |
+| Report | NOT TESTED |
+| Refresh and sign-in persistence | Partial — verified for `study_884fa2d78ce9` only |
+| Arabic and English | Partial — chrome and the fallback label switched; some study text stayed in the study language |
 
 ## Blockers
 

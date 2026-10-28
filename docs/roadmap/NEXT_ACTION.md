@@ -2,7 +2,7 @@
 
 Resume on branch `saudi-business-completion` in worktree `saudi-business-completion-20261028`. Do not use the dirty `Saudi-Business` checkout and do not apply its `0027` / `0028` migration files.
 
-Last verified remote SHA before research activation: `5e38de767eb7f50fce2587ad47028b41783d616f`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
+Last verified remote SHA before this acceptance attempt: `01bf0becc887c0efc5d3c08f6bfe17701f1a22f2`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
 
 ## Immediate task
 

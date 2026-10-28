@@ -9,6 +9,26 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 
+def _explicit_document_year(meta: Dict[str, Any]) -> Optional[int]:
+    """Use a stored year or an explicit published_at. Do not guess from body text."""
+    year = meta.get("year")
+    try:
+        year_i = int(year) if year is not None else None
+    except (TypeError, ValueError):
+        year_i = None
+    if year_i:
+        return year_i
+    raw = meta.get("published_at")
+    if isinstance(raw, datetime):
+        return raw.year
+    if isinstance(raw, str) and len(raw) >= 4 and raw[:4].isdigit():
+        try:
+            return int(raw[:4])
+        except ValueError:
+            return None
+    return None
+
+
 def score_document_quality(
     *,
     text: str = "",
@@ -37,11 +57,7 @@ def score_document_quality(
         reasons.append(f"Source type: {source_l}")
 
     # --- document date / recency (0-1) ---
-    year = meta.get("year")
-    try:
-        year_i = int(year) if year is not None else None
-    except (TypeError, ValueError):
-        year_i = None
+    year_i = _explicit_document_year(meta)
     current = datetime.utcnow().year
     if year_i and 1990 <= year_i <= current + 1:
         age = max(0, current - year_i)

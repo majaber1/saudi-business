@@ -77,7 +77,12 @@ def source_document_to_ingest_payload(doc: SourceDocument) -> Dict[str, Any]:
 
     quality = score_document_quality(
         text=text,
-        metadata={"sector": doc.sector, "country": doc.country or "SA"},
+        metadata={
+            "sector": doc.sector,
+            "country": doc.country or "SA",
+            "year": doc.published_at.year if doc.published_at else None,
+            "published_at": doc.published_at.isoformat() if doc.published_at else None,
+        },
         source=f"connector:{doc.provenance.connector_id}",
         country=doc.country or "SA",
     )
