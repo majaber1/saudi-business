@@ -113,6 +113,8 @@ def _load_study(study_id: str, user_id: str) -> dict | None:
                             "research_attempts",
                             "knowledge_context",
                             "market_research_context",
+                            "owner_decision",
+                            "decision_safety",
                         ):
                             if key in snap and snap[key] is not None:
                                 state[key] = snap[key]
@@ -375,6 +377,12 @@ class AssumptionActionRequest(BaseModel):
     value: Optional[str] = None
     explanation: Optional[str] = None
     rate_representation: Optional[Literal["PERCENT", "RATIO"]] = None
+
+
+class OwnerDecisionRequest(BaseModel):
+    """Founder response to the current recommendation. Does not change the verdict."""
+    action: str  # approve | reject | request_modification
+    note: Optional[str] = None
 
 
 def _discount_representation_or_error(key: str, value: Optional[str], representation: Optional[str]) -> Optional[str]:
@@ -763,6 +771,7 @@ def _study_payload(study_id: str, record: dict, *, response: str | None = None) 
         "decision_conditions": s.get("decision_conditions") or [],
         "decision_risks": s.get("decision_risks") or [],
         "decision_safety": s.get("decision_safety"),
+        "owner_decision": s.get("owner_decision"),
         "assumption_requirements": s.get("assumption_requirements"),
         "messages": _public_messages(s.get("messages")),
         "next_action": s.get("next_action"),
@@ -827,6 +836,7 @@ def _payload_from_state(study_id: str, state, *, response: str | None = None, re
         "decision_conditions": state.decision_conditions or [],
         "decision_risks": state.decision_risks or [],
         "decision_safety": getattr(state, "decision_safety", None),
+        "owner_decision": getattr(state, "owner_decision", None),
         "assumption_requirements": getattr(state, "assumption_requirements", None),
         "messages": _public_messages(state.messages),
         "next_action": state.next_action,
@@ -1564,6 +1574,9 @@ async def edit_assumption(study_id: str, req: AssumptionEditRequest, user=Depend
     from ai_engine.tools.archetype_lines import mark_projection_stale
 
     state.financial_results = mark_projection_stale(state.financial_results)
+    from ai_engine.tools.owner_decision import mark_owner_decision_stale
+
+    mark_owner_decision_stale(state)
     if state.verdict in {"GO", "GO_WITH_CONDITIONS", "CONDITIONAL_GO"}:
         state.verdict = "INSUFFICIENT_EVIDENCE"
         state.decision_rationale = (
@@ -1682,6 +1695,37 @@ async def regenerate_assumptions(study_id: str, user=Depends(get_current_user)):
             state.error = _safe_ai_error(e, getattr(state, "language", "en"), "assumption_rebuild")
     state = _finalize_knowledge_influence(state, user_id)
     _save_study(study_id, state.model_dump(), user_id); _remember_study_if_ready(state, user_id)
+    return _payload_from_state(study_id, state, record_meta=record)
+
+
+@router.post("/{study_id}/decision/owner")
+async def owner_decision_action(
+    study_id: str,
+    req: OwnerDecisionRequest,
+    user=Depends(get_current_user),
+):
+    """Record the founder's response to the current recommendation.
+
+    Approval does not upgrade the engine verdict. A rejection of this
+    analysis version cannot be replaced by an approval until the
+    analysis changes. Requesting modification returns the study to
+    assumption review.
+    """
+    user_id = str(user.id)
+    record = _load_study(study_id, user_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Study not found")
+    state = _state_from_record(record)
+    from ai_engine.tools.owner_decision import record_owner_decision
+
+    try:
+        record_owner_decision(state, req.action, note=req.note)
+    except ValueError as exc:
+        code = str(exc)
+        status = 400 if code == "INVALID_ACTION" else 409
+        raise HTTPException(status_code=status, detail=code) from exc
+    _save_study(study_id, state.model_dump(), user_id)
+    _remember_study_if_ready(state, user_id)
     return _payload_from_state(study_id, state, record_meta=record)
 
 

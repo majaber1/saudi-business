@@ -300,7 +300,10 @@ def build_v2_report_context(state: dict) -> dict:
         "claims": _dedup_claims(claims),
         "assumptions": assumptions,
         "financial_results": fr,
-        "verdict": state.get("verdict"),
+        "verdict": state.get("verdict") or (fr.get("verdict_override") if isinstance(fr, dict) else None),
+        "cash_flow_basis": fr.get("cash_flow_basis") if isinstance(fr, dict) else None,
+        "investment_grade": fr.get("investment_grade") if isinstance(fr, dict) else None,
+        "owner_decision": state.get("owner_decision") if isinstance(state.get("owner_decision"), dict) else None,
         "decision_rationale": state.get("decision_rationale"),
         "decision_conditions": state.get("decision_conditions") or [],
         "decision_risks": state.get("decision_risks") or [],
@@ -448,6 +451,17 @@ def generate_v2_pdf(ctx: dict, locale: str = "en") -> bytes:
     _section_title(L["exec_summary"])
     verdict = ctx.get("verdict") or "PENDING"
     _field(L["verdict"], verdict)
+    if ctx.get("investment_grade") is False:
+        _text(
+            "Pre-tax operating projection. This is not an investment-ready conclusion."
+            if locale != "ar"
+            else "إسقاط تشغيلي قبل الضريبة. هذه ليست نتيجة جاهزة للاستثمار.",
+            size=9,
+            color="#9b2c2c",
+        )
+    from ai_engine.tools.owner_decision import format_owner_decision_line
+
+    _text(format_owner_decision_line(ctx.get("owner_decision"), locale), size=9)
     rationale = ctx.get("decision_rationale") or L["no_data"]
     _text(rationale, size=10)
 
@@ -709,6 +723,7 @@ def generate_v2_pdf(ctx: dict, locale: str = "en") -> bytes:
     # === 15. FINAL RECOMMENDATION ===
     _section_title(L["recommendation"])
     _field(L["verdict"], verdict)
+    _text(format_owner_decision_line(ctx.get("owner_decision"), locale), size=9)
     _text(rationale, size=10)
     _text(f"Trust Status: {trust}", size=10, bold=True, color=trust_color)
 
@@ -849,6 +864,16 @@ def generate_v2_docx(ctx: dict, locale: str = "en") -> bytes:
     _section(L["exec_summary"])
     verdict = ctx.get("verdict") or "PENDING"
     _para(f"{L['verdict']}: {verdict}", bold=True)
+    if ctx.get("investment_grade") is False:
+        _para(
+            "Pre-tax operating projection. This is not an investment-ready conclusion."
+            if locale != "ar"
+            else "إسقاط تشغيلي قبل الضريبة. هذه ليست نتيجة جاهزة للاستثمار.",
+            size=9,
+        )
+    from ai_engine.tools.owner_decision import format_owner_decision_line
+
+    _para(format_owner_decision_line(ctx.get("owner_decision"), locale), size=9)
     _para(ctx.get("decision_rationale") or L["no_data"])
 
     # 2. Investment Snapshot
@@ -956,6 +981,7 @@ def generate_v2_docx(ctx: dict, locale: str = "en") -> bytes:
     # 15. Recommendation
     _section(L["recommendation"])
     _para(f"{L['verdict']}: {verdict}", bold=True, size=12)
+    _para(format_owner_decision_line(ctx.get("owner_decision"), locale), size=9)
     _para(f"Trust Status: {trust}", bold=True, color=trust_color)
 
     # 16. Action Plan

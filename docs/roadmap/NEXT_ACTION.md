@@ -2,7 +2,7 @@
 
 Resume on branch `saudi-business-completion` in worktree `saudi-business-completion-20261028`. Do not use the dirty `Saudi-Business` checkout and do not apply its `0027` / `0028` migration files.
 
-Last verified remote SHA before this acceptance recheck: `58b8c5a87875856a350bedcb248e0dbaf0c57985`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
+Last verified remote SHA before the owner-decision milestone: `40ae62083b746035733b2f6fd76de7567f3b7827`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
 
 Rechecked 2026-10-29. Local process, user, and machine environments have no `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY`, or `GROQ_API_KEY`. No `.env` file exists. The web Vercel project still has `GROQ_API_KEY` and does not have either search key. That production Groq value was not decrypted. Search stayed `BLOCKED`.
 
@@ -32,13 +32,17 @@ To add a search key without printing it:
 
 Repeat for preview and development, or use `BRAVE_SEARCH_API_KEY` instead. Add the same name to the web project only if the web process calls search. Do not put the value in git.
 
+## Owner decision
+
+The founder can accept, reject, or request modification of the current recommendation. Accepting does not change it. A rejection of the same analysis cannot be rewritten to an acceptance. Credential setup remains the blocker for live search and live model output. Details are in `docs/roadmap/OWNER_ACTION_REQUIRED.md`.
+
 ## Still blocked
 
 - General search: `NO_ALLOWLISTED_PROVIDER_CONFIGURED`.
 - Groq on this machine: absent. The workspace now says deterministic fallback.
 - Monsha'at: homepage HTTP 200 with verification on. No connector. Planner reason remains `BLOCKED_EXTERNAL_REACHABILITY`.
 - Competitor and pricing evidence: `NOT_FOUND`.
-- Full AI acceptance: not run. Decision, report, and model-written risks were skipped.
+- Full AI acceptance: not run. The owner rejection is recorded. The model-written decision narrative and a live competitor URL were not produced.
 
 ## Do not do
 

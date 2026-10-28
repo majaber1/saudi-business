@@ -121,6 +121,9 @@ class StudyState(BaseModel):
     decision_version: int = 0
     # Product Hardening Sprint — gate audit (JSON only; no migration)
     decision_safety: Optional[Dict[str, Any]] = None
+    # Owner response to the current recommendation. Absent on older studies.
+    # Approval does not change the engine verdict.
+    owner_decision: Optional[Dict[str, Any]] = None
     # Progressive questioning metadata (why required assumptions matter)
     assumption_requirements: Optional[Dict[str, Any]] = None
 

@@ -37,8 +37,9 @@ Partial.
 - The study workspace shows specialty-coffee and Saudi SaaS line items, monthly and annual totals, assumption lineage, and the recommendation ceiling.
 - The projection is labeled pre-tax, not investment-ready.
 - Editing an assumption marks the previous figures stale and withdraws a favorable verdict until analysis is run again.
-- Browser verification and a non-production Postgres run are NOT TESTED.
-- Approve, Reject, and Request Modification are not yet one completed owner journey.
+- The isolated Postgres coffee study shows the owner decision panel. Reject was recorded in the browser and survived refresh. Accepting that same analysis was refused.
+- Request Modification returns the study to assumption review in unit tests. It was not clicked on the live coffee study.
+- Live search and live model classification remain blocked. See `docs/roadmap/OWNER_ACTION_REQUIRED.md`.
 
 ## Stage 5 — integration and security
 

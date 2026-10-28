@@ -14,8 +14,17 @@ type Props = {
   verdict?: string | null;
   rationale?: string | null;
   conditions?: string[];
+  ownerDecision?: {
+    action?: string;
+    note?: string | null;
+    decided_at?: string;
+    analysis_version?: number;
+    recommendation?: string;
+    stale?: boolean;
+  } | null;
   onContinue: () => void;
   onEditAssumption?: (key: string, value: string) => Promise<void>;
+  onOwnerDecision?: (action: "approve" | "reject" | "request_modification") => void;
 };
 
 const STEPS = [
@@ -117,13 +126,22 @@ export function StudyLateStagePanels({
   verdict,
   rationale,
   conditions = [],
+  ownerDecision,
   onContinue,
   onEditAssumption,
+  onOwnerDecision,
 }: Props) {
   const showFinancial = phase === "READY_FOR_ANALYSIS" || phase === "ANALYZED";
   const showRisks = phase === "DECISION_READY";
   const showReport = phase === "REPORT_READY";
   const canContinue = phase === "READY_FOR_ANALYSIS" || phase === "ANALYZED" || phase === "DECISION_READY";
+  const recommendation =
+    verdict ||
+    (financial && financial.verdict_override ? String(financial.verdict_override) : "");
+  const projectionStale = Boolean(financial && financial.stale);
+  const showOwner =
+    Boolean(recommendation) &&
+    (phase === "ANALYZED" || phase === "DECISION_READY" || phase === "REPORT_READY");
 
   if (!showFinancial && !showRisks && !showReport) return null;
 
@@ -304,6 +322,70 @@ export function StudyLateStagePanels({
           >
             {ar ? "طباعة / حفظ التقرير" : "Print / save report"}
           </button>
+        </section>
+      ) : null}
+
+      {showOwner ? (
+        <section className="rounded-xl border border-ink-200 bg-white p-4" data-testid="owner-decision-panel">
+          <h2 className="text-sm font-bold text-ink-900">
+            {ar ? "قرار المالك" : "Owner decision"}
+          </h2>
+          <p className="mt-1 text-sm text-ink-800" data-testid="owner-recommendation">
+            {ar ? "التوصية الحالية:" : "Current recommendation:"} <strong>{recommendation}</strong>
+          </p>
+          <p className="mt-1 text-xs text-ink-600">
+            {ar
+              ? "قبول التوصية لا يغيّرها. نتيجة الأدلة غير الكافية تبقى غير كافية."
+              : "Accepting this recommendation does not change it. An insufficient-evidence result stays insufficient."}
+          </p>
+          {projectionStale ? (
+            <p className="mt-2 text-sm text-amber-800" data-testid="owner-decision-stale">
+              {ar
+                ? "تغيرت الافتراضات. أعد الحساب قبل تسجيل قرار جديد."
+                : "Assumptions changed. Recalculate before recording a new decision."}
+            </p>
+          ) : null}
+          {ownerDecision?.action ? (
+            <p className="mt-2 text-sm text-ink-800" data-testid="owner-decision-record">
+              {ownerDecision.action}
+              {ownerDecision.stale ? (ar ? " — لم يعد سارياً" : " — no longer current") : ""}
+              {ownerDecision.decided_at ? ` · ${ownerDecision.decided_at}` : ""}
+              {ownerDecision.analysis_version !== undefined
+                ? ` · ${ar ? "إصدار" : "version"} ${ownerDecision.analysis_version}`
+                : ""}
+            </p>
+          ) : (
+            <p className="mt-2 text-sm text-ink-600">{ar ? "لم يُسجل قرار المالك." : "Owner decision: not recorded."}</p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-testid="owner-approve-btn"
+              disabled={loading || projectionStale || !onOwnerDecision}
+              onClick={() => onOwnerDecision?.("approve")}
+              className="rounded-lg bg-ink-900 px-4 py-2 text-sm font-semibold text-white hover:bg-ink-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-900 disabled:opacity-50"
+            >
+              {ar ? "قبول هذه التوصية" : "Accept this recommendation"}
+            </button>
+            <button
+              type="button"
+              data-testid="owner-reject-btn"
+              disabled={loading || projectionStale || !onOwnerDecision}
+              onClick={() => onOwnerDecision?.("reject")}
+              className="rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700 disabled:opacity-50"
+            >
+              {ar ? "رفض هذه التوصية" : "Reject this recommendation"}
+            </button>
+            <button
+              type="button"
+              data-testid="owner-modify-btn"
+              disabled={loading || projectionStale || !onOwnerDecision}
+              onClick={() => onOwnerDecision?.("request_modification")}
+              className="rounded-lg border border-ink-300 bg-white px-4 py-2 text-sm font-semibold text-ink-800 hover:bg-ink-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-900 disabled:opacity-50"
+            >
+              {ar ? "طلب تعديل" : "Request modification"}
+            </button>
+          </div>
         </section>
       ) : null}
     </div>

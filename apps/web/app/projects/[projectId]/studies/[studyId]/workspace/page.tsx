@@ -109,6 +109,15 @@ type StudyInfo = {
       numeric_contradictions?: Array<Record<string, unknown>>;
     };
   } | null;
+  owner_decision?: {
+    action?: string;
+    note?: string | null;
+    decided_at?: string;
+    analysis_version?: number;
+    assumptions_version?: number;
+    recommendation?: string;
+    stale?: boolean;
+  } | null;
   messages?: Message[];
   next_action: string | null;
   error: string | null;
@@ -610,6 +619,48 @@ export default function StudyWorkspacePage() {
   }
 
 
+  async function submitOwnerDecision(action: "approve" | "reject" | "request_modification") {
+    if (!study || loading) return;
+    const token = getToken();
+    if (!token) {
+      setError(ar ? "الرجاء تسجيل الدخول" : "Please sign in");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/v2/studies/${study.study_id}/decision/owner`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { ...studyFetchHeaders(token), "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = typeof data.detail === "string" ? data.detail : "Owner decision failed";
+        const known: Record<string, string> = ar
+          ? {
+              STALE_ANALYSIS: "التحليل لم يعد سارياً. أعد الحساب قبل تسجيل القرار.",
+              REJECTED_DECISION_UNCHANGED: "تم رفض هذه النسخة. لا يمكن قبولها قبل تغيير التحليل.",
+              NO_RECOMMENDATION: "لا توجد توصية لتسجيل قرار عليها.",
+              INVALID_ACTION: "إجراء غير معروف.",
+            }
+          : {
+              STALE_ANALYSIS: "The analysis is no longer current. Recalculate before recording a decision.",
+              REJECTED_DECISION_UNCHANGED: "This analysis version was rejected. It cannot be accepted until the analysis changes.",
+              NO_RECOMMENDATION: "There is no recommendation to decide on.",
+              INVALID_ACTION: "Unknown action.",
+            };
+        throw new Error(known[detail] || detail);
+      }
+      applyStudyPayload(data, setStudy, setMessages, { replaceMessages: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function continueStudy() {
     if (!study || loading) return;
     const token = getToken();
@@ -792,8 +843,10 @@ export default function StudyWorkspacePage() {
           verdict={study.verdict}
           rationale={study.decision_rationale}
           conditions={study.decision_conditions || []}
+          ownerDecision={study.owner_decision}
           onContinue={() => void continueStudy()}
           onEditAssumption={editAssumption}
+          onOwnerDecision={(action) => void submitOwnerDecision(action)}
         />
       ) : null}
 

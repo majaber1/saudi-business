@@ -12,13 +12,13 @@ Updated: 2026-10-29. This file is the resume point for another machine. The remo
 | `origin/main` | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
-| Resume-point commit | `58b8c5a87875856a350bedcb248e0dbaf0c57985` |
+| Resume-point commit | `40ae62083b746035733b2f6fd76de7567f3b7827` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Remote verification before this acceptance recheck: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `58b8c5a87875856a350bedcb248e0dbaf0c57985`. Confirm the tip again after the next push.
+Remote verification before the owner-decision milestone: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `40ae62083b746035733b2f6fd76de7567f3b7827`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -38,7 +38,7 @@ The original dirty checkout was not reset, cleaned, or checked out onto this bra
 | 1 Financial trust | Complete on this branch, not released | Estimated 55% and 45% costs cannot authorize GO. Ambiguous discount rates are not divided by 100. Missing `opex_annual` is not zero. |
 | 2 Real Saudi research | Partial | GASTAT pages were retrieved with verification on. Competitor and price search stayed NOT_FOUND. No allowlisted search credential exists. Monsha'at has no live connector. |
 | 3 Archetype financials | Partial | Specialty coffee and Saudi SaaS line items are calculated and shown in the study workspace. Tax lines and other archetypes are not included. |
-| 4 One workspace journey | Partial | A local Riyadh coffee study showed line items, a stale banner after a rent edit, and a recalculated pre-tax net. The recommendation ceiling stayed INSUFFICIENT_EVIDENCE. Approve, Reject, and Request Modification are not one completed journey. |
+| 4 One workspace journey | Partial | The Riyadh coffee study now records an owner rejection of `INSUFFICIENT_EVIDENCE` without changing that recommendation. Accepting the same analysis is refused. Request Modification is unit-tested and was not clicked on that study. |
 | 5 Integration, security, browser, non-prod Postgres | Partial | One isolated Postgres 16 browser study was run. The security suite and a full acceptance pass were not run. |
 | 6 Release | Not started | Merge, production migration, and deploy need explicit owner approval. |
 
@@ -116,6 +116,14 @@ Acceptance recheck on 2026-10-29, same worktree:
 
 Result: **72 passed**. A direct call with an empty environment returned `BLOCKED` / `NO_ALLOWLISTED_PROVIDER_CONFIGURED` and zero results. No browser journey was repeated. The full customer workflow remains not accepted.
 
+Owner-decision command, same worktree:
+
+`python -m pytest tests/test_owner_decision.py tests/test_stage3_archetype_financials.py tests/test_v2_study_engine.py -q --tb=short`
+
+Result: **77 passed**, 6 `datetime.utcnow` deprecation warnings. Exit code 0.
+
+Browser check on isolated study `study_884fa2d78ce9`: the owner panel showed `INSUFFICIENT_EVIDENCE`. Reject recorded `reject` at `2026-10-28T21:41:25.256773+00:00`, analysis version 0. A following accept showed "تم رفض هذه النسخة. لا يمكن قبولها قبل تغيير التحليل." and left the recorded action as reject. Refresh kept that record. This is not a live-search or live-model acceptance pass. No user reference images were available; the only image in the repo is `apps/web/app/icon.svg`.
+
 ## Acceptance score
 
 This is not a full acceptance pass. Checked again on 2026-10-28. `GROQ_API_KEY` remains on Vercel only and was not decrypted. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and on both Vercel projects. The search client is implemented and fixture-tested. Runtime search stays `BLOCKED` until a key is present, and no live search result exists.
@@ -130,9 +138,9 @@ This is not a full acceptance pass. Checked again on 2026-10-28. `GROQ_API_KEY` 
 | Owner assumptions | Partial — owner-confirmed on the earlier coffee study, not model-drafted |
 | Financial projection | Partial — pre-tax coffee lines only; not investment-grade |
 | Scenario modification and stale recommendation | Partial — rent edit on the earlier study |
-| Decision | NOT TESTED as a completed Approve, Reject, or Request Modification |
-| Owner action on the decision | NOT TESTED |
-| Report | NOT TESTED |
+| Decision | Partial — owner rejection recorded on the coffee study; recommendation stayed `INSUFFICIENT_EVIDENCE` |
+| Owner action on the decision | Partial — reject persisted after refresh; same-analysis accept was refused. Request Modification is unit-tested only |
+| Report | Partial — downloaded report context carries the financial ceiling, pre-tax label, and owner line. A downloaded file was not opened in the browser |
 | Refresh and sign-in persistence | Partial — verified for `study_884fa2d78ce9` only |
 | Arabic and English | Partial — chrome and the fallback label switched; some study text stayed in the study language |
 
