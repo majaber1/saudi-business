@@ -200,11 +200,113 @@ def test_missing_model_is_labeled_as_a_deterministic_fallback():
 
 
 def test_search_without_a_provider_is_blocked_and_empty():
-    result = asyncio.run(search_saudi_data("Riyadh specialty coffee competitors"))
+    result = asyncio.run(
+        search_saudi_data("Riyadh specialty coffee competitors", environ={})
+    )
     assert result["status"] == "BLOCKED"
     assert result["reason"] == "NO_ALLOWLISTED_PROVIDER_CONFIGURED"
     assert result["results"] == []
     assert result["implemented"] is False
+
+
+class _SearchResponse:
+    def __init__(self, status_code: int, body: dict):
+        self.status_code = status_code
+        self._body = body
+
+    def json(self):
+        return self._body
+
+
+class _SearchClient:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = []
+
+    def request(self, method, url, **kwargs):
+        self.calls.append({"method": method, "url": url, "headers": dict(kwargs.get("headers") or {})})
+        item = self._responses.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+def test_tavily_fixture_keeps_only_real_urls_and_hides_the_key():
+    secret = "tavily-test-secret"
+    client = _SearchClient(
+        [
+            _SearchResponse(
+                200,
+                {
+                    "results": [
+                        {"title": "Cafe page", "url": "https://example.com/cafe", "content": "menu"},
+                        {"title": "Duplicate", "url": "https://example.com/cafe", "content": "again"},
+                        {"title": "Bad", "url": "javascript:alert(1)", "content": "no"},
+                        {"title": "No url", "content": "missing"},
+                    ]
+                },
+            )
+        ]
+    )
+    result = asyncio.run(
+        search_saudi_data(
+            "Riyadh specialty coffee",
+            environ={"TAVILY_API_KEY": secret},
+            client=client,
+        )
+    )
+    assert result["status"] == "partial"
+    assert result["provider"] == "tavily"
+    assert result["results"] == [
+        {
+            "title": "Cafe page",
+            "url": "https://example.com/cafe",
+            "snippet": "menu",
+            "retrieved_at": result["retrieved_at"],
+            "provider": "tavily",
+        }
+    ]
+    assert secret not in str(result)
+    assert client.calls[0]["url"] == "https://api.tavily.com/search"
+    assert client.calls[0]["headers"]["Authorization"] == f"Bearer {secret}"
+
+
+def test_brave_rate_limit_and_server_retry_do_not_invent_hits():
+    import httpx
+
+    limited = _SearchClient([_SearchResponse(429, {"web": {"results": [{"url": "https://example.com/a"}]}})])
+    blocked = asyncio.run(
+        search_saudi_data(
+            "Riyadh coffee price",
+            environ={"BRAVE_SEARCH_API_KEY": "brave-test-secret"},
+            client=limited,
+        )
+    )
+    assert blocked["reason"] == "RATE_LIMIT"
+    assert blocked["results"] == []
+    assert len(limited.calls) == 1
+
+    retried = _SearchClient(
+        [
+            _SearchResponse(503, {}),
+            _SearchResponse(200, {"web": {"results": [{"title": "Price", "url": "https://example.com/price", "description": "SAR"}]}}),
+        ]
+    )
+    recovered = asyncio.run(
+        search_saudi_data("Riyadh coffee price", environ={"BRAVE_SEARCH_API_KEY": "brave-test-secret"}, client=retried)
+    )
+    assert recovered["status"] == "complete"
+    assert recovered["results"][0]["url"] == "https://example.com/price"
+    assert len(retried.calls) == 2
+    assert retried.calls[0]["url"] == "https://api.search.brave.com/res/v1/web/search"
+
+    timed = _SearchClient([httpx.TimeoutException("slow"), httpx.TimeoutException("slow")])
+    failed = asyncio.run(
+        search_saudi_data("Riyadh coffee price", environ={"BRAVE_SEARCH_API_KEY": "brave-test-secret"}, client=timed)
+    )
+    assert failed["reason"] == "TIMEOUT"
+    assert failed["results"] == []
+    assert "brave-test-secret" not in str(failed)
 
 
 def test_search_timeout_rate_limit_invalid_source_and_partial_hits():

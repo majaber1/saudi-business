@@ -11,7 +11,7 @@ Measured on `recovery/financial-trust-20261028` against production SHA `56ca05b`
 | GASTAT connector | PARTIAL | Live page `https://www.stats.gov.sa/en/w/news/180` returned HTTP 200 on 2026-10-27 with verification on. Coffee-specific competitor search did not match that page. |
 | MISA connector | PARTIAL | `https://misa.gov.sa/` and the national investment strategy page returned HTTP 200 on 2026-10-27 with verification on. |
 | Monsha'at connector | BLOCKED | Homepage `https://www.monshaat.gov.sa/ar` returned HTTP 200 with verification on. No approved page list and no connector. Planner reason remains `BLOCKED_EXTERNAL_REACHABILITY`. |
-| Allowlisted web search | BLOCKED | `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and on both Vercel projects. `search_saudi_data` returns `BLOCKED` / `NO_ALLOWLISTED_PROVIDER_CONFIGURED`. A key alone would still return `PROVIDER_CREDENTIAL_PRESENT_BUT_CLIENT_NOT_ENABLED`. |
+| Allowlisted web search | BLOCKED at runtime | Tavily and Brave clients are implemented. Fixture tests cover URL filtering, deduplication, timeout, rate limit, and a 5xx retry. No local or Vercel key exists, so no live call was made. |
 | Groq classification | BLOCKED locally | `GROQ_API_KEY` is set on both Vercel projects and is absent from this machine. The value was not decrypted. The workspace labels the keyword result `deterministic_fallback`. |
 | Competitor identity, URL, and timestamp | VERIFIED | A verified record requires all three. Name-only, missing URL, invalid timestamp, and geographic mismatch stay unverified. Covered by `tests/test_stage2_market_intelligence.py`. |
 | Citation critic for official and document claims | VERIFIED | `ai_engine/research/citation_critic.py` drops those claims when the URL is not http(s) and does not invent a URL. `tests/test_citation_critic.py` plus Phase 8A/8B research tests: 54 passed. |
@@ -27,7 +27,7 @@ Measured on `recovery/financial-trust-20261028` against production SHA `56ca05b`
 | Integration, security, and browser end-to-end | PARTIAL | Auth and financial regression tests passed. One isolated Postgres browser study ran. Full model-written acceptance did not run because Groq and search are not available locally. |
 | Non-production Postgres migration of this branch | PARTIAL | Isolated Postgres 16 on `127.0.0.1:54329` applied the chain through `0031_research_runs`. This was not a production migration. |
 | Release: merge, production migration, deploy | NOT STARTED | Explicit owner approval is still required. |
-| `mcp` package in the local interpreter | FAILED | Baseline `test_l_mcp_source_tool_boundary` failed with `RuntimeError: mcp package not installed`. Pre-existing local environment. Not a trust regression. Not re-run after the trust edits. |
+| `mcp` package in the local interpreter | VERIFIED | `mcp` is a declared runtime dependency (`mcp>=1.28,<2`). The machine had `mcp` 2.0.0, which does not provide the pinned FastMCP import. Installing `mcp` 1.30.0 made `test_i_mcp_boundary_smoke` and `test_l_mcp_source_tool_boundary` pass. |
 
 ## Stage 1 test run
 

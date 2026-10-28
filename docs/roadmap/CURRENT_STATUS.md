@@ -12,13 +12,13 @@ Updated: 2026-10-28. This file is the resume point for another machine. The remo
 | `origin/main` | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
-| Resume-point commit | `01bf0becc887c0efc5d3c08f6bfe17701f1a22f2` |
+| Resume-point commit | `fb298af76342e358f67f4e75bd22f61781e2a03f` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Remote verification before this acceptance attempt: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `01bf0becc887c0efc5d3c08f6bfe17701f1a22f2`. Confirm the tip again after the next push.
+Remote verification before the search-client change: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `fb298af76342e358f67f4e75bd22f61781e2a03f`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -102,18 +102,24 @@ Published-date command, same worktree:
 
 `python -m pytest tests/test_phase7a_source_foundation.py tests/test_knowledge_intelligence_learning.py tests/test_stage2_market_intelligence.py -q --tb=short`
 
-Result: **28 passed**, 1 failed. The failure is `test_i_mcp_boundary_smoke` because the `mcp` package is not installed. The new published-date test passed. This is the same local-environment gap as `tests/test_phase7b_gastat_live_source.py::test_l_mcp_source_tool_boundary`.
+Result: **28 passed**, 1 failed. That failure was `test_i_mcp_boundary_smoke` while `mcp` 2.0.0 was installed. The declared range is `mcp>=1.28,<2`.
+
+Search-client and MCP command, after installing `mcp` 1.30.0:
+
+`python -m pytest tests/test_stage2_market_intelligence.py tests/test_phase7a_source_foundation.py::test_i_mcp_boundary_smoke tests/test_phase7b_gastat_live_source.py::test_l_mcp_source_tool_boundary -q --tb=short`
+
+Result: **17 passed**. `test_l_mcp_source_tool_boundary` also fetched GASTAT through the existing connector. That is not a web-search result.
 
 ## Acceptance score
 
-This is not a full acceptance pass. Checked again on 2026-10-28. `GROQ_API_KEY` remains on Vercel only and was not decrypted. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and on both Vercel projects. Search stays `BLOCKED`. No search client was enabled.
+This is not a full acceptance pass. Checked again on 2026-10-28. `GROQ_API_KEY` remains on Vercel only and was not decrypted. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and on both Vercel projects. The search client is implemented and fixture-tested. Runtime search stays `BLOCKED` until a key is present, and no live search result exists.
 
 | Stage | Status |
 | --- | --- |
 | Idea captured | Partial — earlier local coffee studies exist |
 | Real model classification, risks, and explanation | BLOCKED — no local Groq credential |
 | Official research | Partial — GASTAT and MISA pages were retrieved with verification on |
-| Competitors and prices | BLOCKED — no allowlisted search credential |
+| Competitors and prices | BLOCKED — client is implemented and fixture-tested; no live credential and no live result |
 | Evidence | Partial — official claims only; competitor and price are `NOT_FOUND` |
 | Owner assumptions | Partial — owner-confirmed on the earlier coffee study, not model-drafted |
 | Financial projection | Partial — pre-tax coffee lines only; not investment-grade |
@@ -128,7 +134,7 @@ This is not a full acceptance pass. Checked again on 2026-10-28. `GROQ_API_KEY` 
 
 Stage 2 is not complete. These items stay open:
 
-- General Saudi search stays BLOCKED. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and are not set on the Vercel projects. No results were invented. Setting a key does not enable a call until a tested client exists.
+- General Saudi search stays BLOCKED at runtime. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and are not set on the Vercel projects. The client can call either provider when a key is present. No live search was run, and no competitor or price URL was produced.
 - `GROQ_API_KEY` is set on the Vercel web and API projects. It is not in the local process, and the production value was not decrypted. Classification on this machine is a deterministic fallback.
 - Monsha'at has no live connector. The planner reason remains `BLOCKED_EXTERNAL_REACHABILITY`. The homepage returned HTTP 200 with certificate verification on when Python used the certifi bundle. The default Windows OpenSSL CA file failed the same hosts with `CERTIFICATE_VERIFY_FAILED`. Verification was not disabled.
 - GASTAT live retrieval succeeded through the existing connector, which uses httpx and certifi with verification on. The default OpenSSL CA file on this machine does not trust that chain.

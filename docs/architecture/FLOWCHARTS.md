@@ -66,7 +66,8 @@ flowchart TD
   plan --> searchNode[Allowlisted search]
   searchNode --> noKey{Provider credential}
   noKey -->|absent| searchBlocked[BLOCKED and empty results]
-  noKey -->|present but client disabled| searchBlocked
+  noKey -->|present| providerCall[Tavily or Brave HTTP call]
+  providerCall --> providerFail[Timeout rate limit or provider error stays empty]
   live --> claims[Claims with provenance]
   claims --> cite[Citation critic]
   cite --> lineage[Research critic]

@@ -2,7 +2,7 @@
 
 Resume on branch `saudi-business-completion` in worktree `saudi-business-completion-20261028`. Do not use the dirty `Saudi-Business` checkout and do not apply its `0027` / `0028` migration files.
 
-Last verified remote SHA before this acceptance attempt: `01bf0becc887c0efc5d3c08f6bfe17701f1a22f2`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
+Last verified remote SHA before the search-client change: `fb298af76342e358f67f4e75bd22f61781e2a03f`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
 
 ## Immediate task
 
@@ -14,7 +14,7 @@ Provide one allowlisted search credential and one local Groq credential, then pr
 2. Set `GROQ_API_KEY` in that file or in the API process environment. Optional model names: `GROQ_MODEL_PRIMARY` and `GROQ_MODEL_FAST`.
 3. Set exactly one of `TAVILY_API_KEY` or `BRAVE_SEARCH_API_KEY`.
 4. Restart the local API so it reads the new variables.
-5. A search key alone does not run a provider. `search_saudi_data` stays `BLOCKED` with `PROVIDER_CREDENTIAL_PRESENT_BUT_CLIENT_NOT_ENABLED` until a tested client is enabled for that key.
+5. With one of those keys in the API process, `search_saudi_data` calls Tavily first, otherwise Brave. Without a key it stays `BLOCKED`. A fixture test is not a live competitor result. Prove one real URL before calling search complete.
 
 The production Groq value already exists on the Vercel projects. Do not decrypt it into this workspace unless the owner explicitly authorizes that copy.
 
