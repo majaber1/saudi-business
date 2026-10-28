@@ -414,6 +414,21 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
+_KNOWLEDGE_SUPPORT_MIN_SIMILARITY = 0.5
+
+
+def _ref_supports_assumption(ref: dict) -> bool:
+    """A geography-only or low-similarity hit does not support a business figure."""
+    reason = str(ref.get("reason") or "").strip().lower().replace(" ", "_")
+    if reason in {"geography_match", "geographic_match"}:
+        return False
+    try:
+        score = float(ref.get("similarity"))
+    except (TypeError, ValueError):
+        return False
+    return score >= _KNOWLEDGE_SUPPORT_MIN_SIMILARITY
+
+
 def _apply_knowledge_refs(assumptions: list[Assumption], knowledge: dict) -> list[Assumption]:
     """Attach real knowledge refs to matching assumptions. No fabricated citations."""
     if not knowledge:
@@ -458,6 +473,7 @@ def _apply_knowledge_refs(assumptions: list[Assumption], knowledge: dict) -> lis
                     conf = cite.get("confidence")
                     if len(refs) >= 3:
                         break
+        refs = [ref for ref in refs if _ref_supports_assumption(ref)]
         if refs:
             a.knowledge_refs = refs[:3]
             a.knowledge_confidence = float(conf) if conf is not None else None

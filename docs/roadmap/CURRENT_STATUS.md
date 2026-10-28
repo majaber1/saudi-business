@@ -12,13 +12,13 @@ Updated: 2026-10-28. This file is the resume point for another machine. The remo
 | `origin/main` | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
-| Resume-point commit | `987d7ed5f967b1acd0b247e4e40f108a7b176d61` |
+| Resume-point commit | `5e38de767eb7f50fce2587ad47028b41783d616f` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Remote verification before research connectivity: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `987d7ed5f967b1acd0b247e4e40f108a7b176d61`. Confirm the tip again after the next push.
+Remote verification before research activation: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `5e38de767eb7f50fce2587ad47028b41783d616f`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -84,7 +84,19 @@ Research connectivity command, same worktree:
 
 Result: **11 passed**. That file now covers the percent-field label and the owner rent edit updating the base case.
 
-Local isolated Postgres browser study: the coffee workspace showed GASTAT source URLs, a pre-tax monthly net, a stale banner after editing rent, and a recalculated net of -1,600 SAR after the base case was updated. This is not a production acceptance pass.
+Research activation command, same worktree:
+
+`python -m pytest tests/test_stage2_market_intelligence.py tests/test_stage3_archetype_financials.py -q --tb=short`
+
+Result: **26 passed**.
+
+Financial, research, and authorization command, same worktree:
+
+`python -m pytest tests/test_financial_trust_sprint.py tests/test_financial_trust_hardening.py tests/test_financial_analyst_prompt.py tests/test_financial_projection.py tests/test_decision.py tests/test_scenarios.py tests/test_citation_critic.py tests/test_phase8a_research_intelligence.py tests/test_phase8b_controlled_market_research.py tests/test_auth.py tests/test_auth_hardening.py tests/test_auth_privilege.py tests/test_router_authz.py tests/test_account_security.py tests/test_projects_auth.py -q --tb=line`
+
+Result: **201 passed**.
+
+Local isolated Postgres browser study: the coffee workspace showed GASTAT source URLs, a pre-tax monthly net, a stale banner after editing rent, and a recalculated net of -1,600 SAR after the base case was updated. A second study, `study_736acb38212a`, labeled the missing model as a deterministic fallback in Arabic and English. This is not a production acceptance pass. Search and Groq were not available to that process.
 
 Known local-environment failure, not re-run and not a trust regression: `tests/test_phase7b_gastat_live_source.py::test_l_mcp_source_tool_boundary` failed earlier because the `mcp` package is not installed.
 
@@ -92,11 +104,11 @@ Known local-environment failure, not re-run and not a trust regression: `tests/t
 
 Stage 2 is not complete. These items stay open:
 
-- General Saudi search stays BLOCKED. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and are not set on the Vercel projects. No results were invented.
+- General Saudi search stays BLOCKED. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are absent locally and are not set on the Vercel projects. No results were invented. Setting a key does not enable a call until a tested client exists.
+- `GROQ_API_KEY` is set on the Vercel web and API projects. It is not in the local process, and the production value was not decrypted. Classification on this machine is a deterministic fallback.
 - Monsha'at has no live connector. The planner reason remains `BLOCKED_EXTERNAL_REACHABILITY`. The homepage returned HTTP 200 with certificate verification on when Python used the certifi bundle. The default Windows OpenSSL CA file failed the same hosts with `CERTIFICATE_VERIFY_FAILED`. Verification was not disabled.
 - GASTAT live retrieval succeeded through the existing connector, which uses httpx and certifi with verification on. The default OpenSSL CA file on this machine does not trust that chain.
-- MISA activity pages were fetched with verification on. The homepage connection was reset once and returned HTTP 200 on an earlier request.
-- `GROQ_API_KEY` is not in the local environment. Classification used the deterministic fallback and told the owner the model was unavailable.
+- MISA homepage and the national investment strategy page returned HTTP 200 on 2026-10-27 with verification on.
 - Competitor and price evidence for the coffee study were NOT_FOUND.
 - Production and `main` stay at `56ca05b` until the owner approves a release.
 

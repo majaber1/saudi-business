@@ -45,6 +45,9 @@ class ProjectProfile(BaseModel):
     missing_information: List[str] = []
     recommended_model: str = ""
     archetype_confirmed: bool = False
+    # llm when Groq classified the text. deterministic_fallback when the model
+    # was unavailable and a keyword heuristic suggested a type. Absent on old rows.
+    classification_source: Optional[Literal["llm", "deterministic_fallback"]] = None
     # For services only: "professional" (default) or "mobility" (Uber-like).
     services_variant: Optional[str] = None
 

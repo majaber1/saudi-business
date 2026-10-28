@@ -174,6 +174,31 @@ def test_conflicting_saudi_cities_are_not_merged_into_one_verified_record():
     assert all(c.rejection_reason == "geographic_or_identity_conflict" for c in comps)
 
 
+def test_missing_model_is_labeled_as_a_deterministic_fallback():
+    from langchain_core.messages import HumanMessage
+
+    from ai_engine.agents.discovery import run_discovery
+    from ai_engine.provider import ProviderUnavailableError
+
+    state = StudyState(
+        study_id="coffee-fallback",
+        project_id="p1",
+        user_id="1",
+        language="en",
+        messages=[HumanMessage(content="A specialty coffee shop in Riyadh")],
+    )
+    with patch(
+        "ai_engine.agents.discovery.invoke_llm",
+        side_effect=ProviderUnavailableError("GROQ_API_KEY is not set"),
+    ):
+        classified = run_discovery(state)
+    assert classified.profile is not None
+    assert classified.profile.archetype == "fnb"
+    assert classified.profile.classification_source == "deterministic_fallback"
+    assert classified.profile.archetype_confirmed is False
+    assert "temporarily unavailable" in classified.messages[-1].content
+
+
 def test_search_without_a_provider_is_blocked_and_empty():
     result = asyncio.run(search_saudi_data("Riyadh specialty coffee competitors"))
     assert result["status"] == "BLOCKED"
@@ -227,6 +252,15 @@ def test_search_timeout_rate_limit_invalid_source_and_partial_hits():
     )
     assert undated["results"] == []
     assert undated["reason"] == "MISSING_RETRIEVAL_TIMESTAMP"
+
+    empty = execute_allowlisted_search(
+        "Riyadh coffee competitors",
+        source="general",
+        transport=lambda _query: {"retrieved_at": "2026-10-28T00:00:00Z", "results": []},
+    )
+    assert empty["status"] == "failed"
+    assert empty["reason"] == "NO_VALID_HITS"
+    assert empty["results"] == []
 
 
 def test_critic_separates_estimates_and_rejects_a_foreign_citation():

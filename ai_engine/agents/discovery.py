@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Literal
 
 from langchain_core.messages import AIMessage, SystemMessage
 
@@ -143,6 +144,7 @@ def run_discovery(state: StudyState) -> StudyState:
             profile_data["archetype"],
             ambiguous=True,
             clarify_reason="llm_unavailable",
+            classification_source="deterministic_fallback",
         )
 
     profile_data = _extract_json(response_text) or {}
@@ -159,6 +161,7 @@ def run_discovery(state: StudyState) -> StudyState:
         state, profile_data, public_text, lang, chosen,
         ambiguous=ambiguous, clarify_reason=clarify_reason,
         heuristic=heuristic, llm_arch=llm_arch,
+        classification_source="llm",
     )
 
 
@@ -173,6 +176,7 @@ def _apply_profile(
     clarify_reason: str | None = None,
     heuristic: str | None = None,
     llm_arch: str | None = None,
+    classification_source: Literal["llm", "deterministic_fallback"] | None = None,
 ) -> StudyState:
     stage = str(profile_data.get("stage") or "").strip() or "idea"
     decision_goal = str(profile_data.get("decision_goal") or "").strip() or "feasibility"
@@ -201,6 +205,7 @@ def _apply_profile(
         recommended_model=str(profile_data.get("recommended_model") or f"{archetype}_v1"),
         archetype_confirmed=confirmed,
         services_variant=services_variant,
+        classification_source=classification_source,
     )
 
     state.discovery_questions = questions_for_language(

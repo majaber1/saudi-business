@@ -2,21 +2,41 @@
 
 Resume on branch `saudi-business-completion` in worktree `saudi-business-completion-20261028`. Do not use the dirty `Saudi-Business` checkout and do not apply its `0027` / `0028` migration files.
 
-Last verified remote SHA before research connectivity: `987d7ed5f967b1acd0b247e4e40f108a7b176d61`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
+Last verified remote SHA before research activation: `5e38de767eb7f50fce2587ad47028b41783d616f`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
 
 ## Immediate task
 
-Set one allowlisted search credential and prove a real competitor or price retrieval for the Riyadh coffee study. The supported variables are `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY`. If neither is set, search stays BLOCKED. Do not invent competitors, prices, or timestamps.
+Provide one allowlisted search credential and one local Groq credential, then prove a real competitor or price retrieval and a model-written classification. Do not invent competitors, prices, or timestamps.
 
-Also set `GROQ_API_KEY` on the machine that runs the study if the owner wants a model classification instead of the deterministic fallback.
+## Local configuration
 
-## Stage 2 blockers to keep visible
+1. Copy `.env.example` to `.env` in the worktree. Do not commit `.env`.
+2. Set `GROQ_API_KEY` in that file or in the API process environment. Optional model names: `GROQ_MODEL_PRIMARY` and `GROQ_MODEL_FAST`.
+3. Set exactly one of `TAVILY_API_KEY` or `BRAVE_SEARCH_API_KEY`.
+4. Restart the local API so it reads the new variables.
+5. A search key alone does not run a provider. `search_saudi_data` stays `BLOCKED` with `PROVIDER_CREDENTIAL_PRESENT_BUT_CLIENT_NOT_ENABLED` until a tested client is enabled for that key.
 
-- General search: BLOCKED, no allowlisted provider configured.
-- Monsha'at: no live connector. Planner reason remains `BLOCKED_EXTERNAL_REACHABILITY`. The homepage is reachable with verification on through the certifi bundle.
-- GASTAT: live official pages were retrieved. A coffee-specific query did not match those pages.
-- Competitor and pricing evidence: NOT_FOUND.
-- Full security suite: not run.
+The production Groq value already exists on the Vercel projects. Do not decrypt it into this workspace unless the owner explicitly authorizes that copy.
+
+## Vercel configuration
+
+API project: `feasibilityos-ai`. Web project: `saudi-business-web`. Team: `team_mLtuSkiJk36yTV2AW8Y9RiZL`.
+
+`GROQ_API_KEY`, `GROQ_MODEL_PRIMARY`, and `GROQ_MODEL_FAST` are already present on both projects for production, preview, and development. `TAVILY_API_KEY` and `BRAVE_SEARCH_API_KEY` are not present.
+
+To add a search key without printing it:
+
+`vercel env add TAVILY_API_KEY production --project feasibilityos-ai`
+
+Repeat for preview and development, or use `BRAVE_SEARCH_API_KEY` instead. Add the same name to the web project only if the web process calls search. Do not put the value in git.
+
+## Still blocked
+
+- General search: `NO_ALLOWLISTED_PROVIDER_CONFIGURED`.
+- Groq on this machine: absent. The workspace now says deterministic fallback.
+- Monsha'at: homepage HTTP 200 with verification on. No connector. Planner reason remains `BLOCKED_EXTERNAL_REACHABILITY`.
+- Competitor and pricing evidence: `NOT_FOUND`.
+- Full AI acceptance: not run. Decision, report, and model-written risks were skipped.
 
 ## Do not do
 
@@ -27,3 +47,4 @@ Also set `GROQ_API_KEY` on the machine that runs the study if the owner wants a 
 - Do not edit the dirty original checkout.
 - Do not turn a missing line into zero.
 - Do not disable TLS verification.
+- Do not print or commit secret values.

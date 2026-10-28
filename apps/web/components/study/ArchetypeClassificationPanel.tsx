@@ -7,6 +7,7 @@ type Props = {
   ar: boolean;
   loading: boolean;
   suggested?: string | null;
+  suggestionSource?: "llm" | "deterministic_fallback" | null;
   selected?: string | null;
   onSelect: (archetype: string) => void;
   onConfirm: () => void;
@@ -16,6 +17,7 @@ export function ArchetypeClassificationPanel({
   ar,
   loading,
   suggested,
+  suggestionSource,
   selected,
   onSelect,
   onConfirm,
@@ -38,7 +40,13 @@ export function ArchetypeClassificationPanel({
       </p>
       {suggested ? (
         <p className="mt-2 text-xs text-ink-600" data-testid="archetype-suggestion">
-          {ar ? "اقتراح الذكاء الاصطناعي:" : "AI suggestion:"}{" "}
+          {suggestionSource === "deterministic_fallback"
+            ? ar
+              ? "تصنيف تقريبي بدون نموذج:"
+              : "Deterministic fallback (model unavailable):"
+            : ar
+              ? "اقتراح الذكاء الاصطناعي:"
+              : "AI suggestion:"}{" "}
           <span className="font-semibold">{archetypeLabel(suggested, locale)}</span>
         </p>
       ) : null}

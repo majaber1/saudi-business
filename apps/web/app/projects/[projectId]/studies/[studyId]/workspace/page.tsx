@@ -79,6 +79,7 @@ type StudyInfo = {
     decision_goal: string;
     missing_information?: string[];
     archetype_confirmed?: boolean;
+    classification_source?: "llm" | "deterministic_fallback" | null;
   } | null;
   claims?: Claim[];
   assumptions?: Assumption[];
@@ -704,7 +705,13 @@ export default function StudyWorkspacePage() {
               data-testid="discovery-advisor-hint"
             >
               <p className="font-semibold">
-                {ar ? "مقابلة اكتشاف مع مستشار الذكاء الاصطناعي" : "AI consultant discovery interview"}
+                {study.profile?.classification_source === "deterministic_fallback"
+                  ? ar
+                    ? "مقابلة اكتشاف منظمة (النموذج غير متاح)"
+                    : "Structured discovery interview (model unavailable)"
+                  : ar
+                    ? "مقابلة اكتشاف مع مستشار الذكاء الاصطناعي"
+                    : "AI consultant discovery interview"}
               </p>
               <p className="mt-1 text-[11px] text-sky-900">
                 {ar
@@ -744,6 +751,7 @@ export default function StudyWorkspacePage() {
           ar={ar}
           loading={loading}
           suggested={study.profile?.archetype}
+          suggestionSource={study.profile?.classification_source}
           selected={selectedArchetype}
           onSelect={setSelectedArchetype}
           onConfirm={() => void confirmArchetype()}

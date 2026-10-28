@@ -249,3 +249,58 @@ def test_financial_analyst_uses_the_archetype_model_for_fnb():
     assert analyzed.financial_results["model_family"] == "specialty_coffee"
     assert analyzed.financial_results["monthly_net"] == 3400
     assert analyzed.phase == "ANALYZED"
+
+
+def test_low_similarity_geography_match_does_not_support_a_user_figure():
+    from ai_engine.agents.assumption import _apply_knowledge_refs
+
+    rent = Assumption(key="rent_monthly", value="15000", source="user", confidence="confirmed", origin="user")
+    updated = _apply_knowledge_refs(
+        [rent],
+        {
+            "assumption_hints": [
+                {
+                    "key": "rent_monthly",
+                    "confidence": 0.1836,
+                    "refs": [
+                        {
+                            "document_id": "gastat-180",
+                            "title": "Inflation in Saudi Arabia",
+                            "similarity": 0.1836,
+                            "reason": "Geography match",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    assert updated[0].knowledge_refs == []
+    assert "supported by" not in (updated[0].source or "")
+    assert updated[0].origin == "user"
+
+
+def test_a_strong_knowledge_ref_can_support_a_user_figure():
+    from ai_engine.agents.assumption import _apply_knowledge_refs
+
+    rent = Assumption(key="rent_monthly", value="15000", source="user", confidence="confirmed", origin="user")
+    updated = _apply_knowledge_refs(
+        [rent],
+        {
+            "assumption_hints": [
+                {
+                    "key": "rent_monthly",
+                    "confidence": 0.82,
+                    "refs": [
+                        {
+                            "document_id": "doc-rent",
+                            "title": "Riyadh retail rent survey",
+                            "similarity": 0.82,
+                            "reason": "rent figure",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    assert updated[0].knowledge_refs
+    assert "supported by 1 knowledge source" in updated[0].source

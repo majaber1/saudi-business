@@ -39,7 +39,7 @@ They are not one journey yet.
 
 ## Research
 
-Live connectors used by `ai_engine/research/service.py`: GASTAT (`stats.gov.sa`) and MISA (`misa.gov.sa`). Monsha'at is `BLOCKED_EXTERNAL_REACHABILITY` in `ai_engine/research/planner.py`. `ai_engine/tools/search.py` returns `not_implemented`. Competitor handling is name extraction, not a competitor database with identity, URL, and timestamp.
+Live connectors used by `ai_engine/research/service.py`: GASTAT (`stats.gov.sa`) and MISA (`misa.gov.sa`). Both returned HTTP 200 on 2026-10-27 with certificate verification left on. Monsha'at has no connector. Its homepage also returned HTTP 200 with verification on, and the planner reason stays `BLOCKED_EXTERNAL_REACHABILITY`. `ai_engine/tools/search.py` stays `BLOCKED` until `TAVILY_API_KEY` or `BRAVE_SEARCH_API_KEY` is set and a tested client is enabled. A missing `GROQ_API_KEY` is labeled `deterministic_fallback`. It is not shown as an AI suggestion.
 
 ## Financial and decision path on this branch
 
