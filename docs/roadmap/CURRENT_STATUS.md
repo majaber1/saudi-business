@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 2026-10-28. This file is the resume point for another machine. The remote tip is authoritative only after `git ls-remote` matches local `HEAD`. Do not treat a local-only commit as synchronized.
+Updated: 2026-10-29. This file is the resume point for another machine. The remote tip is authoritative only after `git ls-remote` matches local `HEAD`. Do not treat a local-only commit as synchronized.
 
 ## Identity
 
@@ -12,13 +12,13 @@ Updated: 2026-10-28. This file is the resume point for another machine. The remo
 | `origin/main` | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
-| Resume-point commit | `fb298af76342e358f67f4e75bd22f61781e2a03f` |
+| Resume-point commit | `58b8c5a87875856a350bedcb248e0dbaf0c57985` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Remote verification before the search-client change: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `fb298af76342e358f67f4e75bd22f61781e2a03f`. Confirm the tip again after the next push.
+Remote verification before this acceptance recheck: local `HEAD` and `git ls-remote origin refs/heads/saudi-business-completion` both returned `58b8c5a87875856a350bedcb248e0dbaf0c57985`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -109,6 +109,12 @@ Search-client and MCP command, after installing `mcp` 1.30.0:
 `python -m pytest tests/test_stage2_market_intelligence.py tests/test_phase7a_source_foundation.py::test_i_mcp_boundary_smoke tests/test_phase7b_gastat_live_source.py::test_l_mcp_source_tool_boundary -q --tb=short`
 
 Result: **17 passed**. `test_l_mcp_source_tool_boundary` also fetched GASTAT through the existing connector. That is not a web-search result.
+
+Acceptance recheck on 2026-10-29, same worktree:
+
+`python -m pytest tests/test_stage2_market_intelligence.py tests/test_stage3_archetype_financials.py tests/test_financial_trust_sprint.py tests/test_financial_trust_hardening.py tests/test_citation_critic.py tests/test_phase8a_research_intelligence.py tests/test_phase7a_source_foundation.py::test_i_mcp_boundary_smoke tests/test_phase7b_gastat_live_source.py::test_l_mcp_source_tool_boundary -q --tb=line`
+
+Result: **72 passed**. A direct call with an empty environment returned `BLOCKED` / `NO_ALLOWLISTED_PROVIDER_CONFIGURED` and zero results. No browser journey was repeated. The full customer workflow remains not accepted.
 
 ## Acceptance score
 

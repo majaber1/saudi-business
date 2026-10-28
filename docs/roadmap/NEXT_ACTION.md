@@ -2,7 +2,9 @@
 
 Resume on branch `saudi-business-completion` in worktree `saudi-business-completion-20261028`. Do not use the dirty `Saudi-Business` checkout and do not apply its `0027` / `0028` migration files.
 
-Last verified remote SHA before the search-client change: `fb298af76342e358f67f4e75bd22f61781e2a03f`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
+Last verified remote SHA before this acceptance recheck: `58b8c5a87875856a350bedcb248e0dbaf0c57985`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
+
+Rechecked 2026-10-29. Local process, user, and machine environments have no `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY`, or `GROQ_API_KEY`. No `.env` file exists. The web Vercel project still has `GROQ_API_KEY` and does not have either search key. That production Groq value was not decrypted. Search stayed `BLOCKED`.
 
 ## Immediate task
 
