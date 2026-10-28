@@ -13,12 +13,13 @@ Updated: 2026-10-29. This file is the resume point for another machine. The remo
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Owner-decision commit | `c945ac498f883c357c8efb3a7d1b158a6b955393` |
+| Resume tip before this milestone | `dc6516db6acc573915aa75e06636858a67df2fb2` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-The owner-decision commit `c945ac498f883c357c8efb3a7d1b158a6b955393` matched `git ls-remote` for `refs/heads/saudi-business-completion`. `origin/main` remained `56ca05b43dee3cc097e4c04e7b096d13df4b98f3`. Confirm the tip again after the status-note push.
+Fetched 2026-10-29. Local `HEAD` and `git ls-remote` both returned `dc6516db6acc573915aa75e06636858a67df2fb2` before this milestone. `origin/main` remained `56ca05b43dee3cc097e4c04e7b096d13df4b98f3`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -123,6 +124,18 @@ Owner-decision command, same worktree:
 Result: **77 passed**, 6 `datetime.utcnow` deprecation warnings. Exit code 0.
 
 Browser check on isolated study `study_884fa2d78ce9`: the owner panel showed `INSUFFICIENT_EVIDENCE`. Reject recorded `reject` at `2026-10-28T21:41:25.256773+00:00`, analysis version 0. A following accept showed "تم رفض هذه النسخة. لا يمكن قبولها قبل تغيير التحليل." and left the recorded action as reject. Refresh kept that record. This is not a live-search or live-model acceptance pass. No user reference images were available; the only image in the repo is `apps/web/app/icon.svg`.
+
+Request-modification and report command, same worktree:
+
+`python -m pytest tests/test_owner_decision.py -q --tb=short`
+
+Result: **10 passed**. English and Arabic exports of a fixture with the coffee operating statement contain 52000, 20000, 18000, 15600, -1600, and -19200. A missing amount stays missing.
+
+`npx tsc --noEmit` in `apps/web`: exit 0.
+
+Authorization command: `python -m pytest tests/test_router_authz.py tests/test_projects_auth.py tests/test_auth_privilege.py -q --tb=line`. Result: **46 passed**.
+
+Browser, same loaded coffee study, English chrome: IRR and payback render in English, the recorded action reads "Rejected", and the owner note field is present. Monthly net on screen is -1,600 SAR. At a 390px viewport the decision buttons wrap. Request Modification was clicked with the note "Confirm the rent basis before another analysis." The request did not return. Docker Desktop reported "unable to start", and a Postgres connection to `127.0.0.1:54329` timed out after the TCP port accepted a connection. The live export comparison and the persisted modification are NOT TESTED. Search and Groq remain BLOCKED. No reference images were available.
 
 ## Acceptance score
 

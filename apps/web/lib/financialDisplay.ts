@@ -39,6 +39,19 @@ function asState(value: unknown): FinancialMetricState | null {
   return value as FinancialMetricState;
 }
 
+function pickLocale(
+  value: string | null | undefined,
+  ar: boolean,
+  pairs: Array<[string, string]>,
+  fallback: string,
+): string {
+  const text = (value || "").trim();
+  for (const [english, arabic] of pairs) {
+    if (text === english || text === arabic) return ar ? arabic : english;
+  }
+  return text || fallback;
+}
+
 function neverNullText(value: unknown, fallback: string): string {
   if (value === null || value === undefined) return fallback;
   const text = String(value).trim();
@@ -53,16 +66,30 @@ export function formatIrrMetric(
   ar: boolean,
 ): FinancialMetricState {
   const fallbackDisplay = ar ? IRR_UNAVAILABLE_AR : IRR_UNAVAILABLE_EN;
+  const label = ar ? "معدل العائد الداخلي" : "IRR";
   const state = asState(financial?.irr_state);
   if (state?.display) {
+    const available = Boolean(state.available);
     return {
-      label: state.label || (ar ? "معدل العائد الداخلي" : "IRR"),
-      available: Boolean(state.available),
-      display: neverNullText(state.display, fallbackDisplay),
-      reason: state.available ? null : state.reason || (ar ? IRR_REASON_AR : IRR_REASON_EN),
-      missing_condition: state.available
+      label: pickLocale(state.label, ar, [["IRR", "معدل العائد الداخلي"]], label),
+      available,
+      display: pickLocale(
+        neverNullText(state.display, fallbackDisplay),
+        ar,
+        [[IRR_UNAVAILABLE_EN, IRR_UNAVAILABLE_AR]],
+        fallbackDisplay,
+      ),
+      reason: available
         ? null
-        : state.missing_condition || (ar ? IRR_MISSING_AR : IRR_MISSING_EN),
+        : pickLocale(state.reason, ar, [[IRR_REASON_EN, IRR_REASON_AR]], ar ? IRR_REASON_AR : IRR_REASON_EN),
+      missing_condition: available
+        ? null
+        : pickLocale(
+            state.missing_condition,
+            ar,
+            [[IRR_MISSING_EN, IRR_MISSING_AR]],
+            ar ? IRR_MISSING_AR : IRR_MISSING_EN,
+          ),
     };
   }
   const display = neverNullText(financial?.irr_display, "");
@@ -99,16 +126,35 @@ export function formatPaybackMetric(
   ar: boolean,
 ): FinancialMetricState {
   const fallbackDisplay = ar ? PAYBACK_UNAVAILABLE_AR : PAYBACK_UNAVAILABLE_EN;
+  const label = ar ? "فترة الاسترداد" : "Payback Period";
   const state = asState(financial?.payback_state);
   if (state?.display) {
+    const available = Boolean(state.available);
     return {
-      label: state.label || (ar ? "فترة الاسترداد" : "Payback Period"),
-      available: Boolean(state.available),
-      display: neverNullText(state.display, fallbackDisplay),
-      reason: state.available ? null : state.reason || (ar ? PAYBACK_REASON_AR : PAYBACK_REASON_EN),
-      missing_condition: state.available
+      label: pickLocale(state.label, ar, [["Payback Period", "فترة الاسترداد"]], label),
+      available,
+      display: pickLocale(
+        neverNullText(state.display, fallbackDisplay),
+        ar,
+        [[PAYBACK_UNAVAILABLE_EN, PAYBACK_UNAVAILABLE_AR]],
+        fallbackDisplay,
+      ),
+      reason: available
         ? null
-        : state.missing_condition || (ar ? PAYBACK_MISSING_AR : PAYBACK_MISSING_EN),
+        : pickLocale(
+            state.reason,
+            ar,
+            [[PAYBACK_REASON_EN, PAYBACK_REASON_AR]],
+            ar ? PAYBACK_REASON_AR : PAYBACK_REASON_EN,
+          ),
+      missing_condition: available
+        ? null
+        : pickLocale(
+            state.missing_condition,
+            ar,
+            [[PAYBACK_MISSING_EN, PAYBACK_MISSING_AR]],
+            ar ? PAYBACK_MISSING_AR : PAYBACK_MISSING_EN,
+          ),
     };
   }
   const display = neverNullText(financial?.payback_display, "");

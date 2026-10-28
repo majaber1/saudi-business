@@ -101,6 +101,82 @@ def test_report_line_states_when_the_owner_has_not_decided():
     assert "4" in line
 
 
+def test_request_modification_after_rejection_does_not_approve():
+    state = _state(phase="REPORT_READY")
+    record_owner_decision(state, "reject")
+    record_owner_decision(state, "request_modification", note="Confirm the rent")
+    assert state.owner_decision["action"] == "request_modification"
+    assert state.owner_decision["note"] == "Confirm the rent"
+    assert state.phase == "ASSUMPTIONS_REVIEW"
+    assert state.assumptions_approved is False
+    assert state.verdict == "INSUFFICIENT_EVIDENCE"
+
+
+def test_report_exports_repeat_the_persisted_operating_statement():
+    import io
+    import zipfile
+    from xml.etree import ElementTree
+
+    from pypdf import PdfReader
+
+    from backend.app.services.reporting_v2 import (
+        build_v2_report_context,
+        generate_v2_docx,
+        generate_v2_pdf,
+        operating_statement_lines,
+    )
+
+    financial = {
+        "investment_grade": False,
+        "cash_flow_basis": "PRE_TAX_OPERATING_PROJECTION",
+        "verdict_override": "INSUFFICIENT_EVIDENCE",
+        "capex": 400000,
+        "monthly_net": -1600,
+        "annual_cash_flows": [-19200],
+        "lines": [
+            {"id": "revenue", "monthly": 52000, "annual": 624000},
+            {"id": "rent", "monthly": 20000, "annual": 240000},
+            {"id": "payroll", "monthly": 18000, "annual": 216000},
+            {"id": "operating_cost", "monthly": 15600, "annual": 187200},
+        ],
+    }
+    state = {
+        "profile": {"archetype": "fnb"},
+        "language": "en",
+        "phase": "REPORT_READY",
+        "verdict": None,
+        "financial_results": financial,
+        "owner_decision": {
+            "action": "reject",
+            "recommendation": "INSUFFICIENT_EVIDENCE",
+            "decided_at": "2026-10-28T21:41:25+00:00",
+            "analysis_version": 0,
+        },
+    }
+    ctx = build_v2_report_context(state)
+    statement = operating_statement_lines(financial, "en")
+    assert "Monthly net: -1600 SAR" in statement
+    assert "Revenue: 52000 SAR monthly / 624000 SAR annual" in statement
+    assert ctx["verdict"] == "INSUFFICIENT_EVIDENCE"
+    assert "Monthly net: -1600 SAR" in "\n".join(ctx["operating_statement"])
+
+    pdf_text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(generate_v2_pdf(ctx, "en"))).pages
+    )
+    for token in ("52000", "20000", "18000", "15600", "-1600", "-19200", "400000", "INSUFFICIENT_EVIDENCE", "Owner rejected"):
+        assert token in pdf_text
+
+    xml = zipfile.ZipFile(io.BytesIO(generate_v2_docx(ctx, "ar"))).read("word/document.xml")
+    root = ElementTree.fromstring(xml)
+    doc_text = "".join(
+        node.text or ""
+        for node in root.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t")
+    )
+    for token in ("52000", "20000", "18000", "15600", "-1600", "-19200", "INSUFFICIENT_EVIDENCE", "رفض المالك"):
+        assert token in doc_text
+
+
 def test_report_context_uses_financial_ceiling_and_owner_decision():
     from backend.app.services.reporting_v2 import build_v2_report_context
 

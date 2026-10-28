@@ -264,6 +264,65 @@ LABELS = {
 }
 
 
+_LINE_LABELS = {
+    "revenue": ("Revenue", "الإيراد"),
+    "rent": ("Rent", "الإيجار"),
+    "payroll": ("Payroll", "الرواتب"),
+    "operating_cost": ("Operating cost", "تكلفة التشغيل"),
+    "subscription_revenue": ("Subscription revenue", "إيراد الاشتراك"),
+    "acquisition_cost": ("Acquisition cost", "تكلفة الاكتساب"),
+    "hosting": ("Hosting", "الاستضافة"),
+}
+
+
+def format_stored_amount(value: Any) -> str:
+    """Render a persisted amount. Missing stays missing and is not zero."""
+    if value is None or isinstance(value, bool):
+        return "Missing"
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if number.is_integer():
+            return str(int(number))
+        return f"{number:.2f}"
+    text = str(value).strip()
+    return text or "Missing"
+
+
+def operating_statement_lines(financial_results: Any, locale: str = "en") -> list[str]:
+    """Lines that must match the study workspace operating statement."""
+    fr = financial_results if isinstance(financial_results, dict) else {}
+    arabic = locale == "ar"
+    lines: list[str] = []
+    if fr.get("stale") is True:
+        lines.append(
+            "الإسقاط لم يعد مطابقاً للافتراضات الحالية."
+            if arabic
+            else "Projection is stale and does not match the current assumptions."
+        )
+    raw_lines = fr.get("lines")
+    if isinstance(raw_lines, list):
+        for line in raw_lines:
+            if not isinstance(line, dict):
+                continue
+            key = str(line.get("id") or "")
+            english, arabic_label = _LINE_LABELS.get(key, (key or "Line", key or "بند"))
+            label = arabic_label if arabic else english
+            monthly = format_stored_amount(line.get("monthly"))
+            annual = format_stored_amount(line.get("annual"))
+            if arabic:
+                lines.append(f"{label}: {monthly} ر.س شهرياً / {annual} ر.س سنوياً")
+            else:
+                lines.append(f"{label}: {monthly} SAR monthly / {annual} SAR annual")
+    if "monthly_net" in fr:
+        amount = format_stored_amount(fr.get("monthly_net"))
+        lines.append(f"صافي شهري: {amount} ر.س" if arabic else f"Monthly net: {amount} SAR")
+    annual_flows = fr.get("annual_cash_flows")
+    if isinstance(annual_flows, list) and annual_flows:
+        joined = " / ".join(format_stored_amount(value) for value in annual_flows)
+        lines.append(f"التدفق السنوي: {joined} ر.س" if arabic else f"Annual cash flow: {joined} SAR")
+    return lines
+
+
 def build_v2_report_context(state: dict) -> dict:
     profile = state.get("profile") or {}
     if not isinstance(profile, dict):
@@ -303,6 +362,7 @@ def build_v2_report_context(state: dict) -> dict:
         "verdict": state.get("verdict") or (fr.get("verdict_override") if isinstance(fr, dict) else None),
         "cash_flow_basis": fr.get("cash_flow_basis") if isinstance(fr, dict) else None,
         "investment_grade": fr.get("investment_grade") if isinstance(fr, dict) else None,
+        "operating_statement": operating_statement_lines(fr, state.get("language") or "en"),
         "owner_decision": state.get("owner_decision") if isinstance(state.get("owner_decision"), dict) else None,
         "decision_rationale": state.get("decision_rationale"),
         "decision_conditions": state.get("decision_conditions") or [],
@@ -451,6 +511,14 @@ def generate_v2_pdf(ctx: dict, locale: str = "en") -> bytes:
     _section_title(L["exec_summary"])
     verdict = ctx.get("verdict") or "PENDING"
     _field(L["verdict"], verdict)
+    if ctx.get("phase") not in {"REPORT_READY"}:
+        _text(
+            "Incomplete study. This export is not a final report."
+            if locale != "ar"
+            else "دراسة غير مكتملة. هذا التصدير ليس تقريراً نهائياً.",
+            size=9,
+            color="#9b2c2c",
+        )
     if ctx.get("investment_grade") is False:
         _text(
             "Pre-tax operating projection. This is not an investment-ready conclusion."
@@ -581,8 +649,12 @@ def generate_v2_pdf(ctx: dict, locale: str = "en") -> bytes:
         missing = fr.get("missing_material_inputs", [])
         if missing:
             _text(f"Missing: {', '.join(missing)}", size=10, color="#c53030")
+        for row in operating_statement_lines(fr, locale):
+            _text(row, size=9)
     else:
         _field(L["capex"], f"{_fmt(fr.get('capex'))} SAR")
+        for row in operating_statement_lines(fr, locale):
+            _text(row, size=9)
         rev = fr.get("revenue_projections", {})
         if isinstance(rev, dict):
             for k, v in sorted(rev.items()):
@@ -864,6 +936,13 @@ def generate_v2_docx(ctx: dict, locale: str = "en") -> bytes:
     _section(L["exec_summary"])
     verdict = ctx.get("verdict") or "PENDING"
     _para(f"{L['verdict']}: {verdict}", bold=True)
+    if ctx.get("phase") not in {"REPORT_READY"}:
+        _para(
+            "Incomplete study. This export is not a final report."
+            if locale != "ar"
+            else "دراسة غير مكتملة. هذا التصدير ليس تقريراً نهائياً.",
+            size=9,
+        )
     if ctx.get("investment_grade") is False:
         _para(
             "Pre-tax operating projection. This is not an investment-ready conclusion."
@@ -931,8 +1010,12 @@ def generate_v2_docx(ctx: dict, locale: str = "en") -> bytes:
     _section(L["financial_model"])
     if fr.get("gate_status") == "BLOCKED":
         _para(L["gate_blocked"], bold=True, size=11, color=(197, 48, 48))
+        for row in operating_statement_lines(fr, locale):
+            _para(row, size=9)
     elif fr:
         _para(f"{L['capex']}: {_fmt(fr.get('capex'))} SAR")
+        for row in operating_statement_lines(fr, locale):
+            _para(row, size=9)
         _para(f"{L['npv']}: {_fmt(fr.get('npv'))} SAR")
         _para(f"{L['irr']}: {fr.get('irr_display') or _fmt(fr.get('irr'))}")
         _para(f"{L['payback']}: {fr.get('payback_display') or _fmt(fr.get('payback_months'))}")

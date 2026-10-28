@@ -38,12 +38,15 @@ Partial.
 - The projection is labeled pre-tax, not investment-ready.
 - Editing an assumption marks the previous figures stale and withdraws a favorable verdict until analysis is run again.
 - The isolated Postgres coffee study shows the owner decision panel. Reject was recorded in the browser and survived refresh. Accepting that same analysis was refused.
-- Request Modification returns the study to assumption review in unit tests. It was not clicked on the live coffee study.
+- Request Modification returns the study to assumption review in unit tests. The browser click did not persist on 2026-10-29 because Docker Desktop could not start and the Postgres handshake timed out.
 - Live search and live model classification remain blocked. See `docs/roadmap/OWNER_ACTION_REQUIRED.md`.
 
 ## Stage 5 — integration and security
 
-Not tested.
+Partial.
+
+- `tests/test_router_authz.py`, `tests/test_projects_auth.py`, and `tests/test_auth_privilege.py`: 46 passed.
+- A live downloaded report was not compared with the coffee study because Postgres did not answer.
 
 - Non-production Postgres only. Do not apply `0027_v2_scenario_link` or `0028_v2_output_links` from the dirty checkout.
 - Browser end-to-end on the recovery branch.

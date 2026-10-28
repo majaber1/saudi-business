@@ -2,7 +2,7 @@
 
 Resume on branch `saudi-business-completion` in worktree `saudi-business-completion-20261028`. Do not use the dirty `Saudi-Business` checkout and do not apply its `0027` / `0028` migration files.
 
-Owner-decision commit verified on the remote: `c945ac498f883c357c8efb3a7d1b158a6b955393`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
+Fetched tip before this milestone: `dc6516db6acc573915aa75e06636858a67df2fb2`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
 
 Rechecked 2026-10-29. Local process, user, and machine environments have no `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY`, or `GROQ_API_KEY`. No `.env` file exists. The web Vercel project still has `GROQ_API_KEY` and does not have either search key. That production Groq value was not decrypted. Search stayed `BLOCKED`.
 
@@ -34,7 +34,9 @@ Repeat for preview and development, or use `BRAVE_SEARCH_API_KEY` instead. Add t
 
 ## Owner decision
 
-The founder can accept, reject, or request modification of the current recommendation. Accepting does not change it. A rejection of the same analysis cannot be rewritten to an acceptance. Credential setup remains the blocker for live search and live model output. Details are in `docs/roadmap/OWNER_ACTION_REQUIRED.md`.
+The founder can accept, reject, or request modification of the current recommendation. Accepting does not change it. A rejection of the same analysis cannot be rewritten to an acceptance. Request Modification returns the study to assumption review in unit tests and was not persisted in the browser on 2026-10-29 because the isolated Postgres handshake timed out. Start Docker Desktop, confirm container `sb-stage4b-pg`, restart the local API, then repeat the modification click and compare a downloaded PDF with the on-screen monthly net.
+
+Credential setup remains the blocker for live search and live model output. Details are in `docs/roadmap/OWNER_ACTION_REQUIRED.md`.
 
 ## Still blocked
 

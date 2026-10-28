@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { formatIrrMetric, formatPaybackMetric } from "@/lib/financialDisplay";
 import { ArchetypeLineItems } from "@/components/study/ArchetypeLineItems";
 
@@ -24,7 +25,7 @@ type Props = {
   } | null;
   onContinue: () => void;
   onEditAssumption?: (key: string, value: string) => Promise<void>;
-  onOwnerDecision?: (action: "approve" | "reject" | "request_modification") => void;
+  onOwnerDecision?: (action: "approve" | "reject" | "request_modification", note?: string) => void;
 };
 
 const STEPS = [
@@ -131,10 +132,16 @@ export function StudyLateStagePanels({
   onEditAssumption,
   onOwnerDecision,
 }: Props) {
+  const [ownerNote, setOwnerNote] = useState("");
+  const ownerActionLabel = (action?: string) => {
+    if (action === "approve") return ar ? "قبول" : "Accepted";
+    if (action === "reject") return ar ? "رفض" : "Rejected";
+    if (action === "request_modification") return ar ? "طلب تعديل" : "Modification requested";
+    return action || "";
+  };
   const showFinancial = phase === "READY_FOR_ANALYSIS" || phase === "ANALYZED";
   const showRisks = phase === "DECISION_READY";
   const showReport = phase === "REPORT_READY";
-  const canContinue = phase === "READY_FOR_ANALYSIS" || phase === "ANALYZED" || phase === "DECISION_READY";
   const recommendation =
     verdict ||
     (financial && financial.verdict_override ? String(financial.verdict_override) : "");
@@ -347,7 +354,7 @@ export function StudyLateStagePanels({
           ) : null}
           {ownerDecision?.action ? (
             <p className="mt-2 text-sm text-ink-800" data-testid="owner-decision-record">
-              {ownerDecision.action}
+              {ownerActionLabel(ownerDecision.action)}
               {ownerDecision.stale ? (ar ? " — لم يعد سارياً" : " — no longer current") : ""}
               {ownerDecision.decided_at ? ` · ${ownerDecision.decided_at}` : ""}
               {ownerDecision.analysis_version !== undefined
@@ -357,12 +364,25 @@ export function StudyLateStagePanels({
           ) : (
             <p className="mt-2 text-sm text-ink-600">{ar ? "لم يُسجل قرار المالك." : "Owner decision: not recorded."}</p>
           )}
+          {ownerDecision?.note ? (
+            <p className="mt-1 text-sm text-ink-700" data-testid="owner-decision-note">{ownerDecision.note}</p>
+          ) : null}
+          <label className="mt-3 block text-xs font-medium text-ink-700">
+            {ar ? "ملاحظة للمالك" : "Owner note"}
+            <textarea
+              data-testid="owner-decision-note-input"
+              value={ownerNote}
+              onChange={(event) => setOwnerNote(event.target.value)}
+              rows={2}
+              className="mt-1 w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-900"
+            />
+          </label>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
               data-testid="owner-approve-btn"
               disabled={loading || projectionStale || !onOwnerDecision}
-              onClick={() => onOwnerDecision?.("approve")}
+              onClick={() => onOwnerDecision?.("approve", ownerNote)}
               className="rounded-lg bg-ink-900 px-4 py-2 text-sm font-semibold text-white hover:bg-ink-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-900 disabled:opacity-50"
             >
               {ar ? "قبول هذه التوصية" : "Accept this recommendation"}
@@ -371,7 +391,7 @@ export function StudyLateStagePanels({
               type="button"
               data-testid="owner-reject-btn"
               disabled={loading || projectionStale || !onOwnerDecision}
-              onClick={() => onOwnerDecision?.("reject")}
+              onClick={() => onOwnerDecision?.("reject", ownerNote)}
               className="rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700 disabled:opacity-50"
             >
               {ar ? "رفض هذه التوصية" : "Reject this recommendation"}
@@ -380,7 +400,7 @@ export function StudyLateStagePanels({
               type="button"
               data-testid="owner-modify-btn"
               disabled={loading || projectionStale || !onOwnerDecision}
-              onClick={() => onOwnerDecision?.("request_modification")}
+              onClick={() => onOwnerDecision?.("request_modification", ownerNote)}
               className="rounded-lg border border-ink-300 bg-white px-4 py-2 text-sm font-semibold text-ink-800 hover:bg-ink-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-900 disabled:opacity-50"
             >
               {ar ? "طلب تعديل" : "Request modification"}

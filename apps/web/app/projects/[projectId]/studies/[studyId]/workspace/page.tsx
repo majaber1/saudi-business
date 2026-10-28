@@ -619,7 +619,7 @@ export default function StudyWorkspacePage() {
   }
 
 
-  async function submitOwnerDecision(action: "approve" | "reject" | "request_modification") {
+  async function submitOwnerDecision(action: "approve" | "reject" | "request_modification", note?: string) {
     if (!study || loading) return;
     const token = getToken();
     if (!token) {
@@ -633,7 +633,7 @@ export default function StudyWorkspacePage() {
         method: "POST",
         credentials: "same-origin",
         headers: { ...studyFetchHeaders(token), "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, note: note || null }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -820,6 +820,15 @@ export default function StudyWorkspacePage() {
           />
         )}
 
+      {study?.phase === "ASSUMPTIONS_REVIEW" && study.owner_decision?.action === "request_modification" && (
+        <p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950" data-testid="modification-requested-banner">
+          {ar
+            ? "طُلب تعديل الافتراضات. التوصية السابقة لم تُقبل. راجع الأرقام ثم أعد التحليل."
+            : "Modification was requested. The previous recommendation was not accepted. Review the figures, then run the analysis again."}
+          {study.owner_decision.note ? ` ${study.owner_decision.note}` : ""}
+        </p>
+      )}
+
       {study?.phase === "ASSUMPTIONS_REVIEW" && (
         <AssumptionReviewPanel
           assumptions={study.assumptions || []}
@@ -846,7 +855,7 @@ export default function StudyWorkspacePage() {
           ownerDecision={study.owner_decision}
           onContinue={() => void continueStudy()}
           onEditAssumption={editAssumption}
-          onOwnerDecision={(action) => void submitOwnerDecision(action)}
+          onOwnerDecision={(action, note) => void submitOwnerDecision(action, note)}
         />
       ) : null}
 
