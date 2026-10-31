@@ -13,13 +13,13 @@ Updated: 2026-10-31. This file is the resume point for another machine. The remo
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Owner-decision commit | `c945ac498f883c357c8efb3a7d1b158a6b955393` |
-| Resume tip before this milestone | `5e60cbe5a8391f89289eb369d591828deec6b6be` |
+| Resume tip before this milestone | `95329b70701774fc2e2cc894cf388ce3fd213b24` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Fetched 2026-10-31. Local `HEAD` and `git ls-remote` both returned `5e60cbe5a8391f89289eb369d591828deec6b6be` before this milestone. `origin/main` remained `56ca05b43dee3cc097e4c04e7b096d13df4b98f3`. Confirm the tip again after the next push.
+Fetched 2026-10-31. Local `HEAD` and `git ls-remote` both returned `95329b70701774fc2e2cc894cf388ce3fd213b24` before this milestone. `origin/main` remained `56ca05b43dee3cc097e4c04e7b096d13df4b98f3`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -40,7 +40,7 @@ The original dirty checkout was not reset, cleaned, or checked out onto this bra
 | 2 Real Saudi research | Partial | GASTAT pages were retrieved with verification on. Competitor and price search stayed NOT_FOUND. No allowlisted search credential exists. Monsha'at has no live connector. |
 | 3 Archetype financials | Partial | Specialty coffee and Saudi SaaS line items are calculated and shown in the study workspace. Tax lines and other archetypes are not included. |
 | 4 One workspace journey | Partial | The Riyadh coffee study records an owner rejection, refuses a same-analysis acceptance, and on 2026-10-31 persisted a Request Modification that returned the study to assumption review. The recommendation stayed `INSUFFICIENT_EVIDENCE`. |
-| 5 Integration, security, browser, non-prod Postgres | Partial | One isolated Postgres 16 browser study was run. Authorization tests passed. A live English PDF and Arabic DOCX from that study match the stored operating figures. `npm run build` in `apps/web` completed on 2026-10-31. The Saudi SaaS browser journey was not run. |
+| 5 Integration, security, browser, non-prod Postgres | Partial | Isolated Postgres 16 ran the coffee study and a separate Saudi SaaS study. Authorization tests passed earlier the same day. Live English PDF and Arabic DOCX files match both studies. `npm run build` in `apps/web` completed earlier on 2026-10-31. Live search and Groq remain blocked. |
 | 6 Release | Not started | Merge, production migration, and deploy need explicit owner approval. |
 
 ## Tests
@@ -138,6 +138,10 @@ Authorization command: `python -m pytest tests/test_router_authz.py tests/test_p
 Browser, same loaded coffee study, English chrome: IRR and payback render in English, the recorded action reads "Rejected", and the owner note field is present. Monthly net on screen is -1,600 SAR. At a 390px viewport the decision buttons wrap.
 
 On 2026-10-31 Docker Desktop was running and `sb-stage4b-pg` answered `SELECT 1` on `127.0.0.1:54329`. The API health check returned `db_connected: true`. A live English PDF and Arabic DOCX for `study_884fa2d78ce9` both contain 52000, 20000, 18000, 15600, -1600, -19200, `INSUFFICIENT_EVIDENCE`, and the owner rejection line. In the browser, Request Modification with the note "Confirm the rent basis before another analysis." returned the workspace to assumption review. Refresh kept the banner and the note. The stored snapshot is phase `ASSUMPTIONS_REVIEW`, `assumptions_approved` false, owner action `request_modification`, recommendation `INSUFFICIENT_EVIDENCE`, monthly net -1600, decided at `2026-10-31T16:27:00.153094+00:00`. Search and Groq remain BLOCKED. No reference images were available. `npm run build` in `apps/web` compiled and generated 40 pages. Exit code 0. The local Next dev server on port 3000 was stopped so that build could write `.next`.
+
+Saudi SaaS study `study_e25399139c21`, project 68, isolated Postgres, 2026-10-31. Classification source is `deterministic_fallback` and the archetype is `saas_digital`. Before a monthly acquisition basis existed, CAC 800 stayed `MISSING` and did not become a monthly cost. Hosting was also `MISSING`, so monthly net stayed missing. After the owner supplied hosting 3,000 SAR and 10 new customers, acquisition was 8,000 SAR from new customers times CAC, subscription revenue was 20,000 SAR from ARR 240,000, and monthly net was 9,000 SAR. Changing new customers to 20 made the projection stale, then recalculated acquisition to 16,000 SAR, monthly net to 1,000 SAR, and annual cash flow to 12,000 SAR. Discount rate and NPV stayed missing. `investment_grade` stayed false. The verdict stayed `INSUFFICIENT_EVIDENCE`. Competitor and pricing evidence are `NOT_FOUND`. An indicative SaaS metrics claim is labeled provisional `ai_assumption` and is not a sourced competitor. The owner rejection survived reload. A same-analysis acceptance returned HTTP 409. The English PDF and Arabic DOCX contain 20000, 16000, 3000, 1000, 12000, 120000, and `INSUFFICIENT_EVIDENCE`. The English workspace showed the same ceiling, monthly net, and rejection. Monthly churn is stored at 5 and is not applied to the operating cash flow. Risk and decision preparation now uses the existing fallback when Groq is not configured. A blocked financial gate no longer says material inputs are missing when that list is empty.
+
+Tests in this pass: owner-decision, archetype financials, and the provider-fallback test, 24 passed. Financial-trust sprint, citation critic, and the provider-fallback test, 12 passed. The authorization suite of 46 passed earlier on 2026-10-31 and was not repeated.
 
 ## Acceptance score
 

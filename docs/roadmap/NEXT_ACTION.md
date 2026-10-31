@@ -2,7 +2,7 @@
 
 Resume on branch `saudi-business-completion` in worktree `saudi-business-completion-20261028`. Do not use the dirty `Saudi-Business` checkout and do not apply its `0027` / `0028` migration files.
 
-Fetched tip before this milestone: `5e60cbe5a8391f89289eb369d591828deec6b6be`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
+Fetched tip before this milestone: `95329b70701774fc2e2cc894cf388ce3fd213b24`. After the next push, confirm `git rev-parse HEAD` equals `git ls-remote origin refs/heads/saudi-business-completion`.
 
 Rechecked 2026-10-31. Local process, user, and machine environments have no `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY`, or `GROQ_API_KEY`. No `.env` file exists. The web Vercel project still has `GROQ_API_KEY` and does not have either search key. That production Groq value was not decrypted. Search stayed `BLOCKED`.
 
@@ -34,7 +34,7 @@ Repeat for preview and development, or use `BRAVE_SEARCH_API_KEY` instead. Add t
 
 ## Owner decision
 
-The founder can accept, reject, or request modification of the current recommendation. Accepting does not change it. A rejection of the same analysis cannot be rewritten to an acceptance. On 2026-10-31, Request Modification on `study_884fa2d78ce9` persisted in the browser and survived refresh. The live English PDF and Arabic DOCX contain the same operating figures as that study. `npm run build` in `apps/web` completed. The Saudi SaaS browser journey is still open. Do not treat this coffee pass as full acceptance.
+The founder can accept, reject, or request modification of the current recommendation. Accepting does not change it. A rejection of the same analysis cannot be rewritten to an acceptance. Coffee study `study_884fa2d78ce9` kept a Request Modification. Saudi SaaS study `study_e25399139c21` on project 68 kept an owner rejection of `INSUFFICIENT_EVIDENCE`. A same-analysis acceptance returned HTTP 409. Do not treat either study as full acceptance while search and Groq are blocked.
 
 Credential setup remains the blocker for live search and live model output. Details are in `docs/roadmap/OWNER_ACTION_REQUIRED.md`.
 

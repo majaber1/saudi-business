@@ -199,6 +199,35 @@ def test_missing_model_is_labeled_as_a_deterministic_fallback():
     assert "temporarily unavailable" in classified.messages[-1].content
 
 
+def test_missing_provider_still_prepares_risk_and_decision():
+    from ai_engine.agents.risk import run_risk_analysis
+    from ai_engine.provider import ProviderUnavailableError
+
+    state = StudyState(
+        study_id="saas-fallback",
+        project_id="p1",
+        user_id="1",
+        language="en",
+        phase="ANALYZED",
+        profile=ProjectProfile(archetype="saas_digital", sector="Software"),
+        financial_results={
+            "investment_grade": False,
+            "gate_status": "BLOCKED",
+            "verdict_override": "INSUFFICIENT_EVIDENCE",
+            "monthly_net": None,
+        },
+    )
+    with patch("ai_engine.agents.risk.get_llm", side_effect=ProviderUnavailableError("missing")):
+        state = run_risk_analysis(state)
+    assert state.phase == "DECISION_READY"
+    assert state.decision_risks
+    with patch("ai_engine.agents.decision.get_llm", side_effect=ProviderUnavailableError("missing")):
+        state = run_decision(state)
+    assert state.phase == "REPORT_READY"
+    assert state.verdict == "INSUFFICIENT_EVIDENCE"
+    assert "missing ()" not in (state.decision_rationale or "")
+
+
 def test_search_without_a_provider_is_blocked_and_empty():
     result = asyncio.run(
         search_saudi_data("Riyadh specialty coffee competitors", environ={})

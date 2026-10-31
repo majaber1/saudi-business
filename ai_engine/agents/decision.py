@@ -84,7 +84,6 @@ Output JSON inside ```json ... ```:
 def run_decision(state: StudyState) -> StudyState:
     lang = state.language
     system_prompt = SYSTEM_PROMPT_AR if lang == "ar" else SYSTEM_PROMPT_EN
-    llm = get_llm("decision")
 
     context_parts = []
     if state.profile:
@@ -121,6 +120,7 @@ def run_decision(state: StudyState) -> StudyState:
 
     lang = getattr(state, "language", "en") or "en"
     try:
+        llm = get_llm("decision")
         response = llm.invoke(messages)
         response_text = response.content
         decision_data = _extract_json(response_text)
@@ -138,8 +138,8 @@ def run_decision(state: StudyState) -> StudyState:
     # Financial gate: if financial analysis was blocked due to missing material inputs,
     # force DEFER regardless of AI verdict
     fr = state.financial_results or {}
-    if fr.get("gate_status") == "BLOCKED":
-        missing = fr.get("missing_material_inputs", [])
+    missing = list(fr.get("missing_material_inputs") or [])
+    if fr.get("gate_status") == "BLOCKED" and missing:
         state.verdict = "DEFER"
         state.decision_rationale = (
             f"Financial analysis blocked: material inputs missing ({', '.join(missing)}). "

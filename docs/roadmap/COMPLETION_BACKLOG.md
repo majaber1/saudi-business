@@ -15,8 +15,8 @@ Partial. Do not stub the blocked connectors.
 - Citation critic and research-lineage critic are on this branch. They do not invent citations.
 - Verified competitor records require identity, an http(s) URL, and a real retrieval timestamp.
 - Allowlisted search is `BLOCKED` until a provider credential exists. No results are fabricated.
-- GASTAT live retrieval was not verified from this machine. MISA homepage returned HTTP 200. Monsha'at stays `BLOCKED_EXTERNAL_REACHABILITY`.
-- Live research browser acceptance for the coffee and SaaS studies is NOT TESTED. Search and Groq remain blocked.
+- GASTAT documents are stored and shown on the coffee and SaaS studies. Competitor and price search stay `NOT_FOUND`. Monsha'at stays `BLOCKED_EXTERNAL_REACHABILITY`.
+- Live model-written research for the coffee and SaaS studies is NOT TESTED. Search and Groq remain blocked.
 
 ## Stage 3 — archetype financials
 
@@ -39,6 +39,7 @@ Partial.
 - Editing an assumption marks the previous figures stale and withdraws a favorable verdict until analysis is run again.
 - The isolated Postgres coffee study shows the owner decision panel. Reject was recorded in the browser and survived refresh. Accepting that same analysis was refused.
 - Request Modification on the coffee study persisted on 2026-10-31. Refresh kept the assumption-review banner and the note. The recommendation stayed `INSUFFICIENT_EVIDENCE`.
+- Saudi SaaS study `study_e25399139c21` classified as `saas_digital` by deterministic fallback. Subscription revenue is 20,000 SAR from ARR 240,000. CAC 800 alone did not become a monthly cost. Acquisition became 8,000 SAR at 10 new customers and 16,000 SAR at 20. Hosting is 3,000 SAR. The scenario monthly net is 1,000 SAR and the annual cash flow is 12,000 SAR. Discount rate and NPV stayed missing. The owner rejection survived reload, and the English PDF and Arabic DOCX contain those figures. Monthly churn is stored and is not applied to the operating cash flow.
 - Live search and live model classification remain blocked. See `docs/roadmap/OWNER_ACTION_REQUIRED.md`.
 
 ## Stage 5 — integration and security

@@ -88,7 +88,6 @@ Output JSON inside ```json ... ```:
 def run_risk_analysis(state: StudyState) -> StudyState:
     lang = state.language
     system_prompt = SYSTEM_PROMPT_AR if lang == "ar" else SYSTEM_PROMPT_EN
-    llm = get_llm("risk")
 
     context_parts = []
     if state.profile:
@@ -109,6 +108,7 @@ def run_risk_analysis(state: StudyState) -> StudyState:
 
     lang = getattr(state, "language", "en") or "en"
     try:
+        llm = get_llm("risk")
         response = llm.invoke(messages)
         response_text = response.content
         risk_data = _extract_json(response_text)
