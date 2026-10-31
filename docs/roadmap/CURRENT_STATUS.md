@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 2026-10-29. This file is the resume point for another machine. The remote tip is authoritative only after `git ls-remote` matches local `HEAD`. Do not treat a local-only commit as synchronized.
+Updated: 2026-10-31. This file is the resume point for another machine. The remote tip is authoritative only after `git ls-remote` matches local `HEAD`. Do not treat a local-only commit as synchronized.
 
 ## Identity
 
@@ -13,13 +13,13 @@ Updated: 2026-10-29. This file is the resume point for another machine. The remo
 | Financial-trust commit | `8f9eac644f87a9ee0eaa93e45ae9b7e46deaf0c0` |
 | Parent of that commit | `56ca05b43dee3cc097e4c04e7b096d13df4b98f3` |
 | Owner-decision commit | `c945ac498f883c357c8efb3a7d1b158a6b955393` |
-| Resume tip before this milestone | `dc6516db6acc573915aa75e06636858a67df2fb2` |
+| Resume tip before this milestone | `5e60cbe5a8391f89289eb369d591828deec6b6be` |
 | Remote branch | https://github.com/majaber1/saudi-business/tree/saudi-business-completion |
 | Production deploy | Still `56ca05b`. Not deployed from this branch. |
 
 `origin/main` was fetched on 2026-10-28 and matched `git ls-remote` for `refs/heads/main`. It had not moved past `56ca05b`.
 
-Fetched 2026-10-29. Local `HEAD` and `git ls-remote` both returned `dc6516db6acc573915aa75e06636858a67df2fb2` before this milestone. `origin/main` remained `56ca05b43dee3cc097e4c04e7b096d13df4b98f3`. Confirm the tip again after the next push.
+Fetched 2026-10-31. Local `HEAD` and `git ls-remote` both returned `5e60cbe5a8391f89289eb369d591828deec6b6be` before this milestone. `origin/main` remained `56ca05b43dee3cc097e4c04e7b096d13df4b98f3`. Confirm the tip again after the next push.
 
 ## Preserved checkouts
 
@@ -39,8 +39,8 @@ The original dirty checkout was not reset, cleaned, or checked out onto this bra
 | 1 Financial trust | Complete on this branch, not released | Estimated 55% and 45% costs cannot authorize GO. Ambiguous discount rates are not divided by 100. Missing `opex_annual` is not zero. |
 | 2 Real Saudi research | Partial | GASTAT pages were retrieved with verification on. Competitor and price search stayed NOT_FOUND. No allowlisted search credential exists. Monsha'at has no live connector. |
 | 3 Archetype financials | Partial | Specialty coffee and Saudi SaaS line items are calculated and shown in the study workspace. Tax lines and other archetypes are not included. |
-| 4 One workspace journey | Partial | The Riyadh coffee study now records an owner rejection of `INSUFFICIENT_EVIDENCE` without changing that recommendation. Accepting the same analysis is refused. Request Modification is unit-tested and was not clicked on that study. |
-| 5 Integration, security, browser, non-prod Postgres | Partial | One isolated Postgres 16 browser study was run. The security suite and a full acceptance pass were not run. |
+| 4 One workspace journey | Partial | The Riyadh coffee study records an owner rejection, refuses a same-analysis acceptance, and on 2026-10-31 persisted a Request Modification that returned the study to assumption review. The recommendation stayed `INSUFFICIENT_EVIDENCE`. |
+| 5 Integration, security, browser, non-prod Postgres | Partial | One isolated Postgres 16 browser study was run. Authorization tests passed. A live English PDF and Arabic DOCX from that study match the stored operating figures. `npm run build` in `apps/web` completed on 2026-10-31. The Saudi SaaS browser journey was not run. |
 | 6 Release | Not started | Merge, production migration, and deploy need explicit owner approval. |
 
 ## Tests
@@ -135,7 +135,9 @@ Result: **10 passed**. English and Arabic exports of a fixture with the coffee o
 
 Authorization command: `python -m pytest tests/test_router_authz.py tests/test_projects_auth.py tests/test_auth_privilege.py -q --tb=line`. Result: **46 passed**.
 
-Browser, same loaded coffee study, English chrome: IRR and payback render in English, the recorded action reads "Rejected", and the owner note field is present. Monthly net on screen is -1,600 SAR. At a 390px viewport the decision buttons wrap. Request Modification was clicked with the note "Confirm the rent basis before another analysis." The request did not return. Docker Desktop reported "unable to start", and a Postgres connection to `127.0.0.1:54329` timed out after the TCP port accepted a connection. The live export comparison and the persisted modification are NOT TESTED. Search and Groq remain BLOCKED. No reference images were available.
+Browser, same loaded coffee study, English chrome: IRR and payback render in English, the recorded action reads "Rejected", and the owner note field is present. Monthly net on screen is -1,600 SAR. At a 390px viewport the decision buttons wrap.
+
+On 2026-10-31 Docker Desktop was running and `sb-stage4b-pg` answered `SELECT 1` on `127.0.0.1:54329`. The API health check returned `db_connected: true`. A live English PDF and Arabic DOCX for `study_884fa2d78ce9` both contain 52000, 20000, 18000, 15600, -1600, -19200, `INSUFFICIENT_EVIDENCE`, and the owner rejection line. In the browser, Request Modification with the note "Confirm the rent basis before another analysis." returned the workspace to assumption review. Refresh kept the banner and the note. The stored snapshot is phase `ASSUMPTIONS_REVIEW`, `assumptions_approved` false, owner action `request_modification`, recommendation `INSUFFICIENT_EVIDENCE`, monthly net -1600, decided at `2026-10-31T16:27:00.153094+00:00`. Search and Groq remain BLOCKED. No reference images were available. `npm run build` in `apps/web` compiled and generated 40 pages. Exit code 0. The local Next dev server on port 3000 was stopped so that build could write `.next`.
 
 ## Acceptance score
 
@@ -152,8 +154,8 @@ This is not a full acceptance pass. Checked again on 2026-10-28. `GROQ_API_KEY` 
 | Financial projection | Partial — pre-tax coffee lines only; not investment-grade |
 | Scenario modification and stale recommendation | Partial — rent edit on the earlier study |
 | Decision | Partial — owner rejection recorded on the coffee study; recommendation stayed `INSUFFICIENT_EVIDENCE` |
-| Owner action on the decision | Partial — reject persisted after refresh; same-analysis accept was refused. Request Modification is unit-tested only |
-| Report | Partial — downloaded report context carries the financial ceiling, pre-tax label, and owner line. A downloaded file was not opened in the browser |
+| Owner action on the decision | Partial — reject persisted after refresh; same-analysis accept was refused. Request Modification persisted on 2026-10-31 and survived refresh |
+| Report | Partial — the live English PDF and Arabic DOCX for the coffee study contain the same operating figures as the stored study. This is not an investment-grade report |
 | Refresh and sign-in persistence | Partial — verified for `study_884fa2d78ce9` only |
 | Arabic and English | Partial — chrome and the fallback label switched; some study text stayed in the study language |
 

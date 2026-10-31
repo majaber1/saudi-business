@@ -22,8 +22,8 @@ Measured on `recovery/financial-trust-20261028` against production SHA `56ca05b`
 | Deterministic policy is the recommendation ceiling | VERIFIED | `apply_investment_trust` runs after `apply_decision_safety` and after the blocked-financial early return. |
 | Negative NPV, contradictory evidence, impossible margins, invalid units, provider failure | PARTIAL | Existing financial and evidence gates cover several of these. A single Stage 1 case for every failure mode is not claimed. |
 | Archetype line-item model, monthly cash flow, real what-if | PARTIAL | Specialty coffee and Saudi SaaS only, in `ai_engine/tools/archetype_lines.py`. `tests/test_stage3_archetype_financials.py` passed with the trust and archetype regressions (42 passed). Other archetypes and tax lines are not in this model. |
-| One workspace journey with Approve / Reject / Request Modification | PARTIAL | `POST /api/v2/studies/{id}/decision/owner` records approve, reject, or request_modification. Approval does not change the verdict. A rejection of the same analysis cannot be accepted. Request Modification returns to assumption review in `tests/test_owner_decision.py`. The browser showed the English controls and note field; the click was not persisted because the isolated Postgres handshake timed out. |
-| Bilingual RTL report as the single artifact | PARTIAL | PDF and DOCX exports include the persisted operating lines, monthly net, pre-tax label, and owner decision. A fixture matching the coffee figures passed. A live download from `study_884fa2d78ce9` was not completed because Postgres did not answer. |
+| One workspace journey with Approve / Reject / Request Modification | PARTIAL | `POST /api/v2/studies/{id}/decision/owner` records approve, reject, or request_modification. Approval does not change the verdict. A rejection of the same analysis cannot be accepted. On 2026-10-31 the coffee study browser click persisted `request_modification`, returned to assumption review, kept `INSUFFICIENT_EVIDENCE`, and survived refresh. The Saudi SaaS journey is still NOT TESTED. |
+| Bilingual RTL report as the single artifact | PARTIAL | PDF and DOCX exports include the persisted operating lines, monthly net, pre-tax label, and owner decision. On 2026-10-31 the live English PDF and Arabic DOCX for `study_884fa2d78ce9` contained 52000, 20000, 18000, 15600, -1600, and -19200. |
 | Integration, security, and browser end-to-end | PARTIAL | Auth and financial regression tests passed. One isolated Postgres browser study ran. Full model-written acceptance did not run because Groq and search are not available locally. |
 | Non-production Postgres migration of this branch | PARTIAL | Isolated Postgres 16 on `127.0.0.1:54329` applied the chain through `0031_research_runs`. This was not a production migration. |
 | Release: merge, production migration, deploy | NOT STARTED | Explicit owner approval is still required. |
@@ -49,4 +49,4 @@ Result: **73 passed**.
 
 Result: **123 passed**.
 
-Browser journey for the Riyadh coffee study and the Saudi SaaS study: **NOT TESTED**. The same two shapes were exercised in unit tests only. No non-production Postgres write was run.
+The Riyadh coffee browser journey is PARTIAL: reject, blocked re-approval, and Request Modification were exercised on isolated Postgres. The Saudi SaaS browser journey remains **NOT TESTED**.

@@ -16,7 +16,7 @@ Partial. Do not stub the blocked connectors.
 - Verified competitor records require identity, an http(s) URL, and a real retrieval timestamp.
 - Allowlisted search is `BLOCKED` until a provider credential exists. No results are fabricated.
 - GASTAT live retrieval was not verified from this machine. MISA homepage returned HTTP 200. Monsha'at stays `BLOCKED_EXTERNAL_REACHABILITY`.
-- Browser end-to-end for the coffee and SaaS studies is NOT TESTED.
+- Live research browser acceptance for the coffee and SaaS studies is NOT TESTED. Search and Groq remain blocked.
 
 ## Stage 3 — archetype financials
 
@@ -38,7 +38,7 @@ Partial.
 - The projection is labeled pre-tax, not investment-ready.
 - Editing an assumption marks the previous figures stale and withdraws a favorable verdict until analysis is run again.
 - The isolated Postgres coffee study shows the owner decision panel. Reject was recorded in the browser and survived refresh. Accepting that same analysis was refused.
-- Request Modification returns the study to assumption review in unit tests. The browser click did not persist on 2026-10-29 because Docker Desktop could not start and the Postgres handshake timed out.
+- Request Modification on the coffee study persisted on 2026-10-31. Refresh kept the assumption-review banner and the note. The recommendation stayed `INSUFFICIENT_EVIDENCE`.
 - Live search and live model classification remain blocked. See `docs/roadmap/OWNER_ACTION_REQUIRED.md`.
 
 ## Stage 5 — integration and security
@@ -46,7 +46,7 @@ Partial.
 Partial.
 
 - `tests/test_router_authz.py`, `tests/test_projects_auth.py`, and `tests/test_auth_privilege.py`: 46 passed.
-- A live downloaded report was not compared with the coffee study because Postgres did not answer.
+- On 2026-10-31 the live English PDF and Arabic DOCX for the coffee study matched the stored operating figures. `npm run build` in `apps/web` completed.
 
 - Non-production Postgres only. Do not apply `0027_v2_scenario_link` or `0028_v2_output_links` from the dirty checkout.
 - Browser end-to-end on the recovery branch.
